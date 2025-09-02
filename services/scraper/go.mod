@@ -3,12 +3,12 @@ module github.com/arseniizyk/mgkct-schedule-bot/services/scraper
 go 1.25.0
 
 require (
+	github.com/PuerkitoBio/goquery v1.10.2
 	github.com/gocolly/colly v1.2.0
 	github.com/joho/godotenv v1.5.1
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.10.2 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/antchfx/htmlquery v1.3.4 // indirect
 	github.com/antchfx/xmlquery v1.4.4 // indirect
