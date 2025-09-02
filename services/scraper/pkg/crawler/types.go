@@ -1,13 +1,12 @@
 package crawler
 
 type Schedule struct {
-	Groups []Group `json:"groups"`
+	Groups map[int]Group `json:"groups"`
 }
 
 type Group struct {
-	Number int    `json:"number"`
-	Week   string `json:"week"`
-	Days   []Day  `json:"days"`
+	Week string `json:"week"`
+	Days []Day  `json:"days"`
 }
 
 type Day struct {

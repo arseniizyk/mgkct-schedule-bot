@@ -25,20 +25,28 @@ func New() *Crawler {
 }
 
 func (c *Crawler) Crawl() (*Schedule, error) {
-	var schedule Schedule
+	schedule := Schedule{
+		Groups: make(map[int]Group),
+	}
 
 	c.c.OnError(func(r *colly.Response, err error) {
 		slog.Error("visit error", "url", r.Request.URL, "err", err)
 	})
 
 	c.c.OnHTML("h2", func(e *colly.HTMLElement) {
+		groupNum, err := parseGroup(e.Text)
+		if err != nil {
+			slog.Error("can't get group from h2", "err", err)
+			return
+		}
+
 		group, err := parseTable(e)
 		if err != nil {
 			slog.Warn("can't parse group", "err", err)
 			return
 		}
 
-		schedule.Groups = append(schedule.Groups, *group)
+		schedule.Groups[groupNum] = *group
 	})
 
 	if err := c.c.Visit(url); err != nil {
@@ -71,19 +79,12 @@ func parseWeek(e *colly.HTMLElement) string {
 func parseTable(e *colly.HTMLElement) (*Group, error) {
 	table := e.DOM.NextAllFiltered("table").First()
 
-	groupNum, err := parseGroup(e.Text)
-	if err != nil {
-		slog.Error("can't get group from h2", "err", err)
-		return nil, err
-	}
-
 	week := parseWeek(e)
 	days := parseRows(table.Find("tbody tr"))
 
 	return &Group{
-		Number: groupNum,
-		Week:   week,
-		Days:   days,
+		Week: week,
+		Days: days,
 	}, nil
 }
 
