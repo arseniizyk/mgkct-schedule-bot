@@ -7,16 +7,16 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/crawler"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 )
 
 type HTTPServer struct {
 	port string
-	sch  *crawler.Schedule
+	sch  *models.Schedule
 	srv  *http.Server
 }
 
-func NewHTTPServer(sch *crawler.Schedule, port string) *HTTPServer {
+func NewHTTPServer(sch *models.Schedule, port string) *HTTPServer {
 	return &HTTPServer{
 		port: port,
 		sch:  sch,
@@ -53,7 +53,7 @@ func (hs *HTTPServer) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func handleSchedule(sch *crawler.Schedule, w http.ResponseWriter) {
+func handleSchedule(sch *models.Schedule, w http.ResponseWriter) {
 	b, err := json.MarshalIndent(sch, "", " ")
 	if err != nil {
 		http.Error(w, "failed to marshal schedule", http.StatusInternalServerError)

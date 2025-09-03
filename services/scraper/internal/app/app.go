@@ -11,6 +11,7 @@ import (
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/config"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/crawler"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/server"
 	"google.golang.org/grpc"
@@ -57,6 +58,7 @@ func (a *App) Run() error {
 
 	httpSrv := server.NewHTTPServer(schedule, a.cfg.HttpPort)
 	grpcServer := grpc.NewServer()
+	
 	a.startGRPC(schedule, grpcServer)
 	httpSrv.Start()
 
@@ -74,7 +76,7 @@ func (a *App) Run() error {
 	return nil
 }
 
-func (a *App) startGRPC(schedule *crawler.Schedule, grpcServer *grpc.Server) {
+func (a *App) startGRPC(schedule *models.Schedule, grpcServer *grpc.Server) {
 	pb.RegisterScheduleServiceServer(grpcServer, server.NewGRPCServer(schedule))
 
 	go func() {
