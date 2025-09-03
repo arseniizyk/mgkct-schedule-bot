@@ -7,13 +7,11 @@
 package scraperpb
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
@@ -22,50 +20,6 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
-
-type AllSchedulesResponse struct {
-	state         protoimpl.MessageState   `protogen:"open.v1"`
-	Groups        []*GroupScheduleResponse `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AllSchedulesResponse) Reset() {
-	*x = AllSchedulesResponse{}
-	mi := &file_scraper_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AllSchedulesResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AllSchedulesResponse) ProtoMessage() {}
-
-func (x *AllSchedulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AllSchedulesResponse.ProtoReflect.Descriptor instead.
-func (*AllSchedulesResponse) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *AllSchedulesResponse) GetGroups() []*GroupScheduleResponse {
-	if x != nil {
-		return x.Groups
-	}
-	return nil
-}
 
 type GroupScheduleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -76,7 +30,7 @@ type GroupScheduleRequest struct {
 
 func (x *GroupScheduleRequest) Reset() {
 	*x = GroupScheduleRequest{}
-	mi := &file_scraper_proto_msgTypes[1]
+	mi := &file_scraper_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -88,7 +42,7 @@ func (x *GroupScheduleRequest) String() string {
 func (*GroupScheduleRequest) ProtoMessage() {}
 
 func (x *GroupScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[1]
+	mi := &file_scraper_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -101,7 +55,7 @@ func (x *GroupScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupScheduleRequest.ProtoReflect.Descriptor instead.
 func (*GroupScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{1}
+	return file_scraper_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *GroupScheduleRequest) GetGroupNum() int32 {
@@ -121,7 +75,7 @@ type GroupScheduleResponse struct {
 
 func (x *GroupScheduleResponse) Reset() {
 	*x = GroupScheduleResponse{}
-	mi := &file_scraper_proto_msgTypes[2]
+	mi := &file_scraper_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -133,7 +87,7 @@ func (x *GroupScheduleResponse) String() string {
 func (*GroupScheduleResponse) ProtoMessage() {}
 
 func (x *GroupScheduleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[2]
+	mi := &file_scraper_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -146,7 +100,7 @@ func (x *GroupScheduleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupScheduleResponse.ProtoReflect.Descriptor instead.
 func (*GroupScheduleResponse) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{2}
+	return file_scraper_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *GroupScheduleResponse) GetWeek() string {
@@ -166,14 +120,14 @@ func (x *GroupScheduleResponse) GetDay() []*Day {
 type Day struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Subject       []*Subject             `protobuf:"bytes,2,rep,name=subject,proto3" json:"subject,omitempty"`
+	Subjects      []*Subject             `protobuf:"bytes,2,rep,name=subjects,proto3" json:"subjects,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Day) Reset() {
 	*x = Day{}
-	mi := &file_scraper_proto_msgTypes[3]
+	mi := &file_scraper_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -185,7 +139,7 @@ func (x *Day) String() string {
 func (*Day) ProtoMessage() {}
 
 func (x *Day) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[3]
+	mi := &file_scraper_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -198,7 +152,7 @@ func (x *Day) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Day.ProtoReflect.Descriptor instead.
 func (*Day) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{3}
+	return file_scraper_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Day) GetName() string {
@@ -208,9 +162,9 @@ func (x *Day) GetName() string {
 	return ""
 }
 
-func (x *Day) GetSubject() []*Subject {
+func (x *Day) GetSubjects() []*Subject {
 	if x != nil {
-		return x.Subject
+		return x.Subjects
 	}
 	return nil
 }
@@ -226,7 +180,7 @@ type Subject struct {
 
 func (x *Subject) Reset() {
 	*x = Subject{}
-	mi := &file_scraper_proto_msgTypes[4]
+	mi := &file_scraper_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -238,7 +192,7 @@ func (x *Subject) String() string {
 func (*Subject) ProtoMessage() {}
 
 func (x *Subject) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[4]
+	mi := &file_scraper_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -251,7 +205,7 @@ func (x *Subject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Subject.ProtoReflect.Descriptor instead.
 func (*Subject) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{4}
+	return file_scraper_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Subject) GetName() string {
@@ -279,24 +233,21 @@ var File_scraper_proto protoreflect.FileDescriptor
 
 const file_scraper_proto_rawDesc = "" +
 	"\n" +
-	"\rscraper.proto\x12\ascraper\x1a\x1bgoogle/protobuf/empty.proto\"N\n" +
-	"\x14AllSchedulesResponse\x126\n" +
-	"\x06groups\x18\x01 \x03(\v2\x1e.scraper.GroupScheduleResponseR\x06groups\"2\n" +
+	"\rscraper.proto\x12\ascraper\"2\n" +
 	"\x14GroupScheduleRequest\x12\x1a\n" +
 	"\bgroupNum\x18\x01 \x01(\x05R\bgroupNum\"K\n" +
 	"\x15GroupScheduleResponse\x12\x12\n" +
 	"\x04week\x18\x01 \x01(\tR\x04week\x12\x1e\n" +
-	"\x03day\x18\x02 \x03(\v2\f.scraper.DayR\x03day\"E\n" +
+	"\x03day\x18\x02 \x03(\v2\f.scraper.DayR\x03day\"G\n" +
 	"\x03Day\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12*\n" +
-	"\asubject\x18\x02 \x03(\v2\x10.scraper.SubjectR\asubject\"I\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12,\n" +
+	"\bsubjects\x18\x02 \x03(\v2\x10.scraper.SubjectR\bsubjects\"I\n" +
 	"\aSubject\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05class\x18\x02 \x01(\tR\x05class\x12\x14\n" +
-	"\x05empty\x18\x03 \x01(\bR\x05empty2\xae\x01\n" +
+	"\x05empty\x18\x03 \x01(\bR\x05empty2d\n" +
 	"\x0fScheduleService\x12Q\n" +
-	"\x10GetGroupSchedule\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponse\x12H\n" +
-	"\x0fGetAllSchedules\x12\x16.google.protobuf.Empty\x1a\x1d.scraper.AllSchedulesResponseB?Z=github.com/arseniizyk/mgkct-schedule-bot/libs/proto;scraperpbb\x06proto3"
+	"\x10GetGroupSchedule\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponseB?Z=github.com/arseniizyk/mgkct-schedule-bot/libs/proto;scraperpbb\x06proto3"
 
 var (
 	file_scraper_proto_rawDescOnce sync.Once
@@ -310,28 +261,23 @@ func file_scraper_proto_rawDescGZIP() []byte {
 	return file_scraper_proto_rawDescData
 }
 
-var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_scraper_proto_goTypes = []any{
-	(*AllSchedulesResponse)(nil),  // 0: scraper.AllSchedulesResponse
-	(*GroupScheduleRequest)(nil),  // 1: scraper.GroupScheduleRequest
-	(*GroupScheduleResponse)(nil), // 2: scraper.GroupScheduleResponse
-	(*Day)(nil),                   // 3: scraper.Day
-	(*Subject)(nil),               // 4: scraper.Subject
-	(*emptypb.Empty)(nil),         // 5: google.protobuf.Empty
+	(*GroupScheduleRequest)(nil),  // 0: scraper.GroupScheduleRequest
+	(*GroupScheduleResponse)(nil), // 1: scraper.GroupScheduleResponse
+	(*Day)(nil),                   // 2: scraper.Day
+	(*Subject)(nil),               // 3: scraper.Subject
 }
 var file_scraper_proto_depIdxs = []int32{
-	2, // 0: scraper.AllSchedulesResponse.groups:type_name -> scraper.GroupScheduleResponse
-	3, // 1: scraper.GroupScheduleResponse.day:type_name -> scraper.Day
-	4, // 2: scraper.Day.subject:type_name -> scraper.Subject
-	1, // 3: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
-	5, // 4: scraper.ScheduleService.GetAllSchedules:input_type -> google.protobuf.Empty
-	2, // 5: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
-	0, // 6: scraper.ScheduleService.GetAllSchedules:output_type -> scraper.AllSchedulesResponse
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	2, // 0: scraper.GroupScheduleResponse.day:type_name -> scraper.Day
+	3, // 1: scraper.Day.subjects:type_name -> scraper.Subject
+	0, // 2: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
+	1, // 3: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_scraper_proto_init() }
@@ -345,7 +291,7 @@ func file_scraper_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scraper_proto_rawDesc), len(file_scraper_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
