@@ -24,7 +24,7 @@ func main() {
 	}
 
 	scheduleStub := transport.New(conn)
-	scheduleSvc := scheduleUC.NewScheduleUseCase(*scheduleStub)
+	scheduleSvc := scheduleUC.NewScheduleUseCase(scheduleStub)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
