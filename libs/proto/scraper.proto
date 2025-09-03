@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package scraper;
+
+option go_package = "github.com/arseniizyk/mgkct-schedule-bot/libs/proto;scraperpb";
+
+import "google/protobuf/empty.proto";
+
+service ScheduleService {
+    rpc GetGroupSchedule(GroupScheduleRequest) returns (GroupScheduleResponse);
+    rpc GetAllSchedules(google.protobuf.Empty) returns (AllSchedulesResponse);
+}
+
+message AllSchedulesResponse {
+    repeated GroupScheduleResponse groups = 1;
+}
+
+message GroupScheduleRequest {
+    int32 groupNum = 1;
+}
+
+message GroupScheduleResponse {
+    string week = 1;
+    repeated Day day = 2;
+}
+
+message Day {
+    string name = 1;
+    repeated Subject subject = 2;
+}
+
+message Subject {
+    string name = 1;
+    string class = 2;
+    bool empty = 3;
+}
