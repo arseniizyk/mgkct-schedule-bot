@@ -8,7 +8,8 @@ import (
 )
 
 type Config struct {
-	Port string
+	HttpPort string
+	GRPCPort string
 }
 
 func New() (*Config, error) {
@@ -18,6 +19,7 @@ func New() (*Config, error) {
 	}
 
 	return &Config{
-		Port: os.Getenv("PORT"),
+		HttpPort: os.Getenv("HTTP_PORT"),
+		GRPCPort: os.Getenv("GRPC_PORT"),
 	}, nil
 }
