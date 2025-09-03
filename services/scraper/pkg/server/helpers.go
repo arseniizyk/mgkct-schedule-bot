@@ -2,10 +2,10 @@ package server
 
 import (
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/crawler"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 )
 
-func fillDays(days []crawler.Day) []*pb.Day {
+func fillDays(days []models.Day) []*pb.Day {
 	res := make([]*pb.Day, len(days))
 
 	for i, d := range days {
@@ -19,7 +19,7 @@ func fillDays(days []crawler.Day) []*pb.Day {
 	return res
 }
 
-func fillSubjects(subjects []crawler.Subject) []*pb.Subject {
+func fillSubjects(subjects []models.Subject) []*pb.Subject {
 	res := make([]*pb.Subject, len(subjects))
 
 	for i, s := range subjects {

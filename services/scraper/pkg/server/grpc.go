@@ -4,17 +4,17 @@ import (
 	"context"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/crawler"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type GRPCServer struct {
-	sch *crawler.Schedule
+	sch *models.Schedule
 	pb.UnimplementedScheduleServiceServer
 }
 
-func NewGRPCServer(schedule *crawler.Schedule) *GRPCServer {
+func NewGRPCServer(schedule *models.Schedule) *GRPCServer {
 	return &GRPCServer{sch: schedule}
 }
 
