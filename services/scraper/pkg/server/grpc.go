@@ -5,21 +5,23 @@ import (
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/crawler"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-type Server struct {
+type GRPCServer struct {
 	sch *crawler.Schedule
 	pb.UnimplementedScheduleServiceServer
 }
 
-func New(schedule *crawler.Schedule) *Server {
-	return &Server{sch: schedule}
+func NewGRPCServer(schedule *crawler.Schedule) *GRPCServer {
+	return &GRPCServer{sch: schedule}
 }
 
-func (s *Server) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
+func (s *GRPCServer) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
 	group, ok := s.sch.Groups[int(req.GroupNum)]
 	if !ok {
-		return &pb.GroupScheduleResponse{}, nil
+		return nil, status.Errorf(codes.NotFound, "group %d not found", req.GroupNum)
 	}
 
 	return &pb.GroupScheduleResponse{
