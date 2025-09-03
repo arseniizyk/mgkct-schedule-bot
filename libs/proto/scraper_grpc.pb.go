@@ -12,7 +12,6 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -22,7 +21,6 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ScheduleService_GetGroupSchedule_FullMethodName = "/scraper.ScheduleService/GetGroupSchedule"
-	ScheduleService_GetAllSchedules_FullMethodName  = "/scraper.ScheduleService/GetAllSchedules"
 )
 
 // ScheduleServiceClient is the client API for ScheduleService service.
@@ -30,7 +28,6 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ScheduleServiceClient interface {
 	GetGroupSchedule(ctx context.Context, in *GroupScheduleRequest, opts ...grpc.CallOption) (*GroupScheduleResponse, error)
-	GetAllSchedules(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*AllSchedulesResponse, error)
 }
 
 type scheduleServiceClient struct {
@@ -51,22 +48,11 @@ func (c *scheduleServiceClient) GetGroupSchedule(ctx context.Context, in *GroupS
 	return out, nil
 }
 
-func (c *scheduleServiceClient) GetAllSchedules(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*AllSchedulesResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(AllSchedulesResponse)
-	err := c.cc.Invoke(ctx, ScheduleService_GetAllSchedules_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // ScheduleServiceServer is the server API for ScheduleService service.
 // All implementations must embed UnimplementedScheduleServiceServer
 // for forward compatibility.
 type ScheduleServiceServer interface {
 	GetGroupSchedule(context.Context, *GroupScheduleRequest) (*GroupScheduleResponse, error)
-	GetAllSchedules(context.Context, *emptypb.Empty) (*AllSchedulesResponse, error)
 	mustEmbedUnimplementedScheduleServiceServer()
 }
 
@@ -79,9 +65,6 @@ type UnimplementedScheduleServiceServer struct{}
 
 func (UnimplementedScheduleServiceServer) GetGroupSchedule(context.Context, *GroupScheduleRequest) (*GroupScheduleResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetGroupSchedule not implemented")
-}
-func (UnimplementedScheduleServiceServer) GetAllSchedules(context.Context, *emptypb.Empty) (*AllSchedulesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetAllSchedules not implemented")
 }
 func (UnimplementedScheduleServiceServer) mustEmbedUnimplementedScheduleServiceServer() {}
 func (UnimplementedScheduleServiceServer) testEmbeddedByValue()                         {}
@@ -122,24 +105,6 @@ func _ScheduleService_GetGroupSchedule_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ScheduleService_GetAllSchedules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ScheduleServiceServer).GetAllSchedules(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ScheduleService_GetAllSchedules_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ScheduleServiceServer).GetAllSchedules(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // ScheduleService_ServiceDesc is the grpc.ServiceDesc for ScheduleService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -150,10 +115,6 @@ var ScheduleService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetGroupSchedule",
 			Handler:    _ScheduleService_GetGroupSchedule_Handler,
-		},
-		{
-			MethodName: "GetAllSchedules",
-			Handler:    _ScheduleService_GetAllSchedules_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

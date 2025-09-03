@@ -1,5 +1,13 @@
 syntax = "proto3";
 
+// protoc \
+//   --go_out=. \
+//   --go-grpc_out=. \
+//   --go_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
+//   --go-grpc_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
+//   scraper.proto
+
+
 package scraper;
 
 option go_package = "github.com/arseniizyk/mgkct-schedule-bot/libs/proto;scraperpb";
