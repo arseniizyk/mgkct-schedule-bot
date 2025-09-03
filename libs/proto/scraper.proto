@@ -4,15 +4,8 @@ package scraper;
 
 option go_package = "github.com/arseniizyk/mgkct-schedule-bot/libs/proto;scraperpb";
 
-import "google/protobuf/empty.proto";
-
 service ScheduleService {
     rpc GetGroupSchedule(GroupScheduleRequest) returns (GroupScheduleResponse);
-    rpc GetAllSchedules(google.protobuf.Empty) returns (AllSchedulesResponse);
-}
-
-message AllSchedulesResponse {
-    repeated GroupScheduleResponse groups = 1;
 }
 
 message GroupScheduleRequest {
@@ -26,7 +19,7 @@ message GroupScheduleResponse {
 
 message Day {
     string name = 1;
-    repeated Subject subject = 2;
+    repeated Subject subjects = 2;
 }
 
 message Subject {
