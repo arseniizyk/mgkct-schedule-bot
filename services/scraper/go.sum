@@ -16,6 +16,8 @@ github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250903174018-68ac5d
 github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250903174018-68ac5d71d496/go.mod h1:dK+AHSXIBF3gpMem9m8KZgfwVszZxEEUUsRY9pozUmk=
 github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250903180427-0f532e518d13 h1:OLtWkaf8YnpKc4jMyRAu4r6pibkoxJSNRweQnE7fC/U=
 github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250903180427-0f532e518d13/go.mod h1:nFAGnaygl2r+lT03lOQBBc9kFRTlI7Q7fvpPGdUkZVw=
+github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250903180958-5315f2fa4dfb h1:KYshzbniDtXpERwwLweQnZwnRDPoYL0tf56Okf/rYO0=
+github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250903180958-5315f2fa4dfb/go.mod h1:nFAGnaygl2r+lT03lOQBBc9kFRTlI7Q7fvpPGdUkZVw=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/gobwas/glob v0.2.3 h1:A4xDbljILXROh+kObIiy5kIaPYD8e96x1tgBhUI5J+Y=
