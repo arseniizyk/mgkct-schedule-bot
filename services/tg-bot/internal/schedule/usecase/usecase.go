@@ -10,10 +10,10 @@ import (
 )
 
 type ScheduleUseCase struct {
-	crawlSvc transport.GRPCStub
+	crawlSvc *transport.GRPCStub
 }
 
-func NewScheduleUseCase(stub transport.GRPCStub) schedule.ScheduleUseCase {
+func NewScheduleUseCase(stub *transport.GRPCStub) schedule.ScheduleUseCase {
 	return &ScheduleUseCase{stub}
 }
 
