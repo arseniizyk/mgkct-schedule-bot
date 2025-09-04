@@ -2,10 +2,12 @@ package delivery
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
+	userRepo "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	tele "gopkg.in/telebot.v4"
 )
@@ -35,7 +37,7 @@ func (h *Handler) Start(c tele.Context) error {
 	}
 
 	ctx := context.TODO()
-	err := h.uc.Save(ctx, u)
+	err := h.uc.SaveUser(ctx, u)
 	if err != nil {
 		slog.Error("can't save user", "username", u.UserName, "chat_id", u.ChatID, "err", err)
 	}
@@ -56,7 +58,7 @@ func (h *Handler) SetGroup(c tele.Context) error {
 	}
 
 	ctx := context.TODO()
-	err = h.uc.SetGroup(ctx, c.Chat().ID, groupID)
+	err = h.uc.SetUserGroup(ctx, c.Chat().ID, groupID)
 	if err != nil {
 		slog.Error("error saving group to db", "chat_id", c.Chat().ID, "group_id", groupID)
 		return c.Send(`Ошибка сохранения группы, попробуйте позже`)
@@ -66,7 +68,32 @@ func (h *Handler) SetGroup(c tele.Context) error {
 }
 
 func (h *Handler) Group(c tele.Context) error {
-	// TODO:
+	if len(c.Args()) == 0 {
+		_, err := h.uc.GetGroupScheduleByChatID(context.TODO(), c.Chat().ID)
+		if err == nil { // IF ERR == NIL, NO ERROR
+			// todo: format group to message
+		}
+
+		if errors.Is(err, userRepo.ErrUserNotFound) {
+			slog.Warn("user's group not found", "chat_id", c.Chat().ID, "err", err)
+			return c.Send("Введите /group с номером группы, пример: /group 00")
+		}
+		slog.Error("error getting group schedule by chat_id", "chat_id", c.Chat().ID, "err", err)
+		return c.Send("Ошибка получения расписания группы, попробуйте позже.")
+	}
+
+	groupID, err := strconv.Atoi(c.Args()[0])
+	if err != nil {
+		return c.Send("Некорректная группа")
+	}
+
+	_, err = h.uc.GetGroupScheduleByID(context.TODO(), groupID)
+	if err != nil {
+		slog.Error("error getting group schedule by ID", "group_id", groupID, "err", err)
+		return c.Send("Ошибка получения расписания группы")
+	}
+	// TODO: group formatting and output
+
 	return nil
 }
 
