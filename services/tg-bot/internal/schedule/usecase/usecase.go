@@ -9,15 +9,15 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/transport"
 )
 
-type ScheduleUseCase struct {
+type scheduleUseCase struct {
 	crawlSvc *transport.GRPCStub
 }
 
 func NewScheduleUseCase(stub *transport.GRPCStub) schedule.ScheduleUseCase {
-	return &ScheduleUseCase{stub}
+	return &scheduleUseCase{stub}
 }
 
-func (sch *ScheduleUseCase) GetGroupSchedule(ctx context.Context, num int) (*pb.GroupScheduleResponse, error) {
+func (sch *scheduleUseCase) GetGroupSchedule(ctx context.Context, num int) (*pb.GroupScheduleResponse, error) {
 	resp, err := sch.crawlSvc.GetGroupSchedule(ctx, &pb.GroupScheduleRequest{
 		GroupNum: int32(num),
 	})
