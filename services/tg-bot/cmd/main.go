@@ -6,7 +6,7 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery"
-	postgres "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgre"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	"github.com/jackc/pgx/v5/pgxpool"
 	tele "gopkg.in/telebot.v4"
