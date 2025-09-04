@@ -2,11 +2,14 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrUserNotFound = errors.New("user not found")
 
 type userRepo struct {
 	pool *pgxpool.Pool
