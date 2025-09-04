@@ -1,0 +1,118 @@
+package delivery
+
+import (
+	"context"
+	"log/slog"
+	"strconv"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
+	tele "gopkg.in/telebot.v4"
+)
+
+type Handler struct {
+	uc usecase.UserUseCase
+}
+
+func NewHandler(uc usecase.UserUseCase) *Handler { return &Handler{uc: uc} }
+
+func (h *Handler) Start(c tele.Context) error {
+	msg := `
+Приветствую, это  бот для просмотра расписания колледжа МГКЦТ
+Желающим зарепортить баг или законтрибьютить - [тык](https://github.com/arseniizyk/mgkct-schedule-bot)
+Список доступных команд:
+/setgroup - для привязки группы к вашей телеге
+/group 00 - расписание группы, использует вашу если она привязана
+/week - расписание вашей группы на неделю
+/day - расписание вашей группы на день
+/calls - расписание звонков
+`
+	user := c.Sender()
+
+	u := &models.User{
+		ChatID:   c.Chat().ID,
+		UserName: user.Username,
+	}
+
+	ctx := context.TODO()
+	err := h.uc.Save(ctx, u)
+	if err != nil {
+		slog.Error("can't save user", "username", u.UserName, "chat_id", u.ChatID, "err", err)
+	}
+
+	return c.Send(msg, tele.ModeMarkdown)
+}
+
+func (h *Handler) SetGroup(c tele.Context) error {
+	if len(c.Args()) == 0 {
+		// TODO: Temp Storage (map<chat_id, state>)
+		return c.Send(`Введите группу или /cancel для отмены`)
+	}
+
+	groupID, err := strconv.Atoi(c.Args()[0])
+	if err != nil {
+		slog.Error("error parsing group to string", "input", c.Args()[0], "err", err)
+		return c.Send(`Ошибка ввода группы`)
+	}
+
+	ctx := context.TODO()
+	err = h.uc.SetGroup(ctx, c.Chat().ID, groupID)
+	if err != nil {
+		slog.Error("error saving group to db", "chat_id", c.Chat().ID, "group_id", groupID)
+		return c.Send(`Ошибка сохранения группы, попробуйте позже`)
+	}
+
+	return c.Send("Группа успешно сохранена")
+}
+
+func (h *Handler) Group(c tele.Context) error {
+	// TODO:
+	return nil
+}
+
+func (h *Handler) Week(c tele.Context) error {
+	// TODO:
+	return nil
+}
+
+func (h *Handler) Day(c tele.Context) error {
+	// TODO:
+	return nil
+}
+
+func (h *Handler) Calls(c tele.Context) error {
+	msg := `
+*Будние дни:*
+1: 9:00 - 9:45 | 9:55 - 10:40
+2: 10:50 - 11:35 | 11:55 - 12:40
+3: 13:00 - 13:45 | 13:55 - 14:40
+4: 14:50 - 15:35 | 15:45 - 16:30
+5: 16:40 - 17:25 | 17:35 - 18:20
+6: 18:30 - 19:15 | 19:25 - 20:10
+
+*Суббота:*
+1: 9:00 - 9:45 | 9:55 - 10:40
+2: 10:50 - 11:35 | 11:55 - 12:40
+3: 12:50 - 13:35 | 13:45 - 14:30
+4: 14:40 - 15:25 | 15:35 - 16:20
+5: 16:30 - 17:15 | 17:25 - 18:10
+6: 18:20 - 19:05 | 19:15 - 20:00
+`
+
+	return c.Send(msg, tele.ModeMarkdown)
+}
+
+func (h *Handler) Cancel(c tele.Context) error {
+	// TODO: delete state from storage
+	return c.Send("Действие отменено")
+}
+
+func (h *Handler) LogMessages(next tele.HandlerFunc) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		slog.Info("incoming message",
+			"chat_id", c.Chat().ID,
+			"username", c.Sender().Username,
+			"text", c.Text())
+		return next(c)
+	}
+}
