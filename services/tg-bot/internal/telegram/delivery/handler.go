@@ -19,10 +19,12 @@ type Handler struct {
 }
 
 func NewHandler(stateManager state.Manager, uc usecase.UserUseCase) *Handler {
-	return &Handler{
+	h := Handler{
 		uc: uc,
 		sm: stateManager,
 	}
+
+	return &h
 }
 
 func (h *Handler) Help(c tele.Context) error {
@@ -56,8 +58,7 @@ func (h *Handler) Start(c tele.Context) error {
 	}
 
 	ctx := context.TODO()
-	err := h.uc.SaveUser(ctx, u)
-	if err != nil {
+	if err := h.uc.SaveUser(ctx, u); err != nil {
 		slog.Error("can't save user", "username", u.UserName, "chat_id", u.ChatID, "err", err)
 	}
 
@@ -69,7 +70,7 @@ func (h *Handler) WaitingGroup(c tele.Context) error {
 	group, err := strconv.Atoi(groupStr)
 	if err != nil {
 		slog.Error("can't parse group to int", "input", c.Text(), "err", err)
-		return c.Send("Не удалось сохранить группу, похоже вы ввели не число, иначе - попробуйте позже.")
+		return c.Send("Не удалось сохранить группу: введите номер группы или /cancel для отмены.")
 	}
 
 	if err := h.uc.SetUserGroup(context.TODO(), c.Chat().ID, group); err != nil {
@@ -78,7 +79,7 @@ func (h *Handler) WaitingGroup(c tele.Context) error {
 	}
 
 	if err := h.sm.Clear(c.Chat().ID); err != nil {
-		slog.Error("can't clear state", "err", err)
+		slog.Warn("waiting group: can't clear state", "chat_id", c.Chat().ID, "err", err)
 	}
 
 	return c.Send("Группа успешно установлена!")
@@ -86,21 +87,24 @@ func (h *Handler) WaitingGroup(c tele.Context) error {
 
 func (h *Handler) SetGroup(c tele.Context) error {
 	if len(c.Args()) == 0 {
-		h.sm.Set(c.Chat().ID, state.WaitingGroup)
-		return c.Send(`Введите группу или /cancel для отмены`)
+		if err := h.sm.Set(c.Chat().ID, state.WaitingGroup); err != nil {
+			slog.Error("setgroup: can't set state", "chat_id", c.Chat().ID, "err", err)
+			return c.Send("Внутренняя ошибка, попробуйте позже или получите расписание через /group 00")
+		}
+		return c.Send("Введите группу или /cancel для отмены")
 	}
 
 	groupID, err := strconv.Atoi(c.Args()[0])
 	if err != nil {
-		slog.Error("error parsing group to string", "input", c.Args()[0], "err", err)
-		return c.Send(`Ошибка ввода группы`)
+		slog.Warn("setgroup: bad arg", "input", c.Args()[0], "err", err)
+		return c.Send(`Ошибка ввода группы, используйте только числовой номер группы`)
 	}
 
 	ctx := context.TODO()
 	err = h.uc.SetUserGroup(ctx, c.Chat().ID, groupID)
 	if err != nil {
-		slog.Error("error saving group to db", "chat_id", c.Chat().ID, "group_id", groupID)
-		return c.Send(`Ошибка сохранения группы, попробуйте позже`)
+		slog.Error("setgroup: error saving group", "chat_id", c.Chat().ID, "group_id", groupID, "err", err)
+		return c.Send("Ошибка сохранения группы, попробуйте позже")
 	}
 
 	return c.Send("Группа успешно сохранена")
@@ -115,7 +119,7 @@ func (h *Handler) Group(c tele.Context) error {
 		}
 
 		if errors.Is(err, userRepo.ErrUserNotFound) {
-			slog.Warn("user's group not found", "chat_id", c.Chat().ID, "err", err)
+			slog.Warn("user's group not found", "chat_id", c.Chat().ID)
 			return c.Send("Введите /group с номером группы, пример: /group 00")
 		}
 
@@ -135,14 +139,13 @@ func (h *Handler) Group(c tele.Context) error {
 	}
 
 	msg := formatScheduleDay(group)
-
 	return c.Send(msg)
 }
 
 func (h *Handler) Week(c tele.Context) error {
 	group, err := h.uc.GetGroupScheduleByChatID(context.TODO(), c.Chat().ID)
 	if err != nil && !errors.Is(err, userRepo.ErrUserNotFound) {
-		slog.Error("error getting user's group by chat_id", "chat_id", c.Chat().ID)
+		slog.Error("error getting user's group by chat_id", "chat_id", c.Chat().ID, "err", err)
 		return c.Send("Ошибка при получении группы, попробуйте позже")
 	}
 
@@ -158,12 +161,12 @@ func (h *Handler) Week(c tele.Context) error {
 func (h *Handler) Day(c tele.Context) error {
 	group, err := h.uc.GetGroupScheduleByChatID(context.TODO(), c.Chat().ID)
 	if err != nil && !errors.Is(err, userRepo.ErrUserNotFound) {
-		slog.Error("error getting user's group by chat_id", "chat_id", c.Chat().ID)
+		slog.Error("error getting user's group by chat_id", "chat_id", c.Chat().ID, "err", err)
 		return c.Send("Ошибка при получении группы, попробуйте позже")
 	}
 
 	if errors.Is(err, userRepo.ErrUserNotFound) {
-		slog.Warn("user's group not found", "chat_id", c.Chat().ID, "err", err)
+		slog.Warn("user's group not found", "chat_id", c.Chat().ID)
 		return c.Send("Вам необходимо установить группу через /setgroup или использовать /group 00")
 	}
 
@@ -195,7 +198,7 @@ func (h *Handler) Calls(c tele.Context) error {
 
 func (h *Handler) Cancel(c tele.Context) error {
 	if err := h.sm.Clear(c.Chat().ID); err != nil {
-		slog.Error("can't clear state", "chat_id", c.Chat().ID, "err", err)
+		slog.Warn("cancel: can't clear state", "chat_id", c.Chat().ID, "err", err)
 	}
 
 	return c.Send("Действие отменено")
