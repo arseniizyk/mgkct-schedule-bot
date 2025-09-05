@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/config"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/state/memory"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/transport"
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/usecase"
@@ -45,7 +46,9 @@ func (a *App) Run() error {
 
 	userRepo := tbotRepo.NewUserRepo(&pgxpool.Pool{}) // TODO: init pgx pool
 	userUC := tbotUC.NewUserUseCase(schUC, userRepo)
-	h := tbotDeliv.NewHandler(userUC)
+
+	stateManager := memory.NewMemory()
+	h := tbotDeliv.NewHandler(stateManager, userUC)
 
 	b, err := tele.NewBot(pref)
 	if err != nil {
@@ -55,6 +58,7 @@ func (a *App) Run() error {
 
 	b.Use(h.LogMessages)
 
+	b.Handle(tele.OnText, h.HandleState)
 	b.Handle("/start", h.Start)
 	b.Handle("/setgroup", h.SetGroup)
 	b.Handle("/group", h.Group)
