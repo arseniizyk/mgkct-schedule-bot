@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/state"
 	userRepo "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	tele "gopkg.in/telebot.v4"
@@ -14,9 +15,27 @@ import (
 
 type Handler struct {
 	uc usecase.UserUseCase
+	sm state.Manager
 }
 
-func NewHandler(uc usecase.UserUseCase) *Handler { return &Handler{uc: uc} }
+func NewHandler(stateManager state.Manager, uc usecase.UserUseCase) *Handler {
+	return &Handler{
+		uc: uc,
+		sm: stateManager,
+	}
+}
+
+func (h *Handler) Help(c tele.Context) error {
+	msg := `
+Список доступных команд:
+/setgroup - для привязки группы к вашей телеге
+/group 00 - расписание группы, использует вашу если она привязана
+/week - расписание вашей группы на неделю
+/day - расписание вашей группы на день
+/calls - расписание звонков
+`
+	return c.Send(msg)
+}
 
 func (h *Handler) Start(c tele.Context) error {
 	msg := `
@@ -45,9 +64,29 @@ func (h *Handler) Start(c tele.Context) error {
 	return c.Send(msg, tele.ModeMarkdown)
 }
 
+func (h *Handler) WaitingGroup(c tele.Context) error {
+	groupStr := c.Text()
+	group, err := strconv.Atoi(groupStr)
+	if err != nil {
+		slog.Error("can't parse group to int", "input", c.Text(), "err", err)
+		return c.Send("Не удалось сохранить группу, похоже вы ввели не число, иначе - попробуйте позже.")
+	}
+
+	if err := h.uc.SetUserGroup(context.TODO(), c.Chat().ID, group); err != nil {
+		slog.Error("can't set user group", "group", group, "chat_id", c.Chat().ID, "err", err)
+		return c.Send("Не удалось сохранить группу, попробуйте позже.")
+	}
+
+	if err := h.sm.Clear(c.Chat().ID); err != nil {
+		slog.Error("can't clear state", "err", err)
+	}
+
+	return c.Send("Группа успешно установлена!")
+}
+
 func (h *Handler) SetGroup(c tele.Context) error {
 	if len(c.Args()) == 0 {
-		// TODO: Temp Storage (map<chat_id, state>)
+		h.sm.Set(c.Chat().ID, state.WaitingGroup)
 		return c.Send(`Введите группу или /cancel для отмены`)
 	}
 
@@ -155,7 +194,10 @@ func (h *Handler) Calls(c tele.Context) error {
 }
 
 func (h *Handler) Cancel(c tele.Context) error {
-	// TODO: delete state from storage
+	if err := h.sm.Clear(c.Chat().ID); err != nil {
+		slog.Error("can't clear state", "chat_id", c.Chat().ID, "err", err)
+	}
+
 	return c.Send("Действие отменено")
 }
 
@@ -166,5 +208,19 @@ func (h *Handler) LogMessages(next tele.HandlerFunc) tele.HandlerFunc {
 			"username", c.Sender().Username,
 			"text", c.Text())
 		return next(c)
+	}
+}
+
+func (h *Handler) HandleState(c tele.Context) error {
+	userState, exists := h.sm.Get(c.Chat().ID)
+	if !exists {
+		return h.Help(c)
+	}
+
+	switch userState {
+	case state.WaitingGroup:
+		return h.WaitingGroup(c)
+	default:
+		return h.Cancel(c)
 	}
 }
