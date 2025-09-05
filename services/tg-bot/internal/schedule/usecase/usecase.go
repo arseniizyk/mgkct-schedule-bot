@@ -24,6 +24,7 @@ func (sch *scheduleUseCase) GetGroupSchedule(ctx context.Context, num int) (*pb.
 
 	if err != nil {
 		slog.Error("Error from scraper service", "num", num, "err", err)
+		return nil, err
 	}
 
 	return resp, nil

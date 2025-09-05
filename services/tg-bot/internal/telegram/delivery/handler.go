@@ -69,15 +69,17 @@ func (h *Handler) SetGroup(c tele.Context) error {
 
 func (h *Handler) Group(c tele.Context) error {
 	if len(c.Args()) == 0 {
-		_, err := h.uc.GetGroupScheduleByChatID(context.TODO(), c.Chat().ID)
+		group, err := h.uc.GetGroupScheduleByChatID(context.TODO(), c.Chat().ID)
 		if err == nil { // IF ERR == NIL, NO ERROR
-			// todo: format group to message
+			msg := formatScheduleDay(group)
+			return c.Send(msg)
 		}
 
 		if errors.Is(err, userRepo.ErrUserNotFound) {
 			slog.Warn("user's group not found", "chat_id", c.Chat().ID, "err", err)
 			return c.Send("Введите /group с номером группы, пример: /group 00")
 		}
+
 		slog.Error("error getting group schedule by chat_id", "chat_id", c.Chat().ID, "err", err)
 		return c.Send("Ошибка получения расписания группы, попробуйте позже.")
 	}
@@ -87,24 +89,47 @@ func (h *Handler) Group(c tele.Context) error {
 		return c.Send("Некорректная группа")
 	}
 
-	_, err = h.uc.GetGroupScheduleByID(context.TODO(), groupID)
+	group, err := h.uc.GetGroupScheduleByID(context.TODO(), groupID)
 	if err != nil {
 		slog.Error("error getting group schedule by ID", "group_id", groupID, "err", err)
 		return c.Send("Ошибка получения расписания группы")
 	}
-	// TODO: group formatting and output
 
-	return nil
+	msg := formatScheduleDay(group)
+
+	return c.Send(msg)
 }
 
 func (h *Handler) Week(c tele.Context) error {
-	// TODO:
-	return nil
+	group, err := h.uc.GetGroupScheduleByChatID(context.TODO(), c.Chat().ID)
+	if err != nil && !errors.Is(err, userRepo.ErrUserNotFound) {
+		slog.Error("error getting user's group by chat_id", "chat_id", c.Chat().ID)
+		return c.Send("Ошибка при получении группы, попробуйте позже")
+	}
+
+	if errors.Is(err, userRepo.ErrUserNotFound) {
+		slog.Warn("user's group not found", "chat_id", c.Chat().ID, "err", err)
+		return c.Send("Вам необходимо установить группу через /setgroup или использовать /group 00")
+	}
+
+	msg := formatScheduleWeek(group)
+	return c.Send(msg)
 }
 
 func (h *Handler) Day(c tele.Context) error {
-	// TODO:
-	return nil
+	group, err := h.uc.GetGroupScheduleByChatID(context.TODO(), c.Chat().ID)
+	if err != nil && !errors.Is(err, userRepo.ErrUserNotFound) {
+		slog.Error("error getting user's group by chat_id", "chat_id", c.Chat().ID)
+		return c.Send("Ошибка при получении группы, попробуйте позже")
+	}
+
+	if errors.Is(err, userRepo.ErrUserNotFound) {
+		slog.Warn("user's group not found", "chat_id", c.Chat().ID, "err", err)
+		return c.Send("Вам необходимо установить группу через /setgroup или использовать /group 00")
+	}
+
+	msg := formatScheduleDay(group)
+	return c.Send(msg)
 }
 
 func (h *Handler) Calls(c tele.Context) error {
