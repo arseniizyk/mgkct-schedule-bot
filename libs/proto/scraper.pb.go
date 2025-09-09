@@ -4,6 +4,13 @@
 // 	protoc        v3.21.12
 // source: scraper.proto
 
+// protoc \
+//   --go_out=. \
+//   --go-grpc_out=. \
+//   --go_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
+//   --go-grpc_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
+//   scraper.proto
+
 package scraperpb
 
 import (
@@ -171,9 +178,8 @@ func (x *Day) GetSubjects() []*Subject {
 
 type Subject struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Class         string                 `protobuf:"bytes,2,opt,name=class,proto3" json:"class,omitempty"`
-	Empty         bool                   `protobuf:"varint,3,opt,name=empty,proto3" json:"empty,omitempty"`
+	Pairs         []*Pair                `protobuf:"bytes,1,rep,name=pairs,proto3" json:"pairs,omitempty"`
+	Empty         bool                   `protobuf:"varint,2,opt,name=empty,proto3" json:"empty,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -208,18 +214,11 @@ func (*Subject) Descriptor() ([]byte, []int) {
 	return file_scraper_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *Subject) GetName() string {
+func (x *Subject) GetPairs() []*Pair {
 	if x != nil {
-		return x.Name
+		return x.Pairs
 	}
-	return ""
-}
-
-func (x *Subject) GetClass() string {
-	if x != nil {
-		return x.Class
-	}
-	return ""
+	return nil
 }
 
 func (x *Subject) GetEmpty() bool {
@@ -227,6 +226,74 @@ func (x *Subject) GetEmpty() bool {
 		return x.Empty
 	}
 	return false
+}
+
+type Pair struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Teacher       string                 `protobuf:"bytes,3,opt,name=teacher,proto3" json:"teacher,omitempty"`
+	Class         string                 `protobuf:"bytes,4,opt,name=class,proto3" json:"class,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Pair) Reset() {
+	*x = Pair{}
+	mi := &file_scraper_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Pair) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Pair) ProtoMessage() {}
+
+func (x *Pair) ProtoReflect() protoreflect.Message {
+	mi := &file_scraper_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Pair.ProtoReflect.Descriptor instead.
+func (*Pair) Descriptor() ([]byte, []int) {
+	return file_scraper_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Pair) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Pair) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *Pair) GetTeacher() string {
+	if x != nil {
+		return x.Teacher
+	}
+	return ""
+}
+
+func (x *Pair) GetClass() string {
+	if x != nil {
+		return x.Class
+	}
+	return ""
 }
 
 var File_scraper_proto protoreflect.FileDescriptor
@@ -241,11 +308,15 @@ const file_scraper_proto_rawDesc = "" +
 	"\x03day\x18\x02 \x03(\v2\f.scraper.DayR\x03day\"G\n" +
 	"\x03Day\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12,\n" +
-	"\bsubjects\x18\x02 \x03(\v2\x10.scraper.SubjectR\bsubjects\"I\n" +
-	"\aSubject\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05class\x18\x02 \x01(\tR\x05class\x12\x14\n" +
-	"\x05empty\x18\x03 \x01(\bR\x05empty2d\n" +
+	"\bsubjects\x18\x02 \x03(\v2\x10.scraper.SubjectR\bsubjects\"D\n" +
+	"\aSubject\x12#\n" +
+	"\x05pairs\x18\x01 \x03(\v2\r.scraper.PairR\x05pairs\x12\x14\n" +
+	"\x05empty\x18\x02 \x01(\bR\x05empty\"^\n" +
+	"\x04Pair\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x18\n" +
+	"\ateacher\x18\x03 \x01(\tR\ateacher\x12\x14\n" +
+	"\x05class\x18\x04 \x01(\tR\x05class2d\n" +
 	"\x0fScheduleService\x12Q\n" +
 	"\x10GetGroupSchedule\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponseB?Z=github.com/arseniizyk/mgkct-schedule-bot/libs/proto;scraperpbb\x06proto3"
 
@@ -261,23 +332,25 @@ func file_scraper_proto_rawDescGZIP() []byte {
 	return file_scraper_proto_rawDescData
 }
 
-var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_scraper_proto_goTypes = []any{
 	(*GroupScheduleRequest)(nil),  // 0: scraper.GroupScheduleRequest
 	(*GroupScheduleResponse)(nil), // 1: scraper.GroupScheduleResponse
 	(*Day)(nil),                   // 2: scraper.Day
 	(*Subject)(nil),               // 3: scraper.Subject
+	(*Pair)(nil),                  // 4: scraper.Pair
 }
 var file_scraper_proto_depIdxs = []int32{
 	2, // 0: scraper.GroupScheduleResponse.day:type_name -> scraper.Day
 	3, // 1: scraper.Day.subjects:type_name -> scraper.Subject
-	0, // 2: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
-	1, // 3: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 2: scraper.Subject.pairs:type_name -> scraper.Pair
+	0, // 3: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
+	1, // 4: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
+	4, // [4:5] is the sub-list for method output_type
+	3, // [3:4] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_scraper_proto_init() }
@@ -291,7 +364,7 @@ func file_scraper_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scraper_proto_rawDesc), len(file_scraper_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

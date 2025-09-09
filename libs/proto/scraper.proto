@@ -31,7 +31,13 @@ message Day {
 }
 
 message Subject {
+    repeated Pair pairs = 1;
+    bool empty = 2;
+}
+
+message Pair {
     string name = 1;
-    string class = 2;
-    bool empty = 3;
+    string type = 2;
+    string teacher = 3;
+    string class = 4;
 }
