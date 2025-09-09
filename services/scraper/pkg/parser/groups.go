@@ -1,16 +1,24 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/gocolly/colly"
 )
 
+var ErrBadGroup = errors.New("кол группа")
+
 func parseGroup(text string) (int, error) {
+	if strings.Contains(text, "Кол") || strings.Contains(text, "кол") {
+		return 0, ErrBadGroup
+	}
+
 	r := regexp.MustCompile(`\d+`)
 	matched := r.FindString(text)
 	if matched == "" {

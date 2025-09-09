@@ -12,6 +12,8 @@ type Parser struct {
 
 func New() *Parser {
 	return &Parser{
-		c: colly.NewCollector(),
+		c: colly.NewCollector(
+			colly.AllowURLRevisit(),
+		),
 	}
 }
