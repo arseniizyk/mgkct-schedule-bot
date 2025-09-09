@@ -15,7 +15,13 @@ type Day struct {
 }
 
 type Subject struct {
-	Name    string `json:"name"`
-	Class   string `json:"class"`
+	Pairs   []Pair `json:"pairs"`
 	IsEmpty bool   `json:"empty"`
+}
+
+type Pair struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Teacher string `json:"teacher"`
+	Class   string `json:"class,omitempty"`
 }

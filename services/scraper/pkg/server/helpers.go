@@ -23,10 +23,24 @@ func fillSubjects(subjects []models.Subject) []*pb.Subject {
 	res := make([]*pb.Subject, len(subjects))
 
 	for i, s := range subjects {
+		if s.IsEmpty {
+			res[i] = &pb.Subject{Empty: true}
+			continue
+		}
+
+		pairs := make([]*pb.Pair, len(s.Pairs))
+		for j, p := range s.Pairs {
+			pairs[j] = &pb.Pair{
+				Name:    p.Name,
+				Type:    p.Type,
+				Class:   p.Class,
+				Teacher: p.Teacher,
+			}
+		}
+
 		res[i] = &pb.Subject{
-			Name:  s.Name,
-			Class: s.Class,
-			Empty: s.IsEmpty,
+			Pairs: pairs,
+			Empty: false,
 		}
 	}
 

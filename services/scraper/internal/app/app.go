@@ -12,15 +12,15 @@ import (
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/crawler"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/server"
 	"google.golang.org/grpc"
 )
 
 type App struct {
-	cfg      *config.Config
-	crawlSvc *crawler.Crawler
-	lis      net.Listener
+	cfg    *config.Config
+	parser *parser.Parser
+	lis    net.Listener
 }
 
 func New() (*App, error) {
@@ -36,17 +36,17 @@ func New() (*App, error) {
 		return nil, err
 	}
 
-	crawlSvc := crawler.New()
+	parser := parser.New()
 
 	return &App{
-		cfg:      cfg,
-		crawlSvc: crawlSvc,
-		lis:      lis,
+		cfg:    cfg,
+		parser: parser,
+		lis:    lis,
 	}, nil
 }
 
 func (a *App) Run() error {
-	schedule, err := a.crawlSvc.Crawl()
+	schedule, err := a.parser.Parse()
 	if err != nil {
 		slog.Error("crawing error:", "err", err)
 		return err
@@ -58,7 +58,7 @@ func (a *App) Run() error {
 
 	httpSrv := server.NewHTTPServer(schedule, a.cfg.HttpPort)
 	grpcServer := grpc.NewServer()
-	
+
 	a.startGRPC(schedule, grpcServer)
 	httpSrv.Start()
 
