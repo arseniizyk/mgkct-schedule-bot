@@ -46,11 +46,22 @@ func New() (*App, error) {
 }
 
 func (a *App) Run() error {
-	schedule, err := a.parser.Parse()
-	if err != nil {
-		slog.Error("crawing error:", "err", err)
-		return err
-	}
+	var schedule *models.Schedule
+	var err error
+
+	go func() {
+		tick := time.NewTicker(10 * time.Second)
+
+		for range tick.C {
+			start := time.Now()
+			slog.Info("parsing")
+			schedule, err = a.parser.Parse()
+			if err != nil {
+				slog.Error("parsing error:", "err", err)
+			}
+			slog.Info("parsed", "duration", time.Since(start))
+		}
+	}()
 
 	sigChan := make(chan os.Signal, 1)
 

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -20,6 +21,10 @@ func (c *Parser) Parse() (*models.Schedule, error) {
 	c.c.OnHTML("h2", func(e *colly.HTMLElement) {
 		groupNum, err := parseGroup(e.Text)
 		if err != nil {
+			if errors.Is(err, ErrBadGroup) {
+				return
+			}
+
 			slog.Error("can't get group from h2", "err", err)
 			return
 		}
