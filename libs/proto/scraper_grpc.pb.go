@@ -4,11 +4,17 @@
 // - protoc             v3.21.12
 // source: scraper.proto
 
+// protoc \
+//   --go_out=. \
+//   --go-grpc_out=. \
+//   --go_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
+//   --go-grpc_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
+//   scraper.proto
+
 package scraperpb
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
