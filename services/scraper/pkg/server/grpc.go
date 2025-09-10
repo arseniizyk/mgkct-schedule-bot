@@ -4,25 +4,27 @@ import (
 	"context"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type GRPCServer struct {
-	sch *models.Schedule
+	db database.DatabaseUseCase
 	pb.UnimplementedScheduleServiceServer
 }
 
-func NewGRPCServer(schedule *models.Schedule) *GRPCServer {
-	return &GRPCServer{sch: schedule}
+func NewGRPCServer(db database.DatabaseUseCase) *GRPCServer {
+	return &GRPCServer{db: db}
 }
 
 func (s *GRPCServer) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
-	group, ok := s.sch.Groups[int(req.GroupNum)]
-	if !ok {
-		return nil, status.Errorf(codes.NotFound, "group %d not found", req.GroupNum)
+	sch, err := s.db.GetLatestSchedule(context.Background())
+	if err != nil {
+		return nil, status.Errorf(codes.Unavailable, "can't get schedule")
 	}
+
+	group := sch.Groups[int(req.GroupNum)]
 
 	return &pb.GroupScheduleResponse{
 		Week: group.Week,
