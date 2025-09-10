@@ -7,26 +7,33 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 )
 
 type HTTPServer struct {
 	port string
-	sch  *models.Schedule
 	srv  *http.Server
+	db   database.DatabaseUseCase
 }
 
-func NewHTTPServer(sch *models.Schedule, port string) *HTTPServer {
+func NewHTTPServer(db database.DatabaseUseCase, port string) *HTTPServer {
 	return &HTTPServer{
 		port: port,
-		sch:  sch,
+		db:   db,
 	}
 }
 
 func (hs *HTTPServer) Start() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/schedule", func(w http.ResponseWriter, r *http.Request) {
-		handleSchedule(hs.sch, w)
+		sch, err := hs.db.GetLatestSchedule(context.Background())
+		if err != nil {
+			w.Write([]byte(err.Error()))
+			return
+		}
+
+		handleSchedule(sch, w)
 	})
 
 	httpSrv := &http.Server{

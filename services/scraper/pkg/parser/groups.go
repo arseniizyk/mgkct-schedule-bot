@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/gocolly/colly"
 )
 
@@ -34,18 +34,10 @@ func parseGroup(text string) (int, error) {
 	return group, nil
 }
 
-func parseWeek(e *colly.HTMLElement) string {
-	return cleanText(e.DOM.NextFiltered("h3").Text())
-}
+func parseWeek(e *colly.HTMLElement) time.Time {
+	layout := "02.01.2006"
 
-func parseTable(e *colly.HTMLElement) (*models.Group, error) {
-	table := e.DOM.NextAllFiltered("table").First()
-
-	week := parseWeek(e)
-	days := parseRows(table.Find("tbody tr"))
-
-	return &models.Group{
-		Week: week,
-		Days: days,
-	}, nil
+	parts := strings.Split(e.Text, " - ")
+	start, _ := time.Parse(layout, parts[0])
+	return start
 }

@@ -13,9 +13,11 @@ type Config struct {
 }
 
 func New() (*Config, error) {
-	if err := godotenv.Load("../.env"); err != nil {
-		slog.Error("can't load .env file, put in in the root of service", "err", err)
-		return nil, err
+	if os.Getenv("IS_DOCKER") == "" {
+		if err := godotenv.Load("../../.env"); err != nil {
+			slog.Error("can't load .env file, put in in the root of service", "err", err)
+			return nil, err
+		}
 	}
 
 	return &Config{

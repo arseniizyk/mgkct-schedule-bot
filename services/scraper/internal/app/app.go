@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -10,7 +12,10 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/config"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database/postgre"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/server"
@@ -18,9 +23,9 @@ import (
 )
 
 type App struct {
-	cfg    *config.Config
-	parser *parser.Parser
-	lis    net.Listener
+	cfg *config.Config
+	lis net.Listener
+	db  database.DatabaseUseCase
 }
 
 func New() (*App, error) {
@@ -36,29 +41,40 @@ func New() (*App, error) {
 		return nil, err
 	}
 
-	parser := parser.New()
-
 	return &App{
-		cfg:    cfg,
-		parser: parser,
-		lis:    lis,
+		cfg: cfg,
+		lis: lis,
+		db:  initDB(),
 	}, nil
 }
 
 func (a *App) Run() error {
 	var schedule *models.Schedule
-	var err error
+
+	defer a.db.Close()
+
+	parser := parser.New(a.db)
 
 	go func() {
-		tick := time.NewTicker(10 * time.Second)
+		tick := time.NewTicker(1 * time.Minute)
 
 		for range tick.C {
 			start := time.Now()
 			slog.Info("parsing")
-			schedule, err = a.parser.Parse()
+
+			sch, week, err := parser.Parse()
 			if err != nil {
 				slog.Error("parsing error:", "err", err)
 			}
+
+			if sch != schedule {
+				schedule = sch
+				if err := a.db.SaveSchedule(context.Background(), *week, schedule); err != nil {
+					slog.Error("can't save schedule to database", "err", err)
+					continue
+				}
+			}
+
 			slog.Info("parsed", "duration", time.Since(start))
 		}
 	}()
@@ -67,10 +83,10 @@ func (a *App) Run() error {
 
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
-	httpSrv := server.NewHTTPServer(schedule, a.cfg.HttpPort)
+	httpSrv := server.NewHTTPServer(a.db, a.cfg.HttpPort)
 	grpcServer := grpc.NewServer()
 
-	a.startGRPC(schedule, grpcServer)
+	a.startGRPC(a.db, grpcServer)
 	httpSrv.Start()
 
 	<-sigChan
@@ -81,14 +97,15 @@ func (a *App) Run() error {
 
 	httpSrv.Shutdown(ctx)
 	grpcServer.GracefulStop()
+	a.db.Close()
 
 	slog.Info("clean shutdown")
 
 	return nil
 }
 
-func (a *App) startGRPC(schedule *models.Schedule, grpcServer *grpc.Server) {
-	pb.RegisterScheduleServiceServer(grpcServer, server.NewGRPCServer(schedule))
+func (a *App) startGRPC(db database.DatabaseUseCase, grpcServer *grpc.Server) {
+	pb.RegisterScheduleServiceServer(grpcServer, server.NewGRPCServer(db))
 
 	go func() {
 		slog.Info("gRPC server started", "port", a.cfg.GRPCPort)
@@ -96,4 +113,27 @@ func (a *App) startGRPC(schedule *models.Schedule, grpcServer *grpc.Server) {
 			slog.Error("gRPC serve error", "err", err)
 		}
 	}()
+}
+
+func initDB() database.DatabaseUseCase {
+	url := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		os.Getenv("POSTGRES_USER"),
+		os.Getenv("POSTGRES_PASSWORD"),
+		os.Getenv("POSTGRES_HOST"),
+		os.Getenv("POSTGRES_PORT"),
+		os.Getenv("POSTGRES_DB"),
+		os.Getenv("POSTGRES_SSL"),
+	)
+
+	db, err := postgre.NewDatabase(url)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := db.Ping(context.Background()); err != nil {
+		log.Fatal(err)
+	}
+
+	return db
 }
