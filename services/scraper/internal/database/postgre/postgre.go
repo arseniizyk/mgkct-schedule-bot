@@ -22,7 +22,7 @@ var (
 	ErrCantConnect = errors.New("can't connect to database url")
 )
 
-func NewDatabase(url string) (database.DatabaseUseCase, error) {
+func NewDatabase(url string) (database.DatabaseRepository, error) {
 	pool, err := pgxpool.New(context.Background(), url)
 	if err != nil {
 		return nil, ErrCantConnect

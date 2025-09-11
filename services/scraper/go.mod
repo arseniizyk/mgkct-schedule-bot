@@ -5,16 +5,15 @@ go 1.25.0
 replace github.com/arseniizyk/mgkct-schedule-bot/libs/proto => ../../libs/proto
 
 require (
+	github.com/Masterminds/squirrel v1.5.4
 	github.com/PuerkitoBio/goquery v1.10.3
-	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250909193840-bc9a2a36757d
+	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250909210105-5f47944a4a64
 	github.com/gocolly/colly v1.2.0
 	github.com/joho/godotenv v1.5.1
-	google.golang.org/grpc v1.75.0
+	google.golang.org/grpc v1.75.1
 )
 
-
 require (
-	github.com/Masterminds/squirrel v1.5.4 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -31,10 +30,8 @@ require (
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/jackc/pgx v3.6.2+incompatible // indirect
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/kennygrant/sanitize v1.2.4 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d // indirect
 	github.com/temoto/robotstxt v1.1.2 // indirect
 	golang.org/x/crypto v0.42.0 // indirect

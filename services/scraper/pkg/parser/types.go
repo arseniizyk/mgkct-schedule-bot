@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
 	"github.com/gocolly/colly"
 )
 
@@ -10,13 +9,11 @@ const url = `https://mgkct.minskedu.gov.by/%D0%BF%D0%B5%D1%80%D1%81%D0%BE%D0%BD%
 var days = []string{"Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
 
 type Parser struct {
-	c  *colly.Collector
-	db database.DatabaseUseCase
+	c *colly.Collector
 }
 
-func New(db database.DatabaseUseCase) *Parser {
+func New() *Parser {
 	return &Parser{
-		c:  colly.NewCollector(colly.AllowURLRevisit()),
-		db: db,
+		c: colly.NewCollector(colly.AllowURLRevisit()),
 	}
 }
