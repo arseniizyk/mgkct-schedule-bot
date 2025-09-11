@@ -13,10 +13,12 @@ import (
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 
+	parserUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/parser/usecase"
+	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/usecase"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database/postgre"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/server"
 	"google.golang.org/grpc"
@@ -25,7 +27,7 @@ import (
 type App struct {
 	cfg *config.Config
 	lis net.Listener
-	db  database.DatabaseUseCase
+	db  database.DatabaseRepository
 }
 
 func New() (*App, error) {
@@ -49,63 +51,48 @@ func New() (*App, error) {
 }
 
 func (a *App) Run() error {
-	var schedule *models.Schedule
-
 	defer a.db.Close()
 
-	parser := parser.New(a.db)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	parserObj := parser.New()
+	parserUC := parserUC.NewParserUsecase(a.db, parserObj)
+
+	scheduleUC := scheduleUC.NewScheduleUsecase(a.db)
 
 	go func() {
-		tick := time.NewTicker(1 * time.Minute)
-
-		for range tick.C {
-			start := time.Now()
-			slog.Info("parsing")
-
-			sch, week, err := parser.Parse()
-			if err != nil {
-				slog.Error("parsing error:", "err", err)
-			}
-
-			if sch != schedule {
-				schedule = sch
-				if err := a.db.SaveSchedule(context.Background(), *week, schedule); err != nil {
-					slog.Error("can't save schedule to database", "err", err)
-					continue
-				}
-			}
-
-			slog.Info("parsed", "duration", time.Since(start))
+		ch := parserUC.GetScheduleEvery(ctx, 1*time.Minute)
+		for sch := range ch {
+			scheduleUC.SaveToCache(sch)
+			slog.Info("New schedule parsed and saved")
 		}
 	}()
 
-	sigChan := make(chan os.Signal, 1)
-
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
-
-	httpSrv := server.NewHTTPServer(a.db, a.cfg.HttpPort)
 	grpcServer := grpc.NewServer()
-
-	a.startGRPC(a.db, grpcServer)
+	httpSrv := server.NewHTTPServer(scheduleUC, a.cfg.HttpPort)
+	a.startGRPC(scheduleUC, grpcServer)
 	httpSrv.Start()
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 	<-sigChan
+
 	slog.Info("Shutting down...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctxTimeout, cancelTimeout := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelTimeout()
+	cancel()
 
-	httpSrv.Shutdown(ctx)
+	httpSrv.Shutdown(ctxTimeout)
 	grpcServer.GracefulStop()
-	a.db.Close()
 
 	slog.Info("clean shutdown")
-
 	return nil
 }
 
-func (a *App) startGRPC(db database.DatabaseUseCase, grpcServer *grpc.Server) {
-	pb.RegisterScheduleServiceServer(grpcServer, server.NewGRPCServer(db))
+func (a *App) startGRPC(schUC *scheduleUC.ScheduleUsecase, grpcServer *grpc.Server) {
+	pb.RegisterScheduleServiceServer(grpcServer, server.NewGRPCServer(schUC))
 
 	go func() {
 		slog.Info("gRPC server started", "port", a.cfg.GRPCPort)
@@ -115,7 +102,7 @@ func (a *App) startGRPC(db database.DatabaseUseCase, grpcServer *grpc.Server) {
 	}()
 }
 
-func initDB() database.DatabaseUseCase {
+func initDB() database.DatabaseRepository {
 	url := fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		os.Getenv("POSTGRES_USER"),
