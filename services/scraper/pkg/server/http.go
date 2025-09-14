@@ -6,20 +6,19 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/usecase"
 )
 
 type HTTPServer struct {
-	port       string
 	srv        *http.Server
 	scheduleUC *scheduleUC.ScheduleUsecase
 }
 
-func NewHTTPServer(schUC *scheduleUC.ScheduleUsecase, port string) *HTTPServer {
+func NewHTTPServer(schUC *scheduleUC.ScheduleUsecase) *HTTPServer {
 	return &HTTPServer{
-		port:       port,
 		scheduleUC: schUC,
 	}
 }
@@ -36,14 +35,14 @@ func (hs *HTTPServer) Start() {
 	})
 
 	httpSrv := &http.Server{
-		Addr:    ":" + hs.port,
+		Addr:    ":" + os.Getenv("HTTP_PORT"),
 		Handler: mux,
 	}
 
 	hs.srv = httpSrv
 
 	go func() {
-		slog.Info("HTTP server started", "port", hs.port)
+		slog.Info("HTTP server started", "port", os.Getenv("HTTP_PORT"))
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("http listen error", "err", err)
 		}
