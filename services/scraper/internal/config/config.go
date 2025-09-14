@@ -7,21 +7,13 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type Config struct {
-	HttpPort string
-	GRPCPort string
-}
-
-func New() (*Config, error) {
+func LoadEnv() error {
 	if os.Getenv("IS_DOCKER") == "" {
 		if err := godotenv.Load("../../.env"); err != nil {
 			slog.Error("can't load .env file, put in in the root of service", "err", err)
-			return nil, err
+			return err
 		}
 	}
 
-	return &Config{
-		HttpPort: os.Getenv("HTTP_PORT"),
-		GRPCPort: os.Getenv("GRPC_PORT"),
-	}, nil
+	return nil
 }
