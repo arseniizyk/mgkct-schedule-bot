@@ -1,17 +1,56 @@
 package parser
 
 import (
+	"fmt"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 )
 
 func cleanText(s string) string {
 	s = strings.ReplaceAll(s, "\u00a0", "")
 	return strings.TrimSpace(s)
+}
+
+func parseGroup(text string) (int, error) {
+	if strings.Contains(text, "Кол") || strings.Contains(text, "кол") {
+		return 0, ErrBadGroup
+	}
+
+	r := regexp.MustCompile(`\d+`)
+	matched := r.FindString(text)
+	if matched == "" {
+		return 0, fmt.Errorf("no digits in %q", text)
+	}
+
+	group, err := strconv.Atoi(matched)
+	if err != nil {
+		slog.Error("can't parse group to int", "text", text, "err", err)
+		return 0, err
+	}
+
+	return group, nil
+}
+
+func parseWeek(e *goquery.Selection) (time.Time, error) {
+	layout := "02.01.2006"
+
+	parts := strings.Split(e.Text(), " - ")
+	if len(parts) == 0 {
+		return time.Time{}, fmt.Errorf("invalid week string: %q", e.Text())
+	}
+
+	startStr := strings.TrimSpace(parts[0])
+	start, err := time.Parse(layout, startStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse week: %w", err)
+	}
+
+	return start, nil
 }
 
 func splitByBr(td *goquery.Selection) []string {
@@ -32,37 +71,4 @@ func splitByBr(td *goquery.Selection) []string {
 		}
 	}
 	return res
-}
-
-func parsePairs(nameParts, classParts []string) []models.Pair {
-	var pairs []models.Pair
-
-	for i := 0; i < len(nameParts); {
-		var subjectType, teacher, class string
-		name := nameParts[i]
-		i++
-
-		if i < len(nameParts) && strings.HasPrefix(nameParts[i], "(") {
-			subjectType = nameParts[i]
-			subjectType, _ = strings.CutPrefix(subjectType, "(")
-			subjectType, _ = strings.CutSuffix(subjectType, ")")
-			i++
-		}
-
-		if i < len(nameParts) {
-			teacher = nameParts[i]
-			i++
-		}
-
-		class = classParts[len(pairs)]
-
-		pairs = append(pairs, models.Pair{
-			Name:    cleanText(name),
-			Type:    cleanText(subjectType),
-			Teacher: cleanText(teacher),
-			Class:   cleanText(class),
-		})
-	}
-
-	return pairs
 }

@@ -6,38 +6,43 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
+	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/usecase"
 )
 
 type HTTPServer struct {
-	port string
-	sch  *models.Schedule
-	srv  *http.Server
+	srv        *http.Server
+	scheduleUC *scheduleUC.ScheduleUsecase
 }
 
-func NewHTTPServer(sch *models.Schedule, port string) *HTTPServer {
+func NewHTTPServer(schUC *scheduleUC.ScheduleUsecase) *HTTPServer {
 	return &HTTPServer{
-		port: port,
-		sch:  sch,
+		scheduleUC: schUC,
 	}
 }
 
 func (hs *HTTPServer) Start() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/schedule", func(w http.ResponseWriter, r *http.Request) {
-		handleSchedule(hs.sch, w)
+		sch, err := hs.scheduleUC.GetLatest()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		handleSchedule(sch, w)
 	})
 
 	httpSrv := &http.Server{
-		Addr:    ":" + hs.port,
+		Addr:    ":" + os.Getenv("HTTP_PORT"),
 		Handler: mux,
 	}
 
 	hs.srv = httpSrv
 
 	go func() {
-		slog.Info("HTTP server started", "port", hs.port)
+		slog.Info("HTTP server started", "port", os.Getenv("HTTP_PORT"))
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("http listen error", "err", err)
 		}
