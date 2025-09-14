@@ -4,69 +4,88 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/parser"
 )
 
 type ParserUsecase interface {
-	GetScheduleEvery(ctx context.Context, interval time.Duration) <-chan *models.Schedule
+	ParseScheduleEvery(ctx context.Context, interval time.Duration) <-chan *models.Schedule
 }
 
 type parserUsecase struct {
-	db     database.DatabaseRepository
-	parser *parser.Parser
+	schUC    schedule.ScheduleUsecase
+	parser   *parser.Parser
+	prevHash [32]byte
 }
 
-func NewParserUsecase(db database.DatabaseRepository, p *parser.Parser) ParserUsecase {
+func New(schUC schedule.ScheduleUsecase, p *parser.Parser) ParserUsecase {
 	return &parserUsecase{
-		db:     db,
+		schUC:  schUC,
 		parser: p,
 	}
 }
 
-func (p *parserUsecase) GetScheduleEvery(ctx context.Context, interval time.Duration) <-chan *models.Schedule {
+func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Duration) <-chan *models.Schedule {
 	resCh := make(chan *models.Schedule)
-	var prev [32]byte
 
 	go func() {
-		tick := time.NewTicker(1 * time.Minute)
+		tick := time.NewTicker(interval)
 		defer tick.Stop()
 		defer close(resCh)
+
+		sch, updated, err := p.parseSchedule(ctx)
+		if err == nil && updated {
+			resCh <- sch
+		}
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-tick.C:
-				start := time.Now()
-				slog.Info("parsing")
-
-				sch, week, err := p.parser.Parse()
-				if err != nil {
-					slog.Error("parsing error:", "err", err)
+				sch, updated, err := p.parseSchedule(ctx)
+				if err != nil || !updated {
 					continue
 				}
-
-				if hash(sch) != prev {
-					prev = hash(sch)
-					if err := p.db.SaveSchedule(ctx, *week, sch); err != nil {
-						slog.Error("can't save schedule to database", "err", err)
-						continue
-					}
+				if updated {
 					resCh <- sch
 				}
-
-				slog.Info("parsed", "duration", time.Since(start))
 			}
 		}
-
 	}()
 
 	return resCh
+}
+
+func (p *parserUsecase) parseSchedule(ctx context.Context) (*models.Schedule, bool, error) {
+	start := time.Now()
+	slog.Debug("parsing")
+	defer func() {
+		slog.Debug("parsed", "duration", time.Since(start))
+	}()
+
+	sch, week, err := p.parser.Parse()
+	if err != nil {
+		return nil, false, fmt.Errorf("parsing: %w", err)
+	}
+
+	if hash(sch) == p.prevHash { // if previous hash schedule == parsed hash schedule
+		return nil, false, nil
+	}
+
+	p.prevHash = hash(sch)
+	if err := p.schUC.Save(ctx, *week, sch); err != nil {
+		return nil, false, fmt.Errorf("save to db: %w", err)
+	}
+
+	return sch, true, nil
+
 }
 
 func hash(sch *models.Schedule) [32]byte {

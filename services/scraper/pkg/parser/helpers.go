@@ -14,8 +14,6 @@ func cleanText(s string) string {
 	return strings.TrimSpace(s)
 }
 
-
-
 func splitByBr(td *goquery.Selection) []string {
 	html, err := td.Html()
 	if err != nil {
