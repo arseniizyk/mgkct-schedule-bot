@@ -2,18 +2,23 @@ package usecase
 
 import (
 	"context"
+	"fmt"
+	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/repository"
 )
 
 type ScheduleUsecase struct {
-	db    database.DatabaseRepository
+	repo  repository.ScheduleRepository
 	cache *models.Schedule
 }
 
-func NewScheduleUsecase(db database.DatabaseRepository) *ScheduleUsecase {
-	return &ScheduleUsecase{db: db}
+func New(repo repository.ScheduleRepository) *ScheduleUsecase {
+	return &ScheduleUsecase{
+		repo:  repo,
+		cache: nil,
+	}
 }
 
 func (s *ScheduleUsecase) GetLatest() (*models.Schedule, error) {
@@ -21,9 +26,9 @@ func (s *ScheduleUsecase) GetLatest() (*models.Schedule, error) {
 		return s.cache, nil
 	}
 
-	sch, err := s.db.GetLatestSchedule(context.Background())
+	sch, err := s.repo.GetLatest(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("usecase: get latest schedule: %w", err)
 	}
 
 	s.cache = sch
@@ -32,4 +37,8 @@ func (s *ScheduleUsecase) GetLatest() (*models.Schedule, error) {
 
 func (s *ScheduleUsecase) SaveToCache(sch *models.Schedule) {
 	s.cache = sch
+}
+
+func (s *ScheduleUsecase) Save(ctx context.Context, week time.Time, sch *models.Schedule) error {
+	return s.repo.Save(ctx, week, sch)
 }
