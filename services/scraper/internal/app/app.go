@@ -10,88 +10,93 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+
+	parserUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/parser/usecase"
+	scheduleRepo "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/repository/postgres"
+	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/usecase"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/config"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/server"
 	"google.golang.org/grpc"
 )
 
 type App struct {
-	cfg    *config.Config
-	parser *parser.Parser
-	lis    net.Listener
+	lis net.Listener
+	db  *database.Database
 }
 
 func New() (*App, error) {
-	cfg, err := config.New()
-	if err != nil {
+	if err := config.LoadEnv(); err != nil {
 		slog.Error("can't load cfg", "err", err)
 		return nil, err
 	}
 
-	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
+	lis, err := net.Listen("tcp", ":"+os.Getenv("GRPC_PORT"))
 	if err != nil {
-		slog.Error("can't load gRPC listener", "err", err)
+		slog.Error("can't start net listener for GRPC", "err", err)
 		return nil, err
 	}
 
-	parser := parser.New()
+	db, err := database.New()
+	if err != nil {
+		slog.Error("can't connect to database", "err", err)
+		return nil, err
+	}
 
 	return &App{
-		cfg:    cfg,
-		parser: parser,
-		lis:    lis,
+		lis: lis,
+		db:  db,
 	}, nil
 }
 
 func (a *App) Run() error {
-	var schedule *models.Schedule
-	var err error
+	defer a.db.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	parserObj := parser.New()
+	scheduleRepo := scheduleRepo.New(a.db.Pool)
+	scheduleUC := scheduleUC.New(scheduleRepo)
+	parserUC := parserUC.New(scheduleUC, parserObj)
 
 	go func() {
-		tick := time.NewTicker(10 * time.Second)
-
-		for range tick.C {
-			start := time.Now()
-			slog.Info("parsing")
-			schedule, err = a.parser.Parse()
-			if err != nil {
-				slog.Error("parsing error:", "err", err)
-			}
-			slog.Info("parsed", "duration", time.Since(start))
+		scheduleCh := parserUC.ParseScheduleEvery(ctx, 1*time.Minute)
+		for sch := range scheduleCh {
+			scheduleUC.SaveToCache(sch)
+			slog.Info("New schedule parsed and saved")
 		}
 	}()
 
-	sigChan := make(chan os.Signal, 1)
-
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
-
-	httpSrv := server.NewHTTPServer(schedule, a.cfg.HttpPort)
 	grpcServer := grpc.NewServer()
-
-	a.startGRPC(schedule, grpcServer)
+	httpSrv := server.NewHTTPServer(scheduleUC)
+	a.startGRPC(scheduleUC, grpcServer)
 	httpSrv.Start()
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 	<-sigChan
+
 	slog.Info("Shutting down...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ctxTimeout, cancelTimeout := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelTimeout()
+	cancel()
 
-	httpSrv.Shutdown(ctx)
+	httpSrv.Shutdown(ctxTimeout)
 	grpcServer.GracefulStop()
 
 	slog.Info("clean shutdown")
-
 	return nil
 }
 
-func (a *App) startGRPC(schedule *models.Schedule, grpcServer *grpc.Server) {
-	pb.RegisterScheduleServiceServer(grpcServer, server.NewGRPCServer(schedule))
+func (a *App) startGRPC(schUC *scheduleUC.ScheduleUsecase, grpcServer *grpc.Server) {
+	pb.RegisterScheduleServiceServer(grpcServer, server.NewGRPCServer(schUC))
 
 	go func() {
-		slog.Info("gRPC server started", "port", a.cfg.GRPCPort)
+		slog.Info("gRPC server started", "port", "GRPC_PORT")
 		if err := grpcServer.Serve(a.lis); err != nil {
 			slog.Error("gRPC serve error", "err", err)
 		}

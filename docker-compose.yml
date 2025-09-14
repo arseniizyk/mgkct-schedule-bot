@@ -1,0 +1,40 @@
+services:
+    scraper:
+        build:
+            context: .
+            dockerfile: services/scraper/Dockerfile
+        container_name: scraper
+        command: ./scraper
+        env_file:
+            - .env
+        depends_on:
+            postgres:
+                condition: service_healthy
+        restart: always
+        ports:
+            - '${GRPC_PORT:-8000}:${GRPC_PORT:-8000}'
+            - '${HTTP_PORT:-9001}:${HTTP_PORT:-9001}'
+        environment:
+            - IS_DOCKER=true
+
+    postgres:
+        image: postgres
+        container_name: scraper-postgres
+        restart: always
+        volumes:
+            - ./migrations/:/docker-entrypoint-initdb.d/
+        env_file:
+            - .env
+        ports:
+            - '5433:5432'
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
+            interval: 3s
+            timeout: 3s
+            retries: 5
+
+    adminer:
+        image: adminer
+        restart: always
+        ports:
+            - '8080:8080'
