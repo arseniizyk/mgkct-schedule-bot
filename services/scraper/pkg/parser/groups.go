@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gocolly/colly"
+	"github.com/PuerkitoBio/goquery"
 )
 
 var ErrBadGroup = errors.New("кол группа")
@@ -34,10 +34,19 @@ func parseGroup(text string) (int, error) {
 	return group, nil
 }
 
-func parseWeek(e *colly.HTMLElement) time.Time {
+func parseWeek(e *goquery.Selection) (time.Time, error) {
 	layout := "02.01.2006"
 
-	parts := strings.Split(e.Text, " - ")
-	start, _ := time.Parse(layout, parts[0])
-	return start
+	parts := strings.Split(e.Text(), " - ")
+	if len(parts) == 0 {
+		return time.Time{}, fmt.Errorf("invalid week string: %q", e.Text())
+	}
+
+	startStr := strings.TrimSpace(parts[0])
+	start, err := time.Parse(layout, startStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse week: %w", err)
+	}
+
+	return start.Truncate(24 * time.Hour), nil
 }
