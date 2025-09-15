@@ -1,4 +1,19 @@
 services:
+    tg-bot:
+        build:
+            context: .
+            dockerfile: services/tg-bot/Dockerfile
+        container_name: tg-bot
+        command: ./tg-bot
+        env_file:
+            - .env
+        depends_on:
+            - scraper
+        restart: unless-stopped
+        environment:
+            - IS_DOCKER=true
+            - GRPC_ADDR=scraper:${GRPC_PORT}
+
     scraper:
         build:
             context: .
@@ -12,8 +27,8 @@ services:
                 condition: service_healthy
         restart: always
         ports:
-            - '${GRPC_PORT:-8000}:${GRPC_PORT:-8000}'
-            - '${HTTP_PORT:-9001}:${HTTP_PORT:-9001}'
+            - '${GRPC_PORT:-9001}:${GRPC_PORT:-9001}'
+            - '${HTTP_PORT:-8000}:${HTTP_PORT:-8000}'
         environment:
             - IS_DOCKER=true
 
