@@ -54,8 +54,7 @@ func (repo *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (
 	}
 
 	var raw []byte
-	err = repo.pool.QueryRow(ctx, sql, args...).Scan(&raw)
-	if err != nil {
+	if err := repo.pool.QueryRow(ctx, sql, args...).Scan(&raw); err != nil {
 		return nil, fmt.Errorf("repo: get schedule: %w", err)
 	}
 
