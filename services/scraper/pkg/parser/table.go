@@ -49,6 +49,10 @@ func parsePairs(nameParts, classParts []string) []models.Pair {
 		name := nameParts[i]
 		i++
 
+		if len(name) > 3 && name[1] == '.' {
+			name = name[:2] + " " + name[2:]
+		}
+
 		if i < len(nameParts) && strings.HasPrefix(nameParts[i], "(") {
 			subjectType = nameParts[i]
 			subjectType, _ = strings.CutPrefix(subjectType, "(")
