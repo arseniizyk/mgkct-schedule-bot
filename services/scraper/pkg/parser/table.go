@@ -62,6 +62,7 @@ func parsePairs(nameParts, classParts []string) []models.Pair {
 		}
 
 		class = classParts[len(pairs)]
+		class = strings.ReplaceAll(class, "(к)", "")
 
 		pairs = append(pairs, models.Pair{
 			Name:    cleanText(name),
