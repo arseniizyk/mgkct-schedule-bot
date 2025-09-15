@@ -8,12 +8,12 @@ import (
 )
 
 func main() {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+
 	app, err := app.New()
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

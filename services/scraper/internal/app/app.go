@@ -45,6 +45,11 @@ func New() (*App, error) {
 		return nil, err
 	}
 
+	if err := db.Ping(context.Background()); err != nil {
+		slog.Error("bad ping to DB", "err", err)
+		return nil, err
+	}
+
 	return &App{
 		lis: lis,
 		db:  db,
