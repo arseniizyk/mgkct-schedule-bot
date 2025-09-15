@@ -2,6 +2,8 @@ module github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot
 
 go 1.25.0
 
+replace github.com/arseniizyk/mgkct-schedule-bot/libs/proto => ../../libs/proto
+
 require (
 	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250903204728-9e1c94e1aa27
 	github.com/joho/godotenv v1.5.1

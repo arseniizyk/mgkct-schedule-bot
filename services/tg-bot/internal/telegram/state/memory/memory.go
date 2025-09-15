@@ -3,7 +3,7 @@ package memory
 import (
 	"sync"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/state"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 )
 
 type Memory struct {
