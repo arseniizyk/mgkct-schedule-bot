@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/config"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/database"
 
 	scheduleTransport "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/transport"
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/usecase"
@@ -15,23 +17,38 @@ import (
 	tbotUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	tele "gopkg.in/telebot.v4"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 type App struct {
+	db *database.Database
 }
 
-func New() *App {
-	return &App{}
+func New() (*App, error) {
+	if err := config.LoadEnv(); err != nil {
+		slog.Error("can't load cfg", "err", err)
+		return nil, err
+	}
+
+	db, err := database.New()
+	if err != nil {
+		slog.Error("can't connect to DB", "err", err)
+		return nil, err
+	}
+
+	if err := db.Ping(context.Background()); err != nil {
+		slog.Error("bad ping to DB", "err", err)
+		return nil, err
+	}
+
+	return &App{
+		db: db,
+	}, nil
 }
 
 func (a *App) Run() error {
-	if err := config.LoadEnv(); err != nil {
-		slog.Error("can't load cfg", "err", err)
-		return err
-	}
+	defer a.db.Close()
 
 	grpcUrl := os.Getenv("GRPC_ADDR")
 	if grpcUrl == "" {
@@ -52,7 +69,7 @@ func (a *App) Run() error {
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
 	}
 
-	userRepo := tbotRepo.NewUserRepo(&pgxpool.Pool{}) // TODO: init pgx pool
+	userRepo := tbotRepo.New(a.db.Pool)
 	userUC := tbotUC.New(scheduleUC, userRepo)
 
 	h := tbot.NewHandler(userUC)

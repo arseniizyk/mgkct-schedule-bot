@@ -64,9 +64,9 @@ func formatSubjects(subjects []*pb.Subject) string {
 		sb.WriteString(fmt.Sprintf("%d:\n", i+1))
 		for j, p := range pairs {
 			if j == len(pairs)-1 { // if last pair in subject
-				sb.WriteString("└── ")
+				sb.WriteString("└─ ")
 			} else {
-				sb.WriteString("├── ")
+				sb.WriteString("├─ ")
 			}
 			sb.WriteString(fmt.Sprintf("%s | %s | %s", p.Name, p.Type, p.Teacher))
 			sb.WriteString(formatClass(p.Class))
