@@ -7,7 +7,7 @@ replace github.com/arseniizyk/mgkct-schedule-bot/libs/proto => ../../libs/proto
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/PuerkitoBio/goquery v1.10.3
-	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250909210105-5f47944a4a64
+	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250914140939-ac69e5c1e9d3
 	github.com/gocolly/colly v1.2.0
 	github.com/joho/godotenv v1.5.1
 	google.golang.org/grpc v1.75.1
