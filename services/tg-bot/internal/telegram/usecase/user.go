@@ -6,35 +6,28 @@ import (
 	"fmt"
 	"log/slog"
 
-	scraperpb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
 )
 
-type UserUseCase interface {
-	SaveUser(ctx context.Context, u *models.User) error
-	SetUserGroup(ctx context.Context, chatID int64, groupID int) error
-	GetUserGroup(ctx context.Context, chatID int64) (string, error) // TODO: model for group
-	GetGroupScheduleByID(ctx context.Context, groupID int) (*scraperpb.GroupScheduleResponse, error)
-	GetGroupScheduleByChatID(ctx context.Context, chatID int64) (*scraperpb.GroupScheduleResponse, error)
-}
-
-type userUC struct {
+type UserUsecase struct {
 	repo       repository.UserRepository
-	scheduleUC schedule.ScheduleUseCase
+	scheduleUC schedule.ScheduleUsecase
 }
 
-func NewUserUseCase(scheduleUC schedule.ScheduleUseCase, repo repository.UserRepository) UserUseCase {
-	return &userUC{
+func New(scheduleUC schedule.ScheduleUsecase, repo repository.UserRepository) telegram.UserUsecase {
+	return &UserUsecase{
 		repo:       repo,
 		scheduleUC: scheduleUC,
 	}
 }
 
-func (uc *userUC) SaveUser(ctx context.Context, u *models.User) error {
+func (uc *UserUsecase) SaveUser(ctx context.Context, u *models.User) error {
 	if err := uc.repo.SaveUser(ctx, u); err != nil {
 		return err
 	}
@@ -42,7 +35,7 @@ func (uc *userUC) SaveUser(ctx context.Context, u *models.User) error {
 	return nil
 }
 
-func (uc *userUC) SetUserGroup(ctx context.Context, chatID int64, groupID int) error {
+func (uc *UserUsecase) SetUserGroup(ctx context.Context, chatID int64, groupID int) error {
 	if err := uc.repo.SetUserGroup(ctx, chatID, groupID); err != nil {
 		slog.Error("can't save group", "chat_id", chatID, "groupID", groupID, "err", err)
 		return err
@@ -51,7 +44,7 @@ func (uc *userUC) SetUserGroup(ctx context.Context, chatID int64, groupID int) e
 	return nil
 }
 
-func (uc *userUC) GetUserGroup(ctx context.Context, chatID int64) (string, error) {
+func (uc *UserUsecase) GetUserGroup(ctx context.Context, chatID int64) (string, error) {
 	_, err := uc.repo.GetUserGroup(ctx, chatID)
 	if err != nil {
 		slog.Error("can't get user group", "chat_id", chatID, "err", err)
@@ -61,11 +54,11 @@ func (uc *userUC) GetUserGroup(ctx context.Context, chatID int64) (string, error
 	return "", nil
 }
 
-func (uc *userUC) GetGroupScheduleByID(ctx context.Context, groupID int) (*scraperpb.GroupScheduleResponse, error) {
+func (uc *UserUsecase) GetGroupScheduleByID(ctx context.Context, groupID int) (*pb.GroupScheduleResponse, error) {
 	return uc.scheduleUC.GetGroupSchedule(ctx, groupID)
 }
 
-func (uc *userUC) GetGroupScheduleByChatID(ctx context.Context, chatID int64) (*scraperpb.GroupScheduleResponse, error) {
+func (uc *UserUsecase) GetGroupScheduleByChatID(ctx context.Context, chatID int64) (*pb.GroupScheduleResponse, error) {
 	groupID, err := uc.repo.GetUserGroup(ctx, chatID)
 	if err != nil {
 		if errors.Is(err, postgres.ErrUserNotFound) {
