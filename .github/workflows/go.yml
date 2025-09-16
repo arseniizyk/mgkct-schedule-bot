@@ -25,14 +25,14 @@ jobs:
       run: go mod download
 
     - name: Build scraper
-      run: go build -v ./cmd/main.go
+      run: go build -v ./services/scraper/cmd/main.go
 
     - name: Tg-bot dependencies
       working-directory: ./services/tg-bot
       run: go mod download
       
     - name: Build tg-bot
-      run: go build -v ./cmd/main.go
+      run: go build -v ./services/tg-bot/cmd/main.go
 
     # - name: Test
     #   run: go test -v ./...
