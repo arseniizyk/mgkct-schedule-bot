@@ -5,8 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"time"
 
-	scraperpb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	userRepo "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
 	tele "gopkg.in/telebot.v4"
 
@@ -14,12 +15,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
-)
-
-const (
-	errInternal   = "Внутренняя ошибка, попробуйте позже."
-	msgGroupSaved = "Группа успешно сохранена"
-	msgCancelled  = "Действие отменено"
 )
 
 type Handler struct {
@@ -101,7 +96,7 @@ func (h *Handler) Group(c tele.Context) error {
 	if err != nil {
 		return c.Send(errInternal)
 	}
-	return c.Send(formatScheduleDay(group.Day[Day()]), tele.ModeMarkdown)
+	return h.handleEndTime(c, group)
 }
 
 func (h *Handler) Week(c tele.Context) error {
@@ -117,7 +112,7 @@ func (h *Handler) Day(c tele.Context) error {
 	if err != nil {
 		return c.Send(err.Error())
 	}
-	return c.Send(formatScheduleDay(group.Day[Day()]), tele.ModeMarkdown)
+	return h.handleEndTime(c, group)
 }
 
 func (h *Handler) Calls(c tele.Context) error {
@@ -156,7 +151,35 @@ func (h *Handler) HandleState(c tele.Context) error {
 	}
 }
 
-func (h *Handler) getGroupSchedule(c tele.Context) (*scraperpb.GroupScheduleResponse, error) {
+func (h *Handler) handleEndTime(c tele.Context, group *pb.GroupScheduleResponse) error {
+	day := group.Day[Day()]
+
+	var lastSubject int
+	for i := len(day.Subjects) - 1; i >= 0; i-- {
+		if !day.Subjects[i].Empty {
+			lastSubject = i
+			break
+		}
+	}
+
+	now := time.Now()
+
+	var endTime [2]int
+
+	if Day() == 5 {
+		endTime = weekendTimeEnd[lastSubject]
+	} else {
+		endTime = weekdaysTimeEnd[lastSubject]
+	}
+
+	if now.Hour() > endTime[0] || (now.Hour() == endTime[0] && now.Minute() >= weekdaysTimeEnd[lastSubject][1]) {
+		return c.Send(formatScheduleDay(group.Day[Day(1)]), tele.ModeMarkdown)
+	}
+
+	return c.Send(formatScheduleDay(group.Day[Day()]), tele.ModeMarkdown)
+}
+
+func (h *Handler) getGroupSchedule(c tele.Context) (*pb.GroupScheduleResponse, error) {
 	if groupID, ok := inputNum(c); ok {
 		group, err := h.uc.GetGroupScheduleByID(context.Background(), groupID)
 		if err != nil {
