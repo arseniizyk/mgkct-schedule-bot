@@ -4,35 +4,36 @@
 name: Go
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    push:
+        branches: ['main']
+    pull_request:
+        branches: ['main']
 
 jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: Set up Go
+              uses: actions/setup-go@v4
+              with:
+                  go-version: '1.25'
 
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.25'
+            - name: Scraper dependencies
+              working-directory: ./services/scraper
+              run: go mod download
 
-    - name: Scraper dependencies
-      working-directory: ./services/scraper
-      run: go mod download
+            - name: Build scraper
+              working-directory: ./services/scraper
+              run: go build -v ./cmd/main.go
 
-    - name: Build scraper
-      run: go build -v ./services/scraper/cmd/main.go
+            - name: Tg-bot dependencies
+              working-directory: ./services/tg-bot
+              run: go mod download
 
-    - name: Tg-bot dependencies
-      working-directory: ./services/tg-bot
-      run: go mod download
-      
-    - name: Build tg-bot
-      run: go build -v ./services/tg-bot/cmd/main.go
+            - name: Build tg-bot
+              working-directory: ./services/tg-bot
+              run: go build -v ./cmd/main.go
 
-    # - name: Test
-    #   run: go test -v ./...
+        # - name: Test
+        #   run: go test -v ./...
