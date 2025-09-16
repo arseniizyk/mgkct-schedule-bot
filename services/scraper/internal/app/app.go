@@ -115,7 +115,9 @@ func (a *App) shutdown(ctx context.Context) error {
 	ctxTimeout, cancelTimeout := context.WithTimeout(ctx, 2*time.Second)
 	defer cancelTimeout()
 
-	a.httpSrv.Shutdown(ctxTimeout)
+	if err := a.httpSrv.Shutdown(ctxTimeout); err != nil {
+		return err
+	}
 	a.grpcServer.GracefulStop()
 
 	slog.Info("clean shutdown")

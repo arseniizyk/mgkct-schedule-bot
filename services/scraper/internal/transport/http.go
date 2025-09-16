@@ -67,5 +67,7 @@ func handleSchedule(sch *models.Schedule, w http.ResponseWriter) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(b)
+	if _, err := w.Write(b); err != nil {
+		slog.Error("write response to HTTP request", "err", err)
+	}
 }
