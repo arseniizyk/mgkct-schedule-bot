@@ -5,13 +5,13 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 )
 
-func fillDays(days []models.Day) []*pb.Day {
+func daysToProto(days []models.Day) []*pb.Day {
 	res := make([]*pb.Day, len(days))
 
 	for i, d := range days {
 		pbDay := &pb.Day{
 			Name:     d.Name,
-			Subjects: fillSubjects(d.Subjects),
+			Subjects: subjectsToProto(d.Subjects),
 		}
 		res[i] = pbDay
 	}
@@ -19,7 +19,7 @@ func fillDays(days []models.Day) []*pb.Day {
 	return res
 }
 
-func fillSubjects(subjects []models.Subject) []*pb.Subject {
+func subjectsToProto(subjects []models.Subject) []*pb.Subject {
 	res := make([]*pb.Subject, len(subjects))
 
 	for i, s := range subjects {

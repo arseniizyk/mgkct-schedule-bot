@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
-	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/usecase"
+	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/usecase"
 )
 
 type HTTPServer struct {

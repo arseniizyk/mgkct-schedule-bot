@@ -8,7 +8,7 @@ import (
 
 	"github.com/Masterminds/squirrel"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/repository"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
