@@ -20,6 +20,9 @@ WORKDIR /app
 
 COPY --from=builder /app/scraper .
 
+# RUN echo "https://mirror.yandex.ru/mirrors/alpine/v3.22/main/" > /etc/apk/repositories && \
+#     echo "https://mirror.yandex.ru/mirrors/alpine/v3.22/community/" >> /etc/apk/repositories
+
 RUN apk add --no-cache ca-certificates
 
 EXPOSE 8000 9001
