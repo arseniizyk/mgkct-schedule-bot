@@ -152,21 +152,18 @@ func (h *Handler) HandleState(c tele.Context) error {
 }
 
 func (h *Handler) handleEndTime(c tele.Context, group *pb.GroupScheduleResponse) error {
-	day := group.Day[Day()]
+	dayIdx := Day()
+	day := group.Day[dayIdx]
 
-	var lastSubject int
-	for i := len(day.Subjects) - 1; i >= 0; i-- {
-		if !day.Subjects[i].Empty {
-			lastSubject = i
-			break
-		}
+	lastSubject := findLastSubject(day.Subjects)
+	if lastSubject == -1 { // if no pairs in day
+		return c.Send(formatScheduleDay(group.Day[Day(1)]), tele.ModeMarkdown)
 	}
 
 	now := time.Now()
 
 	var endTime [2]int
-
-	if Day() == 5 {
+	if dayIdx == 5 {
 		endTime = weekendTimeEnd[lastSubject]
 	} else {
 		endTime = weekdaysTimeEnd[lastSubject]
@@ -176,7 +173,7 @@ func (h *Handler) handleEndTime(c tele.Context, group *pb.GroupScheduleResponse)
 		return c.Send(formatScheduleDay(group.Day[Day(1)]), tele.ModeMarkdown)
 	}
 
-	return c.Send(formatScheduleDay(group.Day[Day()]), tele.ModeMarkdown)
+	return c.Send(formatScheduleDay(group.Day[dayIdx]), tele.ModeMarkdown)
 }
 
 func (h *Handler) getGroupSchedule(c tele.Context) (*pb.GroupScheduleResponse, error) {
