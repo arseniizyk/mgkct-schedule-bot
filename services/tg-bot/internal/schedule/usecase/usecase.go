@@ -6,14 +6,13 @@ import (
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/transport"
 )
 
 type ScheduleUsecase struct {
-	scraperSvc *transport.GRPCStub
+	scraperSvc pb.ScheduleServiceClient
 }
 
-func New(stub *transport.GRPCStub) schedule.ScheduleUsecase {
+func New(stub pb.ScheduleServiceClient) schedule.ScheduleUsecase {
 	return &ScheduleUsecase{stub}
 }
 

@@ -8,8 +8,8 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/database"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport"
 
-	scheduleTransport "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/transport"
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/usecase"
 
 	tbot "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery"
@@ -22,7 +22,9 @@ import (
 )
 
 type App struct {
-	db *database.Database
+	db  *database.Database
+	bot *tele.Bot
+	h   *tbot.Handler
 }
 
 func New() (*App, error) {
@@ -42,8 +44,26 @@ func New() (*App, error) {
 		return nil, err
 	}
 
+	token := os.Getenv("TELEGRAM_TOKEN")
+	if token == "" {
+		slog.Error("Provide telegram token to .env")
+		return nil, err
+	}
+
+	pref := tele.Settings{
+		Token:  token,
+		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+	}
+
+	b, err := tele.NewBot(pref)
+	if err != nil {
+		slog.Error("error creating bot", "err", err)
+		return nil, err
+	}
+
 	return &App{
-		db: db,
+		db:  db,
+		bot: b,
 	}, nil
 }
 
@@ -61,39 +81,33 @@ func (a *App) Run() error {
 		return err
 	}
 
-	scheduleStub := scheduleTransport.New(conn)
-	scheduleUC := scheduleUC.New(scheduleStub)
-
-	pref := tele.Settings{
-		Token:  os.Getenv("TELEGRAM_TOKEN"),
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
-	}
+	gRPCStub := transport.New(conn)
+	scheduleUC := scheduleUC.New(gRPCStub)
 
 	userRepo := tbotRepo.New(a.db.Pool)
 	userUC := tbotUC.New(scheduleUC, userRepo)
 
 	h := tbot.NewHandler(userUC)
+	a.h = h
 
-	b, err := tele.NewBot(pref)
-	if err != nil {
-		slog.Error("error creating bot", "err", err)
-		return err
-	}
-
-	b.Use(h.LogMessages)
-
-	b.Handle(tele.OnText, h.HandleState)
-	b.Handle("/start", h.Start)
-	b.Handle("/setgroup", h.SetGroup)
-	b.Handle("/group", h.Group)
-	b.Handle("/week", h.Week)
-	b.Handle("/day", h.Day)
-	b.Handle("/calls", h.Calls)
-	b.Handle("/cancel", h.Cancel)
-
-	slog.Info("Bot started!", "username", b.Me.Username)
-
-	b.Start()
+	a.StartBot()
 
 	return nil
+}
+
+func (a *App) StartBot() {
+	a.bot.Use(a.h.LogMessages)
+
+	a.bot.Handle(tele.OnText, a.h.HandleState)
+	a.bot.Handle("/start", a.h.Start)
+	a.bot.Handle("/setgroup", a.h.SetGroup)
+	a.bot.Handle("/group", a.h.Group)
+	a.bot.Handle("/week", a.h.Week)
+	a.bot.Handle("/day", a.h.Day)
+	a.bot.Handle("/calls", a.h.Calls)
+	a.bot.Handle("/cancel", a.h.Cancel)
+
+	slog.Info("Bot started!", "username", a.bot.Me.Username)
+
+	a.bot.Start()
 }

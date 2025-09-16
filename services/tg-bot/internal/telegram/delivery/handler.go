@@ -16,6 +16,12 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
 )
 
+const (
+	errInternal   = "Внутренняя ошибка, попробуйте позже."
+	msgGroupSaved = "Группа успешно сохранена"
+	msgCancelled  = "Действие отменено"
+)
+
 type Handler struct {
 	uc telegram.UserUsecase
 	sm state.Manager
