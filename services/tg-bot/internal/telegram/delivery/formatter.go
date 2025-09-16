@@ -47,7 +47,7 @@ func formatSubjects(subjects []*pb.Subject) string {
 			if i > lastSubject {
 				break
 			}
-			sb.WriteString(fmt.Sprintf("%d: --\n", i+1))
+			sb.WriteString(fmt.Sprintf("%d: ──\n", i+1))
 			continue
 		}
 
