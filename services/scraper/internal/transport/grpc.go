@@ -4,17 +4,17 @@ import (
 	"context"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/usecase"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type GRPCServer struct {
-	scheduleUC *scheduleUC.ScheduleUsecase
+	scheduleUC schedule.ScheduleUsecase
 	pb.UnimplementedScheduleServiceServer
 }
 
-func NewGRPCServer(schUC *scheduleUC.ScheduleUsecase) *GRPCServer {
+func NewGRPCServer(schUC schedule.ScheduleUsecase) *GRPCServer {
 	return &GRPCServer{scheduleUC: schUC}
 }
 
@@ -27,6 +27,6 @@ func (s *GRPCServer) GetGroupSchedule(ctx context.Context, req *pb.GroupSchedule
 	group := sch.Groups[int(req.GroupNum)]
 	return &pb.GroupScheduleResponse{
 		Week: group.Week,
-		Day:  fillDays(group.Days),
+		Day:  daysToProto(group.Days),
 	}, nil
 }

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule/repository"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
 )
 
 type ScheduleUsecase struct {

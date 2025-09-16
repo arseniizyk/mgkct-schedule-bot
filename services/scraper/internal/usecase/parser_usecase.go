@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/schedule"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/parser"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/parser"
 )
 
 type ParserUsecase interface {
@@ -24,7 +24,7 @@ type parserUsecase struct {
 	prevHash [32]byte
 }
 
-func New(schUC schedule.ScheduleUsecase, p *parser.Parser) ParserUsecase {
+func NewParserUsecase(schUC schedule.ScheduleUsecase, p *parser.Parser) ParserUsecase {
 	return &parserUsecase{
 		schUC:  schUC,
 		parser: p,
