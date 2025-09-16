@@ -34,12 +34,9 @@ func formatSubjects(subjects []*pb.Subject) string {
 	var sb strings.Builder
 	sb.Grow(len(subjects) * 80)
 
-	lastSubject := -1
-	for i := len(subjects) - 1; i >= 0; i-- {
-		if !subjects[i].Empty {
-			lastSubject = i
-			break
-		}
+	lastSubject := findLastSubject(subjects)
+	if lastSubject == -1 { // if no pairs in day
+		return "*Выходной*"
 	}
 
 	for i, subject := range subjects {
