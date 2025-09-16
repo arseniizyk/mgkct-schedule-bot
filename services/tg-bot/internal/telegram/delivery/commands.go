@@ -1,11 +1,5 @@
 package delivery
 
-const (
-	errInternal   = "Внутренняя ошибка, попробуйте позже."
-	msgGroupSaved = "Группа успешно сохранена"
-	msgCancelled  = "Действие отменено"
-)
-
 var (
 	helpMsg = `
 Список доступных команд:
