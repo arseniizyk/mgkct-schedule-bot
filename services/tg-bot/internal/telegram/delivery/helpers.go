@@ -7,9 +7,13 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
-func Day() int {
+func Day(add ...int) int {
 	day := int(time.Now().Weekday()+6) % 7
-	if day == 6 {
+	if add != nil {
+		day += add[0]
+	}
+
+	if day >= 6 {
 		day = 0
 	}
 
