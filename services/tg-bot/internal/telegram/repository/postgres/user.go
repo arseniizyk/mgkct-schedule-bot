@@ -32,7 +32,7 @@ func New(pool *pgxpool.Pool) repository.UserRepository {
 func (r *UserRepository) SaveUser(ctx context.Context, u *models.User) error {
 	query := r.sb.Insert("users").
 		Columns("chat_id", "username").
-		Values(u.ChatID, u.Username)
+		Values(u.ChatID, u.Username).Suffix("ON CONFLICT (chat_id) DO UPDATE SET username = EXCLUDED.username")
 
 	sql, args, err := query.ToSql()
 	if err != nil {
