@@ -45,7 +45,7 @@ func (h *Handler) Start(c tele.Context) error {
 		slog.Error("can't save user", "username", u.Username, "chat_id", u.ChatID, "err", err)
 	}
 
-	return c.Send(startMsg, tele.ModeMarkdown)
+	return c.Send(startMsg, tele.ModeMarkdown, tele.NoPreview)
 }
 
 func (h *Handler) SetGroup(c tele.Context) error {
