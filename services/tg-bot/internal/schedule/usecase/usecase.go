@@ -28,19 +28,19 @@ func (sch *ScheduleUsecase) GetGroupSchedule(ctx context.Context, groupID int) (
 		st, ok := status.FromError(err)
 		if !ok {
 			slog.Error("undefined error from scraper", "group_id", groupID, "err", err)
-			return nil, e.ScraperInternal
+			return nil, e.ErrScraperInternal
 		}
 
 		switch st.Code() {
 		case codes.NotFound:
 			slog.Warn("group not found from scraper", "err", st.Message(), "code", st.Code(), "group_id", groupID)
-			return nil, e.GroupNotFound
+			return nil, e.ErrGroupNotFound
 		case codes.Unavailable:
 			slog.Error("scraper unavailable", "err", st.Message(), "code", st.Code(), "group_id", groupID)
-			return nil, e.ScraperInternal
+			return nil, e.ErrScraperInternal
 		default:
 			slog.Error("undefined error from scraper", "err", st.Message(), "code", st.Code(), "group_id", groupID)
-			return nil, e.ScraperInternal
+			return nil, e.ErrScraperInternal
 		}
 	}
 

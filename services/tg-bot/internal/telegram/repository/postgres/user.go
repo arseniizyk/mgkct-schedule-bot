@@ -51,20 +51,20 @@ func (r *UserRepository) GetUserGroup(ctx context.Context, chatID int64) (int, e
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		slog.Error("repo: build to sql", "query", query, "err", err)
-		return 0, e.Internal
+		return 0, e.ErrInternal
 	}
 
 	var groupId sql.NullInt64
 	if err := r.pool.QueryRow(ctx, sqlQuery, args...).Scan(&groupId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, e.UserNoGroup
+			return 0, e.ErrUserNoGroup
 		}
 		slog.Error("repo: internal from queryRow", "query", sqlQuery, "err", err)
-		return 0, e.Internal
+		return 0, e.ErrInternal
 	}
 
 	if !groupId.Valid {
-		return 0, e.UserNoGroup
+		return 0, e.ErrUserNoGroup
 	}
 
 	return int(groupId.Int64), nil

@@ -180,11 +180,11 @@ func (h *Handler) fetchSchedule(c tele.Context) (*pb.GroupScheduleResponse, stri
 	group, err := h.getGroupSchedule(c)
 	if err != nil {
 		switch {
-		case errors.Is(err, e.GroupNotFound):
+		case errors.Is(err, e.ErrGroupNotFound):
 			return nil, msg.GroupNotFound
-		case errors.Is(err, e.UserNoGroup):
+		case errors.Is(err, e.ErrUserNoGroup):
 			return nil, msg.UserNoGroup
-		case errors.Is(err, e.BadInput):
+		case errors.Is(err, e.ErrBadInput):
 			return nil, msg.OnlyNumbers
 		default:
 			return nil, msg.Internal

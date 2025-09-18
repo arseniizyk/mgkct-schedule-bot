@@ -41,7 +41,7 @@ func inputNum(c tele.Context) (int, error) {
 
 	num, err := strconv.Atoi(c.Args()[0])
 	if err != nil {
-		return 0, e.BadInput
+		return 0, e.ErrBadInput
 	}
 
 	return num, nil
