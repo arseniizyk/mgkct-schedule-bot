@@ -3,9 +3,9 @@ package errors
 import "errors"
 
 var (
-	GroupNotFound   = errors.New("group not found")
-	UserNoGroup     = errors.New("no user's group")
-	Internal        = errors.New("internal error")
-	ScraperInternal = errors.New("scraper error")
-	BadInput        = errors.New("bad input")
+	ErrGroupNotFound   = errors.New("group not found")
+	ErrUserNoGroup     = errors.New("no user's group")
+	ErrInternal        = errors.New("internal error")
+	ErrScraperInternal = errors.New("scraper error")
+	ErrBadInput        = errors.New("bad input")
 )
