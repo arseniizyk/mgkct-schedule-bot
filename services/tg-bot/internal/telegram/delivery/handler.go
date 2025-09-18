@@ -8,7 +8,8 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	userRepo "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
+	e "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/errors"
+	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/messages"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
@@ -30,7 +31,7 @@ func NewHandler(uc telegram.UserUsecase) *Handler {
 }
 
 func (h *Handler) Help(c tele.Context) error {
-	return c.Send(helpMsg)
+	return c.Send(msg.Help)
 }
 
 func (h *Handler) Start(c tele.Context) error {
@@ -40,83 +41,82 @@ func (h *Handler) Start(c tele.Context) error {
 		Username: user.Username,
 	}
 
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
 	if err := h.uc.SaveUser(ctx, u); err != nil {
-		slog.Error("can't save user", "username", u.Username, "chat_id", u.ChatID, "err", err)
+		slog.Error("can't save user from /start", "username", u.Username, "chat_id", u.ChatID, "err", err)
 	}
 
-	return c.Send(startMsg, tele.ModeMarkdown, tele.NoPreview)
+	return c.Send(msg.Start, tele.ModeMarkdown, tele.NoPreview)
 }
 
 func (h *Handler) SetGroup(c tele.Context) error {
 	if len(c.Args()) == 0 {
 		if err := h.sm.Set(c.Chat().ID, state.WaitingGroup); err != nil {
-			slog.Error("setgroup: can't set state", "chat_id", c.Chat().ID, "err", err)
-			return c.Send("Внутренняя ошибка, попробуйте позже или получите расписание через /group 00")
+			slog.Error("setgroup: can't set state", "chat_id", c.Chat().ID, "state", state.WaitingGroup, "err", err)
+			return c.Send(msg.InternalTryWith)
 		}
-		return c.Send("Введите группу или /cancel для отмены")
+		return c.Send(msg.WaitingGroup)
 	}
 
-	groupID, ok := inputNum(c)
-	if !ok {
-		slog.Warn("setgroup: bad arg", "input", c.Args()[0])
-		return c.Send(`Ошибка ввода: используйте только числовой номер группы`)
+	groupID, err := inputNum(c)
+	if err != nil {
+		slog.Warn("setgroup: bad arg", "input", c.Args()[0], "chat_id", c.Chat().ID, "username", c.Chat().Username)
+		return c.Send(msg.OnlyNumbers)
 	}
 
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
 	if err := h.uc.SetUserGroup(ctx, c.Chat().ID, groupID); err != nil {
 		slog.Error("setgroup: failed to save group", "chat_id", c.Chat().ID, "group_id", groupID, "err", err)
-		return c.Send(errInternal)
+		return c.Send(msg.InternalTryWith)
 	}
 
-	return c.Send(msgGroupSaved)
+	return c.Send(msg.GroupSaved)
 }
 
 func (h *Handler) WaitingGroup(c tele.Context) error {
 	group, err := strconv.Atoi(c.Text())
 	if err != nil {
 		slog.Error("can't parse group to int", "input", c.Text(), "err", err)
-		return c.Send("Введите номер группы или /cancel для отмены.")
+		return c.Send(msg.WaitingGroup)
 	}
 
-	if err := h.uc.SetUserGroup(context.TODO(), c.Chat().ID, group); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := h.uc.SetUserGroup(ctx, c.Chat().ID, group); err != nil {
 		slog.Error("waitingGroup: failed to set group", "chat_id", c.Chat().ID, "group_id", group, "err", err)
-		return c.Send(errInternal)
+		return c.Send(msg.InternalTryWith)
 	}
 
 	if err := h.sm.Clear(c.Chat().ID); err != nil {
 		slog.Warn("waiting group: can't clear state", "chat_id", c.Chat().ID, "err", err)
 	}
 
-	return c.Send(msgGroupSaved)
-}
-
-func (h *Handler) Group(c tele.Context) error {
-	group, err := h.getGroupSchedule(c)
-	if err != nil {
-		return c.Send(errInternal)
-	}
-	return h.handleEndTime(c, group)
+	return c.Send(msg.GroupSaved)
 }
 
 func (h *Handler) Week(c tele.Context) error {
-	group, err := h.getGroupSchedule(c)
-	if err != nil {
-		return c.Send(errInternal)
+	schedule, msg := h.fetchSchedule(c)
+	if msg != "" {
+		return c.Send(msg)
 	}
-	return c.Send(formatScheduleWeek(group), tele.ModeMarkdown)
+	return c.Send(formatScheduleWeek(schedule), tele.ModeMarkdown)
 }
 
 func (h *Handler) Day(c tele.Context) error {
-	group, err := h.getGroupSchedule(c)
-	if err != nil {
-		return c.Send(err.Error())
+	schedule, msg := h.fetchSchedule(c)
+	if msg != "" {
+		return c.Send(msg)
 	}
-	return h.handleEndTime(c, group)
+	return h.handleEndTime(c, schedule)
 }
 
 func (h *Handler) Calls(c tele.Context) error {
-	return c.Send(callsMsg, tele.ModeMarkdown)
+	return c.Send(msg.Calls, tele.ModeMarkdown)
 }
 
 func (h *Handler) Cancel(c tele.Context) error {
@@ -124,7 +124,7 @@ func (h *Handler) Cancel(c tele.Context) error {
 		slog.Warn("cancel: can't clear state", "chat_id", c.Chat().ID, "err", err)
 	}
 
-	return c.Send(msgCancelled)
+	return c.Send(msg.Cancelled)
 }
 
 func (h *Handler) LogMessages(next tele.HandlerFunc) tele.HandlerFunc {
@@ -176,22 +176,46 @@ func (h *Handler) handleEndTime(c tele.Context, group *pb.GroupScheduleResponse)
 	return c.Send(formatScheduleDay(group.Day[dayIdx]), tele.ModeMarkdown)
 }
 
+func (h *Handler) fetchSchedule(c tele.Context) (*pb.GroupScheduleResponse, string) {
+	group, err := h.getGroupSchedule(c)
+	if err != nil {
+		switch {
+		case errors.Is(err, e.GroupNotFound):
+			return nil, msg.GroupNotFound
+		case errors.Is(err, e.UserNoGroup):
+			return nil, msg.UserNoGroup
+		case errors.Is(err, e.BadInput):
+			return nil, msg.OnlyNumbers
+		default:
+			return nil, msg.Internal
+		}
+	}
+
+	return group, ""
+}
+
 func (h *Handler) getGroupSchedule(c tele.Context) (*pb.GroupScheduleResponse, error) {
-	if groupID, ok := inputNum(c); ok {
-		group, err := h.uc.GetGroupScheduleByID(context.Background(), groupID)
+	groupID, err := inputNum(c)
+	if err != nil {
+		slog.Warn("getGroupSchedule: can't parse input to int", "input", c.Args()[0], "err", err)
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if groupID != 0 {
+		group, err := h.uc.GetGroupScheduleByID(ctx, groupID)
 		if err != nil {
-			slog.Error("getGroupSchedule: failed by id", "chat_id", c.Chat().ID, "group_id", groupID, "err", err)
+			slog.Warn("getGroupSchedule: failed by id", "chat_id", c.Chat().ID, "group_id", groupID, "err", err)
 			return nil, err
 		}
 		return group, nil
 	}
 
-	group, err := h.uc.GetGroupScheduleByChatID(context.Background(), c.Chat().ID)
+	group, err := h.uc.GetGroupScheduleByChatID(ctx, c.Chat().ID)
 	if err != nil {
-		if errors.Is(err, userRepo.ErrUserNotFound) {
-			return nil, err
-		}
-		slog.Error("getGroupSchedule: failed by chat_id", "chat_id", c.Chat().ID, "err", err)
+		slog.Warn("getGroupSchedule:", "chat_id", c.Chat().ID, "err", err)
 		return nil, err
 	}
 	return group, nil

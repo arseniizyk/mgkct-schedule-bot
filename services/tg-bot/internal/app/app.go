@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/database"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport"
 
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/usecase"
 
@@ -81,8 +81,7 @@ func (a *App) Run() error {
 		return err
 	}
 
-	gRPCStub := transport.New(conn)
-	scheduleUC := scheduleUC.New(gRPCStub)
+	scheduleUC := scheduleUC.New(pb.NewScheduleServiceClient(conn))
 
 	userRepo := tbotRepo.New(a.db.Pool)
 	userUC := tbotUC.New(scheduleUC, userRepo)
@@ -101,7 +100,7 @@ func (a *App) StartBot() {
 	a.bot.Handle(tele.OnText, a.h.HandleState)
 	a.bot.Handle("/start", a.h.Start)
 	a.bot.Handle("/setgroup", a.h.SetGroup)
-	a.bot.Handle("/group", a.h.Group)
+	a.bot.Handle("/group", a.h.Day)
 	a.bot.Handle("/week", a.h.Week)
 	a.bot.Handle("/day", a.h.Day)
 	a.bot.Handle("/calls", a.h.Calls)
