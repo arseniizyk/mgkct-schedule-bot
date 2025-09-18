@@ -4,17 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+
+	"database/sql"
 
 	sq "github.com/Masterminds/squirrel"
+	e "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/errors"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-var (
-	ErrUserNotFound  = errors.New("user not found")
-	ErrGroupNotFound = errors.New("user's group not found")
 )
 
 type UserRepository struct {
@@ -48,23 +48,33 @@ func (r *UserRepository) GetUserGroup(ctx context.Context, chatID int64) (int, e
 		From("users").
 		Where(sq.Eq{"chat_id": chatID})
 
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
-		return 0, fmt.Errorf("repo: build to sql: %w", err)
+		slog.Error("repo: build to sql", "query", query, "err", err)
+		return 0, e.ErrInternal
 	}
 
-	var groupId int
-	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&groupId); err != nil {
+	var groupId sql.NullInt64
+	if err := r.pool.QueryRow(ctx, sqlQuery, args...).Scan(&groupId); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, ErrGroupNotFound
+			return 0, e.ErrUserNoGroup
 		}
-		return 0, fmt.Errorf("repo: query user group: %w", err)
+		slog.Error("repo: internal from queryRow", "query", sqlQuery, "err", err)
+		return 0, e.ErrInternal
 	}
 
-	return groupId, nil
+	if !groupId.Valid {
+		return 0, e.ErrUserNoGroup
+	}
+
+	return int(groupId.Int64), nil
 }
+
 func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID int) error {
-	query := r.sb.Update("users").Where(sq.Eq{"chat_id": chatID}).Set("group_id", groupID)
+	query := r.sb.Insert("users").
+		Columns("chat_id", "group_id").
+		Values(chatID, groupID).
+		Suffix("ON CONFLICT (chat_id) DO UPDATE SET group_id = EXCLUDED.group_id")
 
 	sql, args, err := query.ToSql()
 	if err != nil {

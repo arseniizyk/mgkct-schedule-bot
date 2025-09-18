@@ -5,6 +5,7 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	e "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/errors"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -33,15 +34,15 @@ func Day(add ...int) int {
 	return day
 }
 
-func inputNum(c tele.Context) (int, bool) {
+func inputNum(c tele.Context) (int, error) {
 	if len(c.Args()) == 0 {
-		return 0, false
+		return 0, nil
 	}
 
 	num, err := strconv.Atoi(c.Args()[0])
 	if err != nil {
-		return 0, false
+		return 0, e.ErrBadInput
 	}
 
-	return num, true
+	return num, nil
 }
