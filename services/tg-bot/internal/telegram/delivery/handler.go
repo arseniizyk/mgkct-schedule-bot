@@ -5,17 +5,18 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	e "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/errors"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/messages"
+	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/keyboard"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
 )
 
 type Handler struct {
@@ -23,10 +24,10 @@ type Handler struct {
 	sm state.Manager
 }
 
-func NewHandler(uc telegram.UserUsecase) *Handler {
+func NewHandler(uc telegram.UserUsecase, sm state.Manager) *Handler {
 	return &Handler{
 		uc: uc,
-		sm: memory.NewMemory(),
+		sm: sm,
 	}
 }
 
@@ -74,7 +75,7 @@ func (h *Handler) SetGroup(c tele.Context) error {
 		return c.Send(msg.InternalTryWith)
 	}
 
-	return c.Send(msg.GroupSaved)
+	return c.Send(msg.GroupSaved, kbd.ReplyScheduleKeyboard)
 }
 
 func (h *Handler) WaitingGroup(c tele.Context) error {
@@ -96,19 +97,19 @@ func (h *Handler) WaitingGroup(c tele.Context) error {
 		slog.Warn("waiting group: can't clear state", "chat_id", c.Chat().ID, "err", err)
 	}
 
-	return c.Send(msg.GroupSaved)
+	return c.Send(msg.GroupSaved, kbd.ReplyScheduleKeyboard)
 }
 
 func (h *Handler) Week(c tele.Context) error {
-	schedule, msg := h.fetchSchedule(c)
+	schedule, msg := h.fetchSchedule(c, nil)
 	if msg != "" {
 		return c.Send(msg)
 	}
-	return c.Send(formatScheduleWeek(schedule), tele.ModeMarkdown)
+	return c.Send(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard)
 }
 
 func (h *Handler) Day(c tele.Context) error {
-	schedule, msg := h.fetchSchedule(c)
+	schedule, msg := h.fetchSchedule(c, nil)
 	if msg != "" {
 		return c.Send(msg)
 	}
@@ -116,7 +117,7 @@ func (h *Handler) Day(c tele.Context) error {
 }
 
 func (h *Handler) Calls(c tele.Context) error {
-	return c.Send(msg.Calls, tele.ModeMarkdown)
+	return c.Send(msg.Calls, tele.ModeMarkdown, kbd.ReplyScheduleKeyboard)
 }
 
 func (h *Handler) Cancel(c tele.Context) error {
@@ -129,10 +130,18 @@ func (h *Handler) Cancel(c tele.Context) error {
 
 func (h *Handler) LogMessages(next tele.HandlerFunc) tele.HandlerFunc {
 	return func(c tele.Context) error {
-		slog.Info("incoming message",
-			"chat_id", c.Chat().ID,
-			"username", c.Sender().Username,
-			"text", c.Text())
+		if c.Callback() != nil {
+			slog.Info("incoming callback",
+				"chat_id", c.Chat().ID,
+				"username", c.Sender().Username,
+				"data", c.Callback().Data,
+			)
+		} else {
+			slog.Info("incoming message",
+				"chat_id", c.Chat().ID,
+				"username", c.Sender().Username,
+				"text", c.Text())
+		}
 		return next(c)
 	}
 }
@@ -151,13 +160,40 @@ func (h *Handler) HandleState(c tele.Context) error {
 	}
 }
 
-func (h *Handler) handleEndTime(c tele.Context, group *pb.GroupScheduleResponse) error {
+func (h *Handler) HandleCallback(c tele.Context) error {
+	callback := c.Callback()
+	if err := c.Respond(); err != nil {
+		slog.Warn("HandleCallback: respond failed", "err", err)
+	}
+
+	switch {
+	case strings.Contains(callback.Data, kbd.Week):
+		parts := strings.Split(callback.Data, "|")
+		groupID, err := strconv.Atoi(parts[1])
+		if err != nil {
+			slog.Warn("callback: invalid data", "data", callback.Data, "chat_id", c.Chat().ID, "err", err)
+			return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+		}
+
+		schedule, msg := h.fetchSchedule(c, &groupID)
+		if msg != "" {
+			return c.Send(msg)
+		}
+		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
+
+	default:
+		slog.Warn("undefined callback", "chat_id", c.Chat().ID, "username", c.Sender().Username, "data", callback.Data)
+		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+	}
+}
+
+func (h *Handler) handleEndTime(c tele.Context, schedule *pb.GroupScheduleResponse) error {
 	dayIdx := Day()
-	day := group.Day[dayIdx]
+	day := schedule.Day[dayIdx]
 
 	lastSubject := findLastSubject(day.Subjects)
 	if lastSubject == -1 { // if no pairs in day
-		return c.Send(formatScheduleDay(group.Day[Day(1)]), tele.ModeMarkdown)
+		return c.Send(formatScheduleDay(schedule.Day[Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.GroupNum)))
 	}
 
 	now := time.Now()
@@ -169,15 +205,15 @@ func (h *Handler) handleEndTime(c tele.Context, group *pb.GroupScheduleResponse)
 		endTime = weekdaysTimeEnd[lastSubject]
 	}
 
-	if now.Hour() > endTime[0] || (now.Hour() == endTime[0] && now.Minute() >= weekdaysTimeEnd[lastSubject][1]) {
-		return c.Send(formatScheduleDay(group.Day[Day(1)]), tele.ModeMarkdown)
+	if now.Hour() > endTime[0] || (now.Hour() == endTime[0] && now.Minute() >= endTime[1]) {
+		return c.Send(formatScheduleDay(schedule.Day[Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.GroupNum)))
 	}
 
-	return c.Send(formatScheduleDay(group.Day[dayIdx]), tele.ModeMarkdown)
+	return c.Send(formatScheduleDay(schedule.Day[dayIdx]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.GroupNum)))
 }
 
-func (h *Handler) fetchSchedule(c tele.Context) (*pb.GroupScheduleResponse, string) {
-	group, err := h.getGroupSchedule(c)
+func (h *Handler) fetchSchedule(c tele.Context, groupID *int) (*pb.GroupScheduleResponse, string) {
+	group, err := h.getGroupSchedule(c, groupID)
 	if err != nil {
 		switch {
 		case errors.Is(err, e.ErrGroupNotFound):
@@ -190,24 +226,32 @@ func (h *Handler) fetchSchedule(c tele.Context) (*pb.GroupScheduleResponse, stri
 			return nil, msg.Internal
 		}
 	}
-
 	return group, ""
 }
 
-func (h *Handler) getGroupSchedule(c tele.Context) (*pb.GroupScheduleResponse, error) {
-	groupID, err := inputNum(c)
-	if err != nil {
-		slog.Warn("getGroupSchedule: can't parse input to int", "input", c.Args()[0], "err", err)
-		return nil, err
+func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.GroupScheduleResponse, error) {
+	var (
+		groupNum int
+		err      error
+	)
+
+	if groupID != nil {
+		groupNum = *groupID
+	} else {
+		groupNum, err = inputNum(c)
+		if err != nil {
+			slog.Warn("getGroupSchedule: can't parse input to int", "input", c.Args()[0], "err", err)
+			return nil, err
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if groupID != 0 {
-		group, err := h.uc.GetGroupScheduleByID(ctx, groupID)
+	if groupNum != 0 {
+		group, err := h.uc.GetGroupScheduleByID(ctx, groupNum)
 		if err != nil {
-			slog.Warn("getGroupSchedule: failed by id", "chat_id", c.Chat().ID, "group_id", groupID, "err", err)
+			slog.Warn("getGroupSchedule: failed by id", "chat_id", c.Chat().ID, "group_id", groupNum, "err", err)
 			return nil, err
 		}
 		return group, nil
@@ -218,5 +262,6 @@ func (h *Handler) getGroupSchedule(c tele.Context) (*pb.GroupScheduleResponse, e
 		slog.Warn("getGroupSchedule:", "chat_id", c.Chat().ID, "err", err)
 		return nil, err
 	}
+
 	return group, nil
 }
