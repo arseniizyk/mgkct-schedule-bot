@@ -11,7 +11,7 @@
 //   --go-grpc_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
 //   scraper.proto
 
-package scraperpb
+package pb
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -74,8 +74,9 @@ func (x *GroupScheduleRequest) GetGroupNum() int32 {
 
 type GroupScheduleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Week          string                 `protobuf:"bytes,1,opt,name=week,proto3" json:"week,omitempty"`
-	Day           []*Day                 `protobuf:"bytes,2,rep,name=day,proto3" json:"day,omitempty"`
+	GroupNum      int32                  `protobuf:"varint,1,opt,name=groupNum,proto3" json:"groupNum,omitempty"`
+	Week          string                 `protobuf:"bytes,2,opt,name=week,proto3" json:"week,omitempty"`
+	Day           []*Day                 `protobuf:"bytes,3,rep,name=day,proto3" json:"day,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -108,6 +109,13 @@ func (x *GroupScheduleResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GroupScheduleResponse.ProtoReflect.Descriptor instead.
 func (*GroupScheduleResponse) Descriptor() ([]byte, []int) {
 	return file_scraper_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GroupScheduleResponse) GetGroupNum() int32 {
+	if x != nil {
+		return x.GroupNum
+	}
+	return 0
 }
 
 func (x *GroupScheduleResponse) GetWeek() string {
@@ -302,10 +310,11 @@ const file_scraper_proto_rawDesc = "" +
 	"\n" +
 	"\rscraper.proto\x12\ascraper\"2\n" +
 	"\x14GroupScheduleRequest\x12\x1a\n" +
-	"\bgroupNum\x18\x01 \x01(\x05R\bgroupNum\"K\n" +
-	"\x15GroupScheduleResponse\x12\x12\n" +
-	"\x04week\x18\x01 \x01(\tR\x04week\x12\x1e\n" +
-	"\x03day\x18\x02 \x03(\v2\f.scraper.DayR\x03day\"G\n" +
+	"\bgroupNum\x18\x01 \x01(\x05R\bgroupNum\"g\n" +
+	"\x15GroupScheduleResponse\x12\x1a\n" +
+	"\bgroupNum\x18\x01 \x01(\x05R\bgroupNum\x12\x12\n" +
+	"\x04week\x18\x02 \x01(\tR\x04week\x12\x1e\n" +
+	"\x03day\x18\x03 \x03(\v2\f.scraper.DayR\x03day\"G\n" +
 	"\x03Day\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12,\n" +
 	"\bsubjects\x18\x02 \x03(\v2\x10.scraper.SubjectR\bsubjects\"D\n" +
@@ -318,7 +327,7 @@ const file_scraper_proto_rawDesc = "" +
 	"\ateacher\x18\x03 \x01(\tR\ateacher\x12\x14\n" +
 	"\x05class\x18\x04 \x01(\tR\x05class2d\n" +
 	"\x0fScheduleService\x12Q\n" +
-	"\x10GetGroupSchedule\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponseB?Z=github.com/arseniizyk/mgkct-schedule-bot/libs/proto;scraperpbb\x06proto3"
+	"\x10GetGroupSchedule\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponseB8Z6github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pbb\x06proto3"
 
 var (
 	file_scraper_proto_rawDescOnce sync.Once

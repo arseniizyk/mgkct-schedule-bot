@@ -10,7 +10,7 @@ syntax = "proto3";
 
 package scraper;
 
-option go_package = "github.com/arseniizyk/mgkct-schedule-bot/libs/proto;scraperpb";
+option go_package = "github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pb";
 
 service ScheduleService {
     rpc GetGroupSchedule(GroupScheduleRequest) returns (GroupScheduleResponse);
@@ -21,8 +21,9 @@ message GroupScheduleRequest {
 }
 
 message GroupScheduleResponse {
-    string week = 1;
-    repeated Day day = 2;
+    int32 groupNum = 1;
+    string week = 2;
+    repeated Day day = 3;
 }
 
 message Day {
