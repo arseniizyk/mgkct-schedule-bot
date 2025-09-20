@@ -117,7 +117,7 @@ func (h *Handler) Day(c tele.Context) error {
 }
 
 func (h *Handler) Calls(c tele.Context) error {
-	return c.Send(msg.Calls, tele.ModeMarkdown, kbd.ReplyScheduleKeyboard)
+	return c.Send(msg.Calls, tele.ModeMarkdown)
 }
 
 func (h *Handler) Cancel(c tele.Context) error {
