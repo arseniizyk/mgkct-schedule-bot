@@ -13,7 +13,9 @@ import (
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/usecase"
 
 	tbot "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery"
+	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/keyboard"
 	tbotRepo "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
 	tbotUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	tele "gopkg.in/telebot.v4"
 
@@ -85,8 +87,9 @@ func (a *App) Run() error {
 
 	userRepo := tbotRepo.New(a.db.Pool)
 	userUC := tbotUC.New(scheduleUC, userRepo)
+	sm := memory.NewMemory()
 
-	h := tbot.NewHandler(userUC)
+	h := tbot.NewHandler(userUC, sm)
 	a.h = h
 
 	a.StartBot()
@@ -105,6 +108,10 @@ func (a *App) StartBot() {
 	a.bot.Handle("/day", a.h.Day)
 	a.bot.Handle("/calls", a.h.Calls)
 	a.bot.Handle("/cancel", a.h.Cancel)
+	a.bot.Handle(tele.OnCallback, a.h.HandleCallback)
+	a.bot.Handle(kbd.BtnDay, a.h.Day)
+	a.bot.Handle(kbd.BtnCalls, a.h.Calls)
+	a.bot.Handle(kbd.BtnWeek, a.h.Week)
 
 	slog.Info("Bot started!", "username", a.bot.Me.Username)
 
