@@ -29,7 +29,8 @@ func (s *GRPCServer) GetGroupSchedule(ctx context.Context, req *pb.GroupSchedule
 		return nil, status.Error(codes.NotFound, "group not found")
 	}
 	return &pb.GroupScheduleResponse{
-		Week: group.Week,
-		Day:  daysToProto(group.Days),
+		Week:     group.Week,
+		Day:      daysToProto(group.Days),
+		GroupNum: req.GroupNum,
 	}, nil
 }
