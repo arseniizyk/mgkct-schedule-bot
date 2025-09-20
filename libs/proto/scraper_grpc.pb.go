@@ -11,7 +11,7 @@
 //   --go-grpc_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
 //   scraper.proto
 
-package scraperpb
+package pb
 
 import (
 	context "context"
