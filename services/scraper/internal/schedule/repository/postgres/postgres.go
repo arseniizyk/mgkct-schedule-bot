@@ -32,7 +32,7 @@ func (repo *ScheduleRepository) Save(ctx context.Context, week time.Time, schedu
 
 	query := repo.sb.Insert("schedules").
 		Columns("week", "schedule").
-		Values(week, data)
+		Values(week, data).Suffix("ON CONFLICT (week) DO UPDATE SET schedule = EXCLUDED.schedule")
 
 	sql, args, err := query.ToSql()
 	if err != nil {

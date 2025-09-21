@@ -1,6 +1,6 @@
 CREATE TABLE schedules (
     id SERIAL PRIMARY KEY,
-    week DATE NOT NULL,
+    week DATE UNIQUE NOT NULL,
     schedule JSONB NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
