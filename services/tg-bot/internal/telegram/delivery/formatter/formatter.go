@@ -1,4 +1,4 @@
-package delivery
+package formatter
 
 import (
 	"fmt"
@@ -6,9 +6,10 @@ import (
 	"unicode"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/utils"
 )
 
-func formatScheduleDay(day *pb.Day) string {
+func FormatScheduleDay(day *pb.Day) string {
 	var sb strings.Builder
 	sb.Grow(256)
 
@@ -19,12 +20,12 @@ func formatScheduleDay(day *pb.Day) string {
 	return sb.String()
 }
 
-func formatScheduleWeek(resp *pb.GroupScheduleResponse) string {
+func FormatScheduleWeek(resp *pb.GroupScheduleResponse) string {
 	var sb strings.Builder
 	sb.Grow(len(resp.Day) * 128)
 
 	for _, day := range resp.Day {
-		sb.WriteString(formatScheduleDay(day))
+		sb.WriteString(FormatScheduleDay(day))
 	}
 
 	return sb.String()
@@ -34,7 +35,7 @@ func formatSubjects(subjects []*pb.Subject) string {
 	var sb strings.Builder
 	sb.Grow(len(subjects) * 80)
 
-	lastSubject := findLastSubject(subjects)
+	lastSubject := utils.FindLastSubject(subjects)
 	if lastSubject == -1 { // if no pairs in day
 		return "*Выходной*"
 	}
@@ -49,7 +50,6 @@ func formatSubjects(subjects []*pb.Subject) string {
 		}
 
 		pairs := subject.Pairs
-
 		if len(pairs) == 1 && !unicode.IsDigit(rune(pairs[0].Name[0])) { // If only 1 pair in subject and starts with digit
 			p := pairs[0]
 			sb.WriteString(fmt.Sprintf("%d: %s | %s | %s", i+1, p.Name, p.Type, p.Teacher))

@@ -23,14 +23,12 @@ func New(scheduleUC schedule.ScheduleUsecase, repo repository.UserRepository) te
 		repo:       repo,
 		scheduleUC: scheduleUC,
 	}
-
 }
 
 func (uc *UserUsecase) SaveUser(ctx context.Context, u *models.User) error {
 	if err := uc.repo.SaveUser(ctx, u); err != nil {
 		return err
 	}
-
 	return nil
 }
 
