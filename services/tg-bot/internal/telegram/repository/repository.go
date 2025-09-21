@@ -10,4 +10,5 @@ type UserRepository interface {
 	SaveUser(ctx context.Context, u *models.User) error
 	GetUserGroup(ctx context.Context, chatID int64) (int, error)
 	SetUserGroup(ctx context.Context, chatID int64, groupID int) error
+	GetGroupUsers(ctx context.Context, groupID int) ([]int64, error)
 }

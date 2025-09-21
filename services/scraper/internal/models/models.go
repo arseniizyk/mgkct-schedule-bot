@@ -5,8 +5,9 @@ type Schedule struct {
 }
 
 type Group struct {
-	Week string `json:"week"`
-	Days []Day  `json:"days"`
+	GroupNum int    `json:"group_id"`
+	Week     string `json:"week"`
+	Days     []Day  `json:"days"`
 }
 
 type Day struct {

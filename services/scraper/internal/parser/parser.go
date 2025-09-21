@@ -62,8 +62,9 @@ func (c *Parser) Parse() (*models.Schedule, *time.Time, error) {
 		}
 
 		group := models.Group{
-			Week: week.Format("02-01-2006"),
-			Days: parseRows(table.Find("tbody tr")),
+			GroupNum: groupNum,
+			Week:     week.Format("02-01-2006"),
+			Days:     parseRows(table.Find("tbody tr")),
 		}
 
 		schedule.Groups[groupNum] = group

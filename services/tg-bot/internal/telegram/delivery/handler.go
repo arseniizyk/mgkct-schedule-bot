@@ -15,14 +15,16 @@ import (
 )
 
 type Handler struct {
-	uc telegram.UserUsecase
-	sm state.Manager
+	uc  telegram.UserUsecase
+	sm  state.Manager
+	bot *tele.Bot
 }
 
-func NewHandler(uc telegram.UserUsecase, sm state.Manager) *Handler {
+func NewHandler(uc telegram.UserUsecase, sm state.Manager, bot *tele.Bot) *Handler {
 	return &Handler{
-		uc: uc,
-		sm: sm,
+		uc:  uc,
+		sm:  sm,
+		bot: bot,
 	}
 }
 

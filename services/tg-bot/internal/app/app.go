@@ -9,6 +9,8 @@ import (
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/database"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport"
+	"github.com/nats-io/nats.go"
 
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/usecase"
 
@@ -16,6 +18,7 @@ import (
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/keyboard"
 	tbotRepo "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	tbotUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	tele "gopkg.in/telebot.v4"
 
@@ -27,6 +30,7 @@ type App struct {
 	db  *database.Database
 	bot *tele.Bot
 	h   *tbot.Handler
+	nc  *nats.Conn
 }
 
 func New() (*App, error) {
@@ -43,6 +47,12 @@ func New() (*App, error) {
 
 	if err := db.Ping(context.Background()); err != nil {
 		slog.Error("bad ping to DB", "err", err)
+		return nil, err
+	}
+
+	nc, err := nats.Connect("nats://nats:4222")
+	if err != nil {
+		slog.Error("can't connect to NATS", "err", err)
 		return nil, err
 	}
 
@@ -66,6 +76,7 @@ func New() (*App, error) {
 	return &App{
 		db:  db,
 		bot: b,
+		nc:  nc,
 	}, nil
 }
 
@@ -86,11 +97,17 @@ func (a *App) Run() error {
 	scheduleUC := scheduleUC.New(pb.NewScheduleServiceClient(conn))
 
 	userRepo := tbotRepo.New(a.db.Pool)
-	userUC := tbotUC.New(scheduleUC, userRepo)
+	userUC := tbotUC.NewUserUsecase(scheduleUC, userRepo)
 	sm := memory.NewMemory()
 
-	h := tbot.NewHandler(userUC, sm)
-	a.h = h
+	a.h = tbot.NewHandler(userUC, sm, a.bot)
+
+	nc, err := transport.NewNatsConsumer(usecase.NewScheduleHandlerUsecase(a.h), a.nc)
+	if err != nil {
+		slog.Error("can't connect to NATS", "err", err)
+		return err
+	}
+	nc.SubscribeGroupUpdates()
 
 	a.StartBot()
 

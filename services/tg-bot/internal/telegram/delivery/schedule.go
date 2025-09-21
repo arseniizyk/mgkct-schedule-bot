@@ -31,6 +31,14 @@ func (h *Handler) Day(c tele.Context) error {
 	return h.handleEndTime(c, schedule)
 }
 
+func (h *Handler) SendUpdate(chatID int64, schedule *pb.GroupScheduleResponse) error {
+	msg := "Расписание обновлено\n"
+	msg += formatter.FormatScheduleWeek(schedule)
+
+	_, err := h.bot.Send(tele.ChatID(chatID), msg)
+	return err
+}
+
 func (h *Handler) Calls(c tele.Context) error {
 	return c.Send(msg.Calls, tele.ModeMarkdown)
 }

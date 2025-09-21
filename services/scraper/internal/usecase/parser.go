@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule"
+	server "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/parser"
@@ -21,13 +22,17 @@ type ParserUsecase interface {
 type parserUsecase struct {
 	schUC    schedule.ScheduleUsecase
 	parser   *parser.Parser
+	hashes   map[int][32]byte
 	prevHash [32]byte
+	nats     *server.Nats
 }
 
-func NewParserUsecase(schUC schedule.ScheduleUsecase, p *parser.Parser) ParserUsecase {
+func NewParserUsecase(schUC schedule.ScheduleUsecase, p *parser.Parser, nats *server.Nats) ParserUsecase {
 	return &parserUsecase{
 		schUC:  schUC,
 		parser: p,
+		nats:   nats,
+		hashes: make(map[int][32]byte),
 	}
 }
 
@@ -39,8 +44,14 @@ func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Du
 		defer tick.Stop()
 		defer close(resCh)
 
-		sch, updated, err := p.parseSchedule(ctx)
-		if err == nil && updated {
+		if sch, updated, err := p.parseSchedule(ctx); err == nil && updated {
+			for num, g := range sch.Groups {
+				if h, err := hash(g); err == nil {
+					p.hashes[num] = h
+				} else {
+					slog.Error("group hash failed", "group", num, "err", err)
+				}
+			}
 			resCh <- sch
 		}
 
@@ -54,6 +65,10 @@ func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Du
 					continue
 				}
 				if updated {
+					updatedGroups := p.findUpdatedGroups(sch)
+					for _, group := range updatedGroups {
+						p.nats.PublishScheduleUpdate(&group)
+					}
 					resCh <- sch
 				}
 			}
@@ -61,6 +76,24 @@ func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Du
 	}()
 
 	return resCh
+}
+
+func (p *parserUsecase) findUpdatedGroups(new *models.Schedule) []models.Group {
+	updated := make([]models.Group, 0, 1)
+	for key, group := range new.Groups {
+		newHash, err := hash(group)
+		if err != nil {
+			slog.Error("groupHash failed", "group", key, "err", err)
+			updated = append(updated, group)
+			continue
+		}
+		if p.hashes[key] != newHash {
+			p.hashes[key] = newHash
+			updated = append(updated, group)
+		}
+	}
+
+	return updated
 }
 
 func (p *parserUsecase) parseSchedule(ctx context.Context) (*models.Schedule, bool, error) {
@@ -75,11 +108,16 @@ func (p *parserUsecase) parseSchedule(ctx context.Context) (*models.Schedule, bo
 		return nil, false, fmt.Errorf("parsing: %w", err)
 	}
 
-	if hash(sch) == p.prevHash { // if previous hash schedule == parsed hash schedule
+	h, err := hash(sch)
+	if err != nil {
+		return nil, false, fmt.Errorf("can't get hash for schedule: %w", err)
+	}
+
+	if h == p.prevHash { // if previous hash schedule == parsed hash schedule
 		return nil, false, nil
 	}
 
-	p.prevHash = hash(sch)
+	p.prevHash = h
 	if err := p.schUC.Save(ctx, *week, sch); err != nil {
 		return nil, false, fmt.Errorf("save to db: %w", err)
 	}
@@ -88,7 +126,12 @@ func (p *parserUsecase) parseSchedule(ctx context.Context) (*models.Schedule, bo
 
 }
 
-func hash(sch *models.Schedule) [32]byte {
-	bytes, _ := json.Marshal(sch)
-	return sha256.Sum256(bytes)
+func hash[T any](sch T) ([32]byte, error) {
+	var zero [32]byte
+	b, err := json.Marshal(sch)
+	if err != nil {
+		slog.Error("hash: can't marshal", "sch", sch, "err", err)
+		return zero, fmt.Errorf("hash: marshal: %w", err)
+	}
+	return sha256.Sum256(b), nil
 }
