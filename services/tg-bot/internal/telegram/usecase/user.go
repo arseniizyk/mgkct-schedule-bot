@@ -18,7 +18,7 @@ type UserUsecase struct {
 	scheduleUC schedule.ScheduleUsecase
 }
 
-func New(scheduleUC schedule.ScheduleUsecase, repo repository.UserRepository) telegram.UserUsecase {
+func NewUserUsecase(scheduleUC schedule.ScheduleUsecase, repo repository.UserRepository) telegram.UserUsecase {
 	return &UserUsecase{
 		repo:       repo,
 		scheduleUC: scheduleUC,

@@ -70,6 +70,42 @@ func (r *UserRepository) GetUserGroup(ctx context.Context, chatID int64) (int, e
 	return int(groupId.Int64), nil
 }
 
+func (r *UserRepository) GetGroupUsers(ctx context.Context, groupID int) ([]int64, error) {
+	query := r.sb.Select("chat_id").
+		From("users").
+		Where(sq.Eq{"group_id": groupID})
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		slog.Error("repo: build to sql: ", "query", query, "err", err)
+		return nil, e.ErrInternal
+	}
+
+	rows, err := r.pool.Query(ctx, sqlQuery, args...)
+	if err != nil {
+		slog.Error("repo: query db", "err", err)
+		return nil, e.ErrInternal
+	}
+	defer rows.Close()
+
+	var users []int64
+	for rows.Next() {
+		var u int64
+		if err := rows.Scan(&u); err != nil {
+			slog.Error("repo: scan row", "err", err)
+			return nil, e.ErrInternal
+		}
+		users = append(users, u)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.Error("repo: rows iteration", "err", err)
+		return nil, e.ErrInternal
+	}
+
+	return users, nil
+}
+
 func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID int) error {
 	query := r.sb.Insert("users").
 		Columns("chat_id", "group_id").

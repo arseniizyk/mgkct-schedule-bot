@@ -52,10 +52,15 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("db ping: %w", err)
 	}
 
+	nats, err := server.NewNats()
+	if err != nil {
+		return nil, fmt.Errorf("can't connect to NATS")
+	}
+
 	parserObj := parser.New()
 	scheduleRepo := scheduleRepo.New(db.Pool)
 	scheduleUC := scheduleUC.New(scheduleRepo)
-	parserUC := usecase.NewParserUsecase(scheduleUC, parserObj)
+	parserUC := usecase.NewParserUsecase(scheduleUC, parserObj, nats)
 
 	return &App{
 		lis:        lis,

@@ -7,6 +7,10 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 )
 
+type ScheduleHandler interface {
+	HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleResponse) error
+}
+
 type UserUsecase interface {
 	SaveUser(ctx context.Context, u *models.User) error
 	SetUserGroup(ctx context.Context, chatID int64, groupID int) error
