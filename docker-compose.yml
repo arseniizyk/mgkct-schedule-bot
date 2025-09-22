@@ -5,6 +5,7 @@ services:
             - '4222:4222'
             - '8222:8222' # мониторинг
         command: '-DV -m 8222'
+        restart: unless-stopped
 
     tg-bot:
         build:
@@ -33,7 +34,7 @@ services:
         depends_on:
             - nats
             - postgres
-        restart: always
+        restart: unless-stopped
         expose:
             - '${GRPC_PORT:-9001}'
         ports:
@@ -44,7 +45,7 @@ services:
     postgres:
         image: postgres
         container_name: scraper-postgres
-        restart: always
+        restart: unless-stopped
         volumes:
             - ./migrations/:/docker-entrypoint-initdb.d/
         env_file:
@@ -59,6 +60,6 @@ services:
 
     adminer:
         image: adminer
-        restart: always
+        restart: unless-stopped
         ports:
             - '8080:8080'

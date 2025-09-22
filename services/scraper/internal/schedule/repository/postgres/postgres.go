@@ -3,14 +3,18 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrNotFound = errors.New("not found")
 
 type ScheduleRepository struct {
 	pool *pgxpool.Pool
@@ -69,7 +73,7 @@ func (repo *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (
 func (repo *ScheduleRepository) GetLatest(ctx context.Context) (*models.Schedule, error) {
 	query := repo.sb.Select("schedule").
 		From("schedules").
-		OrderBy("updated DESC").
+		OrderBy("updated_at DESC").
 		Limit(1)
 
 	sql, args, err := query.ToSql()
@@ -80,6 +84,9 @@ func (repo *ScheduleRepository) GetLatest(ctx context.Context) (*models.Schedule
 	var raw []byte
 	err = repo.pool.QueryRow(ctx, sql, args...).Scan(&raw)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("repo: get latest schedule: %w", err)
 	}
 
