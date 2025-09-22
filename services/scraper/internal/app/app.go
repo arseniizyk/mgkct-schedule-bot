@@ -17,8 +17,8 @@ import (
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/usecase"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/usecase"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/libs/database"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/config"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/database"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/parser"
 	server "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
 	"google.golang.org/grpc"

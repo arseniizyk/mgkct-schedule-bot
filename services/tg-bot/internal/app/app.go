@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/libs/database"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/config"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/database"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport"
 	"github.com/nats-io/nats.go"
 
