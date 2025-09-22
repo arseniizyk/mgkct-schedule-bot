@@ -2,11 +2,15 @@ module github.com/arseniizyk/mgkct-schedule-bot/services/scraper
 
 go 1.25.0
 
-replace github.com/arseniizyk/mgkct-schedule-bot/libs/proto => ../../libs/proto
+replace (
+	github.com/arseniizyk/mgkct-schedule-bot/libs/database => ../../libs/database
+	github.com/arseniizyk/mgkct-schedule-bot/libs/proto => ../../libs/proto
+)
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/PuerkitoBio/goquery v1.10.3
+	github.com/arseniizyk/mgkct-schedule-bot/libs/database v0.0.0-00010101000000-000000000000
 	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250914140939-ac69e5c1e9d3
 	github.com/gocolly/colly v1.2.0
 	github.com/joho/godotenv v1.5.1
