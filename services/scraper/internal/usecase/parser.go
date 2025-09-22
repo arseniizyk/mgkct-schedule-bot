@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository/postgres"
 	server "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
@@ -37,23 +39,27 @@ func NewParserUsecase(schUC schedule.ScheduleUsecase, p *parser.Parser, nats *se
 }
 
 func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Duration) <-chan *models.Schedule {
-	resCh := make(chan *models.Schedule)
+	resCh := make(chan *models.Schedule, 1)
 
 	go func() {
 		tick := time.NewTicker(interval)
 		defer tick.Stop()
 		defer close(resCh)
 
-		if sch, updated, err := p.parseSchedule(ctx); err == nil && updated {
-			for num, g := range sch.Groups {
-				if h, err := hash(g); err == nil {
-					p.hashes[num] = h
-				} else {
-					slog.Error("group hash failed", "group", num, "err", err)
-				}
+		var sch *models.Schedule
+		var err error
+
+		sch, err = p.schUC.GetLatest()
+		if err != nil && errors.Is(err, postgres.ErrNotFound) {
+			if sch, updated, err := p.parseSchedule(ctx); err == nil && updated {
+				
+				resCh <- sch
 			}
-			resCh <- sch
 		}
+		if sch == nil {
+			sch = &models.Schedule{}
+		}
+		p.hashGroups(sch)
 
 		for {
 			select {
@@ -64,13 +70,11 @@ func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Du
 				if err != nil || !updated {
 					continue
 				}
-				if updated {
-					updatedGroups := p.findUpdatedGroups(sch)
-					for _, group := range updatedGroups {
-						p.nats.PublishScheduleUpdate(&group)
-					}
-					resCh <- sch
+				updatedGroups := p.findUpdatedGroups(sch)
+				for _, group := range updatedGroups {
+					p.nats.PublishScheduleUpdate(&group)
 				}
+				resCh <- sch
 			}
 		}
 	}()
@@ -94,6 +98,16 @@ func (p *parserUsecase) findUpdatedGroups(new *models.Schedule) []models.Group {
 	}
 
 	return updated
+}
+
+func (p *parserUsecase) hashGroups(sch *models.Schedule) {
+	for num, g := range sch.Groups {
+		if h, err := hash(g); err == nil {
+			p.hashes[num] = h
+		} else {
+			slog.Error("group hash failed", "group", num, "err", err)
+		}
+	}
 }
 
 func (p *parserUsecase) parseSchedule(ctx context.Context) (*models.Schedule, bool, error) {
