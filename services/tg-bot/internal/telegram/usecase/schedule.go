@@ -15,9 +15,10 @@ type ScheduleHandlerUsecase struct {
 	userRepo repository.UserRepository
 }
 
-func NewScheduleHandlerUsecase(h *delivery.Handler) telegram.ScheduleHandler {
+func NewScheduleHandlerUsecase(h *delivery.Handler, userRepo repository.UserRepository) telegram.ScheduleHandler {
 	return &ScheduleHandlerUsecase{
-		h: h,
+		h:        h,
+		userRepo: userRepo,
 	}
 }
 
@@ -29,7 +30,10 @@ func (uc *ScheduleHandlerUsecase) HandleScheduleUpdate(ctx context.Context, g *p
 	}
 
 	for _, u := range users {
-		return uc.h.SendUpdate(u, g)
+		err := uc.h.SendUpdate(u, g)
+		if err != nil {
+			slog.Error("failed to send update to user", "userId", u, "err", err)
+		}
 	}
 
 	return nil

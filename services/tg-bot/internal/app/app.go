@@ -18,7 +18,6 @@ import (
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/keyboard"
 	tbotRepo "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	tbotUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
 	tele "gopkg.in/telebot.v4"
 
@@ -102,7 +101,7 @@ func (a *App) Run() error {
 
 	a.h = tbot.NewHandler(userUC, sm, a.bot)
 
-	nc, err := transport.NewNatsConsumer(usecase.NewScheduleHandlerUsecase(a.h), a.nc)
+	nc, err := transport.NewNatsConsumer(tbotUC.NewScheduleHandlerUsecase(a.h, userRepo), a.nc)
 	if err != nil {
 		slog.Error("can't connect to NATS", "err", err)
 		return err
