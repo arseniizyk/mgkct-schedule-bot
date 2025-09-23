@@ -2,7 +2,7 @@ services:
     nats:
         image: nats
         ports:
-            - '4222:4222'
+            - '4223:4222'
             - '8222:8222' # мониторинг
         command: '-DV -m 8222'
         restart: unless-stopped
