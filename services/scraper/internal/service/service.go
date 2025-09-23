@@ -1,4 +1,4 @@
-package usecase
+package service
 
 import (
 	"context"
@@ -9,55 +9,50 @@ import (
 	"log/slog"
 	"time"
 
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository/postgres"
 	server "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/parser"
 )
 
-type ParserUsecase interface {
-	ParseScheduleEvery(ctx context.Context, interval time.Duration) <-chan *models.Schedule
-}
-
-type parserUsecase struct {
+type ParserService struct {
 	schUC    schedule.ScheduleUsecase
 	parser   *parser.Parser
-	hashes   map[int][32]byte
+	hashes   map[int32][32]byte
 	prevHash [32]byte
 	nats     *server.Nats
 }
 
-func NewParserUsecase(schUC schedule.ScheduleUsecase, p *parser.Parser, nats *server.Nats) ParserUsecase {
-	return &parserUsecase{
+func NewParserService(schUC schedule.ScheduleUsecase, p *parser.Parser, nats *server.Nats) *ParserService {
+	return &ParserService{
 		schUC:  schUC,
 		parser: p,
 		nats:   nats,
-		hashes: make(map[int][32]byte),
+		hashes: make(map[int32][32]byte),
 	}
 }
 
-func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Duration) <-chan *models.Schedule {
-	resCh := make(chan *models.Schedule, 1)
+func (p *ParserService) ParseScheduleEvery(ctx context.Context, interval time.Duration) <-chan *pb.Schedule {
+	resCh := make(chan *pb.Schedule, 1)
 
 	go func() {
 		tick := time.NewTicker(interval)
 		defer tick.Stop()
 		defer close(resCh)
 
-		var sch *models.Schedule
+		var sch *pb.Schedule
 		var err error
 
 		sch, err = p.schUC.GetLatest()
 		if err != nil && errors.Is(err, postgres.ErrNotFound) {
 			if sch, updated, err := p.parseSchedule(ctx); err == nil && updated {
-				
 				resCh <- sch
 			}
 		}
 		if sch == nil {
-			sch = &models.Schedule{}
+			sch = &pb.Schedule{}
 		}
 		p.hashGroups(sch)
 
@@ -72,8 +67,12 @@ func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Du
 				}
 				updatedGroups := p.findUpdatedGroups(sch)
 				for _, group := range updatedGroups {
-					p.nats.PublishScheduleUpdate(&group)
+					slog.Info("Group updated", "group_id", group.Id)
+					if err := p.nats.PublishScheduleUpdate(group); err != nil {
+						slog.Error("Publish to NATS", "group_id", group.Id, "err", err)
+					}
 				}
+				p.hashGroups(sch)
 				resCh <- sch
 			}
 		}
@@ -82,8 +81,8 @@ func (p *parserUsecase) ParseScheduleEvery(ctx context.Context, interval time.Du
 	return resCh
 }
 
-func (p *parserUsecase) findUpdatedGroups(new *models.Schedule) []models.Group {
-	updated := make([]models.Group, 0, 1)
+func (p *ParserService) findUpdatedGroups(new *pb.Schedule) []*pb.Group {
+	updated := make([]*pb.Group, 0, 1)
 	for key, group := range new.Groups {
 		newHash, err := hash(group)
 		if err != nil {
@@ -100,7 +99,7 @@ func (p *parserUsecase) findUpdatedGroups(new *models.Schedule) []models.Group {
 	return updated
 }
 
-func (p *parserUsecase) hashGroups(sch *models.Schedule) {
+func (p *ParserService) hashGroups(sch *pb.Schedule) {
 	for num, g := range sch.Groups {
 		if h, err := hash(g); err == nil {
 			p.hashes[num] = h
@@ -110,7 +109,7 @@ func (p *parserUsecase) hashGroups(sch *models.Schedule) {
 	}
 }
 
-func (p *parserUsecase) parseSchedule(ctx context.Context) (*models.Schedule, bool, error) {
+func (p *ParserService) parseSchedule(ctx context.Context) (*pb.Schedule, bool, error) {
 	start := time.Now()
 	slog.Debug("parsing")
 	defer func() {

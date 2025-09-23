@@ -4,13 +4,13 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 )
 
-func parseRows(trs *goquery.Selection) []models.Day {
-	res := make([]models.Day, 6)
+func parseRows(trs *goquery.Selection) []*pb.Day {
+	res := make([]*pb.Day, 6)
 	for i, d := range days {
-		res[i] = models.Day{Name: d}
+		res[i] = &pb.Day{Name: d}
 	}
 
 	for row := 2; row < trs.Length(); row++ {
@@ -21,7 +21,7 @@ func parseRows(trs *goquery.Selection) []models.Day {
 	return res
 }
 
-func parseColumns(tds *goquery.Selection, days []models.Day) {
+func parseColumns(tds *goquery.Selection, days []*pb.Day) {
 	for col := 0; col < tds.Length(); col += 2 {
 		daysIdx := col / 2
 
@@ -29,20 +29,20 @@ func parseColumns(tds *goquery.Selection, days []models.Day) {
 		classParts := splitByBr(tds.Eq(col + 1))
 
 		if len(nameParts) == 0 {
-			days[daysIdx].Subjects = append(days[daysIdx].Subjects, models.Subject{IsEmpty: true})
+			days[daysIdx].Subjects = append(days[daysIdx].Subjects, &pb.Subject{IsEmpty: true})
 			continue
 		}
 
 		pairs := parsePairs(nameParts, classParts)
-		days[daysIdx].Subjects = append(days[daysIdx].Subjects, models.Subject{
+		days[daysIdx].Subjects = append(days[daysIdx].Subjects, &pb.Subject{
 			Pairs:   pairs,
 			IsEmpty: false,
 		})
 	}
 }
 
-func parsePairs(nameParts, classParts []string) []models.Pair {
-	var pairs []models.Pair
+func parsePairs(nameParts, classParts []string) []*pb.Pair {
+	var pairs []*pb.Pair
 
 	for i := 0; i < len(nameParts); {
 		var subjectType, teacher, class string
@@ -68,7 +68,7 @@ func parsePairs(nameParts, classParts []string) []models.Pair {
 		class = classParts[len(pairs)]
 		class = strings.ReplaceAll(class, "(к)", "")
 
-		pairs = append(pairs, models.Pair{
+		pairs = append(pairs, &pb.Pair{
 			Name:    cleanText(name),
 			Type:    cleanText(subjectType),
 			Teacher: cleanText(teacher),

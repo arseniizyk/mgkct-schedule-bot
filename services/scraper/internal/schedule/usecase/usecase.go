@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
 )
 
 type ScheduleUsecase struct {
 	repo  repository.ScheduleRepository
-	cache *models.Schedule
+	cache *pb.Schedule
 }
 
 func New(repo repository.ScheduleRepository) *ScheduleUsecase {
@@ -21,7 +21,7 @@ func New(repo repository.ScheduleRepository) *ScheduleUsecase {
 	}
 }
 
-func (s *ScheduleUsecase) GetLatest() (*models.Schedule, error) {
+func (s *ScheduleUsecase) GetLatest() (*pb.Schedule, error) {
 	if s.cache != nil {
 		return s.cache, nil
 	}
@@ -35,10 +35,10 @@ func (s *ScheduleUsecase) GetLatest() (*models.Schedule, error) {
 	return sch, nil
 }
 
-func (s *ScheduleUsecase) SaveToCache(sch *models.Schedule) {
+func (s *ScheduleUsecase) SaveToCache(sch *pb.Schedule) {
 	s.cache = sch
 }
 
-func (s *ScheduleUsecase) Save(ctx context.Context, week time.Time, sch *models.Schedule) error {
+func (s *ScheduleUsecase) Save(ctx context.Context, week time.Time, sch *pb.Schedule) error {
 	return s.repo.Save(ctx, week, sch)
 }
