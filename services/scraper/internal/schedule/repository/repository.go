@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 )
 
 type ScheduleRepository interface {
-	Save(ctx context.Context, week time.Time, schedule *models.Schedule) error
-	GetByWeek(ctx context.Context, week time.Time) (*models.Schedule, error)
-	GetLatest(ctx context.Context) (*models.Schedule, error)
+	Save(ctx context.Context, week time.Time, schedule *pb.Schedule) error
+	GetByWeek(ctx context.Context, week time.Time) (*pb.Schedule, error)
+	GetLatest(ctx context.Context) (*pb.Schedule, error)
 }

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/models"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/gocolly/colly"
 )
 
@@ -31,9 +31,9 @@ func New() *Parser {
 	}
 }
 
-func (c *Parser) Parse() (*models.Schedule, *time.Time, error) {
-	schedule := models.Schedule{
-		Groups: make(map[int]models.Group),
+func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
+	schedule := pb.Schedule{
+		Groups: make(map[int32]*pb.Group),
 	}
 
 	c.c.OnError(func(r *colly.Response, err error) {
@@ -61,13 +61,13 @@ func (c *Parser) Parse() (*models.Schedule, *time.Time, error) {
 			week = time.Now()
 		}
 
-		group := models.Group{
-			GroupNum: groupNum,
-			Week:     week.Format("02-01-2006"),
-			Days:     parseRows(table.Find("tbody tr")),
+		group := pb.Group{
+			Id:   groupNum,
+			Week: week.Format("02-01-2006"),
+			Days: parseRows(table.Find("tbody tr")),
 		}
 
-		schedule.Groups[groupNum] = group
+		schedule.Groups[groupNum] = &group
 	})
 
 	if err := c.c.Visit(url); err != nil {
@@ -77,7 +77,7 @@ func (c *Parser) Parse() (*models.Schedule, *time.Time, error) {
 	return &schedule, &week, nil
 }
 
-func parseGroup(text string) (int, error) {
+func parseGroup(text string) (int32, error) {
 	if strings.Contains(text, "Кол") || strings.Contains(text, "кол") {
 		return 0, ErrBadGroup
 	}
@@ -94,7 +94,7 @@ func parseGroup(text string) (int, error) {
 		return 0, err
 	}
 
-	return group, nil
+	return int32(group), nil
 }
 
 func parseWeek(e *goquery.Selection) (time.Time, error) {
