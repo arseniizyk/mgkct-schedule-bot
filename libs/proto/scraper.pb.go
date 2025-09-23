@@ -30,7 +30,7 @@ const (
 
 type GroupScheduleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	GroupNum      int32                  `protobuf:"varint,1,opt,name=groupNum,proto3" json:"groupNum,omitempty"`
+	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -65,18 +65,18 @@ func (*GroupScheduleRequest) Descriptor() ([]byte, []int) {
 	return file_scraper_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *GroupScheduleRequest) GetGroupNum() int32 {
+func (x *GroupScheduleRequest) GetId() int32 {
 	if x != nil {
-		return x.GroupNum
+		return x.Id
 	}
 	return 0
 }
 
 type GroupScheduleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	GroupNum      int32                  `protobuf:"varint,1,opt,name=groupNum,proto3" json:"groupNum,omitempty"`
+	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Week          string                 `protobuf:"bytes,2,opt,name=week,proto3" json:"week,omitempty"`
-	Day           []*Day                 `protobuf:"bytes,3,rep,name=day,proto3" json:"day,omitempty"`
+	Days          []*Day                 `protobuf:"bytes,3,rep,name=days,proto3" json:"days,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,9 +111,9 @@ func (*GroupScheduleResponse) Descriptor() ([]byte, []int) {
 	return file_scraper_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GroupScheduleResponse) GetGroupNum() int32 {
+func (x *GroupScheduleResponse) GetId() int32 {
 	if x != nil {
-		return x.GroupNum
+		return x.Id
 	}
 	return 0
 }
@@ -125,9 +125,9 @@ func (x *GroupScheduleResponse) GetWeek() string {
 	return ""
 }
 
-func (x *GroupScheduleResponse) GetDay() []*Day {
+func (x *GroupScheduleResponse) GetDays() []*Day {
 	if x != nil {
-		return x.Day
+		return x.Days
 	}
 	return nil
 }
@@ -308,13 +308,13 @@ var File_scraper_proto protoreflect.FileDescriptor
 
 const file_scraper_proto_rawDesc = "" +
 	"\n" +
-	"\rscraper.proto\x12\ascraper\"2\n" +
-	"\x14GroupScheduleRequest\x12\x1a\n" +
-	"\bgroupNum\x18\x01 \x01(\x05R\bgroupNum\"g\n" +
-	"\x15GroupScheduleResponse\x12\x1a\n" +
-	"\bgroupNum\x18\x01 \x01(\x05R\bgroupNum\x12\x12\n" +
-	"\x04week\x18\x02 \x01(\tR\x04week\x12\x1e\n" +
-	"\x03day\x18\x03 \x03(\v2\f.scraper.DayR\x03day\"G\n" +
+	"\rscraper.proto\x12\ascraper\"&\n" +
+	"\x14GroupScheduleRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x05R\x02id\"]\n" +
+	"\x15GroupScheduleResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x05R\x02id\x12\x12\n" +
+	"\x04week\x18\x02 \x01(\tR\x04week\x12 \n" +
+	"\x04days\x18\x03 \x03(\v2\f.scraper.DayR\x04days\"G\n" +
 	"\x03Day\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12,\n" +
 	"\bsubjects\x18\x02 \x03(\v2\x10.scraper.SubjectR\bsubjects\"D\n" +
@@ -350,7 +350,7 @@ var file_scraper_proto_goTypes = []any{
 	(*Pair)(nil),                  // 4: scraper.Pair
 }
 var file_scraper_proto_depIdxs = []int32{
-	2, // 0: scraper.GroupScheduleResponse.day:type_name -> scraper.Day
+	2, // 0: scraper.GroupScheduleResponse.days:type_name -> scraper.Day
 	3, // 1: scraper.Day.subjects:type_name -> scraper.Subject
 	4, // 2: scraper.Subject.pairs:type_name -> scraper.Pair
 	0, // 3: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
