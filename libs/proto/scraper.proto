@@ -17,13 +17,13 @@ service ScheduleService {
 }
 
 message GroupScheduleRequest {
-    int32 groupNum = 1;
+    int32 id = 1;
 }
 
 message GroupScheduleResponse {
-    int32 groupNum = 1;
+    int32 id = 1;
     string week = 2;
-    repeated Day day = 3;
+    repeated Day days = 3;
 }
 
 message Day {
