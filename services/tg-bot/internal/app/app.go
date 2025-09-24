@@ -87,7 +87,9 @@ func (a *App) Run() error {
 	a.h = tbot.NewHandler(userUC, sm, a.bot)
 
 	b := bus.New(tbotUC.NewScheduleHandlerUsecase(a.h, userRepo), a.nc)
-	b.SubscribeGroupUpdates()
+	if err := b.SubscribeGroupUpdates(); err != nil {
+		slog.Error("can't subscribe to group updates", "err", err)
+	}
 
 	a.StartBot()
 
