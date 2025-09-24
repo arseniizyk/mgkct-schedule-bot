@@ -30,7 +30,7 @@ const (
 
 type GroupScheduleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	GroupNum      int32                  `protobuf:"varint,1,opt,name=groupNum,proto3" json:"groupNum,omitempty"`
+	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -65,18 +65,16 @@ func (*GroupScheduleRequest) Descriptor() ([]byte, []int) {
 	return file_scraper_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *GroupScheduleRequest) GetGroupNum() int32 {
+func (x *GroupScheduleRequest) GetId() int32 {
 	if x != nil {
-		return x.GroupNum
+		return x.Id
 	}
 	return 0
 }
 
 type GroupScheduleResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	GroupNum      int32                  `protobuf:"varint,1,opt,name=groupNum,proto3" json:"groupNum,omitempty"`
-	Week          string                 `protobuf:"bytes,2,opt,name=week,proto3" json:"week,omitempty"`
-	Day           []*Day                 `protobuf:"bytes,3,rep,name=day,proto3" json:"day,omitempty"`
+	Group         *Group                 `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,23 +109,113 @@ func (*GroupScheduleResponse) Descriptor() ([]byte, []int) {
 	return file_scraper_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GroupScheduleResponse) GetGroupNum() int32 {
+func (x *GroupScheduleResponse) GetGroup() *Group {
 	if x != nil {
-		return x.GroupNum
+		return x.Group
+	}
+	return nil
+}
+
+type Schedule struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Groups        map[int32]*Group       `protobuf:"bytes,1,rep,name=groups,proto3" json:"groups,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Schedule) Reset() {
+	*x = Schedule{}
+	mi := &file_scraper_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Schedule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Schedule) ProtoMessage() {}
+
+func (x *Schedule) ProtoReflect() protoreflect.Message {
+	mi := &file_scraper_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
+func (*Schedule) Descriptor() ([]byte, []int) {
+	return file_scraper_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Schedule) GetGroups() map[int32]*Group {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
+type Group struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Week          string                 `protobuf:"bytes,2,opt,name=week,proto3" json:"week,omitempty"`
+	Days          []*Day                 `protobuf:"bytes,3,rep,name=days,proto3" json:"days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Group) Reset() {
+	*x = Group{}
+	mi := &file_scraper_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Group) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Group) ProtoMessage() {}
+
+func (x *Group) ProtoReflect() protoreflect.Message {
+	mi := &file_scraper_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Group.ProtoReflect.Descriptor instead.
+func (*Group) Descriptor() ([]byte, []int) {
+	return file_scraper_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Group) GetId() int32 {
+	if x != nil {
+		return x.Id
 	}
 	return 0
 }
 
-func (x *GroupScheduleResponse) GetWeek() string {
+func (x *Group) GetWeek() string {
 	if x != nil {
 		return x.Week
 	}
 	return ""
 }
 
-func (x *GroupScheduleResponse) GetDay() []*Day {
+func (x *Group) GetDays() []*Day {
 	if x != nil {
-		return x.Day
+		return x.Days
 	}
 	return nil
 }
@@ -142,7 +230,7 @@ type Day struct {
 
 func (x *Day) Reset() {
 	*x = Day{}
-	mi := &file_scraper_proto_msgTypes[2]
+	mi := &file_scraper_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -154,7 +242,7 @@ func (x *Day) String() string {
 func (*Day) ProtoMessage() {}
 
 func (x *Day) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[2]
+	mi := &file_scraper_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -167,7 +255,7 @@ func (x *Day) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Day.ProtoReflect.Descriptor instead.
 func (*Day) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{2}
+	return file_scraper_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Day) GetName() string {
@@ -187,14 +275,14 @@ func (x *Day) GetSubjects() []*Subject {
 type Subject struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Pairs         []*Pair                `protobuf:"bytes,1,rep,name=pairs,proto3" json:"pairs,omitempty"`
-	Empty         bool                   `protobuf:"varint,2,opt,name=empty,proto3" json:"empty,omitempty"`
+	IsEmpty       bool                   `protobuf:"varint,2,opt,name=is_empty,json=isEmpty,proto3" json:"is_empty,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Subject) Reset() {
 	*x = Subject{}
-	mi := &file_scraper_proto_msgTypes[3]
+	mi := &file_scraper_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -206,7 +294,7 @@ func (x *Subject) String() string {
 func (*Subject) ProtoMessage() {}
 
 func (x *Subject) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[3]
+	mi := &file_scraper_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -219,7 +307,7 @@ func (x *Subject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Subject.ProtoReflect.Descriptor instead.
 func (*Subject) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{3}
+	return file_scraper_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Subject) GetPairs() []*Pair {
@@ -229,9 +317,9 @@ func (x *Subject) GetPairs() []*Pair {
 	return nil
 }
 
-func (x *Subject) GetEmpty() bool {
+func (x *Subject) GetIsEmpty() bool {
 	if x != nil {
-		return x.Empty
+		return x.IsEmpty
 	}
 	return false
 }
@@ -248,7 +336,7 @@ type Pair struct {
 
 func (x *Pair) Reset() {
 	*x = Pair{}
-	mi := &file_scraper_proto_msgTypes[4]
+	mi := &file_scraper_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -260,7 +348,7 @@ func (x *Pair) String() string {
 func (*Pair) ProtoMessage() {}
 
 func (x *Pair) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[4]
+	mi := &file_scraper_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -273,7 +361,7 @@ func (x *Pair) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Pair.ProtoReflect.Descriptor instead.
 func (*Pair) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{4}
+	return file_scraper_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Pair) GetName() string {
@@ -308,19 +396,26 @@ var File_scraper_proto protoreflect.FileDescriptor
 
 const file_scraper_proto_rawDesc = "" +
 	"\n" +
-	"\rscraper.proto\x12\ascraper\"2\n" +
-	"\x14GroupScheduleRequest\x12\x1a\n" +
-	"\bgroupNum\x18\x01 \x01(\x05R\bgroupNum\"g\n" +
-	"\x15GroupScheduleResponse\x12\x1a\n" +
-	"\bgroupNum\x18\x01 \x01(\x05R\bgroupNum\x12\x12\n" +
-	"\x04week\x18\x02 \x01(\tR\x04week\x12\x1e\n" +
-	"\x03day\x18\x03 \x03(\v2\f.scraper.DayR\x03day\"G\n" +
+	"\rscraper.proto\x12\ascraper\"&\n" +
+	"\x14GroupScheduleRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x05R\x02id\"=\n" +
+	"\x15GroupScheduleResponse\x12$\n" +
+	"\x05group\x18\x01 \x01(\v2\x0e.scraper.GroupR\x05group\"\x8c\x01\n" +
+	"\bSchedule\x125\n" +
+	"\x06groups\x18\x01 \x03(\v2\x1d.scraper.Schedule.GroupsEntryR\x06groups\x1aI\n" +
+	"\vGroupsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\x12$\n" +
+	"\x05value\x18\x02 \x01(\v2\x0e.scraper.GroupR\x05value:\x028\x01\"M\n" +
+	"\x05Group\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x05R\x02id\x12\x12\n" +
+	"\x04week\x18\x02 \x01(\tR\x04week\x12 \n" +
+	"\x04days\x18\x03 \x03(\v2\f.scraper.DayR\x04days\"G\n" +
 	"\x03Day\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12,\n" +
-	"\bsubjects\x18\x02 \x03(\v2\x10.scraper.SubjectR\bsubjects\"D\n" +
+	"\bsubjects\x18\x02 \x03(\v2\x10.scraper.SubjectR\bsubjects\"I\n" +
 	"\aSubject\x12#\n" +
-	"\x05pairs\x18\x01 \x03(\v2\r.scraper.PairR\x05pairs\x12\x14\n" +
-	"\x05empty\x18\x02 \x01(\bR\x05empty\"^\n" +
+	"\x05pairs\x18\x01 \x03(\v2\r.scraper.PairR\x05pairs\x12\x19\n" +
+	"\bis_empty\x18\x02 \x01(\bR\aisEmpty\"^\n" +
 	"\x04Pair\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x18\n" +
@@ -341,25 +436,31 @@ func file_scraper_proto_rawDescGZIP() []byte {
 	return file_scraper_proto_rawDescData
 }
 
-var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_scraper_proto_goTypes = []any{
 	(*GroupScheduleRequest)(nil),  // 0: scraper.GroupScheduleRequest
 	(*GroupScheduleResponse)(nil), // 1: scraper.GroupScheduleResponse
-	(*Day)(nil),                   // 2: scraper.Day
-	(*Subject)(nil),               // 3: scraper.Subject
-	(*Pair)(nil),                  // 4: scraper.Pair
+	(*Schedule)(nil),              // 2: scraper.Schedule
+	(*Group)(nil),                 // 3: scraper.Group
+	(*Day)(nil),                   // 4: scraper.Day
+	(*Subject)(nil),               // 5: scraper.Subject
+	(*Pair)(nil),                  // 6: scraper.Pair
+	nil,                           // 7: scraper.Schedule.GroupsEntry
 }
 var file_scraper_proto_depIdxs = []int32{
-	2, // 0: scraper.GroupScheduleResponse.day:type_name -> scraper.Day
-	3, // 1: scraper.Day.subjects:type_name -> scraper.Subject
-	4, // 2: scraper.Subject.pairs:type_name -> scraper.Pair
-	0, // 3: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
-	1, // 4: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	3, // 0: scraper.GroupScheduleResponse.group:type_name -> scraper.Group
+	7, // 1: scraper.Schedule.groups:type_name -> scraper.Schedule.GroupsEntry
+	4, // 2: scraper.Group.days:type_name -> scraper.Day
+	5, // 3: scraper.Day.subjects:type_name -> scraper.Subject
+	6, // 4: scraper.Subject.pairs:type_name -> scraper.Pair
+	3, // 5: scraper.Schedule.GroupsEntry.value:type_name -> scraper.Group
+	0, // 6: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
+	1, // 7: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
+	7, // [7:8] is the sub-list for method output_type
+	6, // [6:7] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_scraper_proto_init() }
@@ -373,7 +474,7 @@ func file_scraper_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scraper_proto_rawDesc), len(file_scraper_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -1,4 +1,12 @@
 services:
+    nats:
+        image: nats
+        ports:
+            - '4223:4222'
+            - '8222:8222' # мониторинг
+        command: '-DV -m 8222'
+        restart: unless-stopped
+
     tg-bot:
         build:
             context: .
@@ -8,11 +16,15 @@ services:
         env_file:
             - .env
         depends_on:
-            - scraper
+            # scraper:
+            # condition: service_healthy #TODO healthcheck for scraper
+            nats:
+                condition: service_started
+            tg-bot-postgres:
+                condition: service_healthy
         restart: unless-stopped
         environment:
-            - IS_DOCKER=true
-            - GRPC_ADDR=scraper:${GRPC_PORT}
+            - POSTGRES_HOST=tg-bot-postgres
 
     scraper:
         build:
@@ -23,22 +35,22 @@ services:
         env_file:
             - .env
         depends_on:
-            postgres:
+            nats:
+                condition: service_started
+            scraper-postgres:
                 condition: service_healthy
-        restart: always
+        restart: unless-stopped
         expose:
-            - '${GRPC_PORT:-9001}'
-        ports:
-            - '${HTTP_PORT:-8000}:${HTTP_PORT:-8000}'
+            - '9001'
         environment:
-            - IS_DOCKER=true
+            - POSTGRES_HOST=scraper-postgres
 
-    postgres:
+    scraper-postgres:
         image: postgres
         container_name: scraper-postgres
-        restart: always
+        restart: unless-stopped
         volumes:
-            - ./migrations/:/docker-entrypoint-initdb.d/
+            - ./migrations/scraper:/docker-entrypoint-initdb.d/
         env_file:
             - .env
         ports:
@@ -49,8 +61,26 @@ services:
             timeout: 3s
             retries: 5
 
+    tg-bot-postgres:
+        image: postgres
+        container_name: tg-bot-postgres
+        restart: unless-stopped
+        volumes:
+            - ./migrations/tg-bot:/docker-entrypoint-initdb.d/
+        env_file:
+            - .env
+        ports:
+            - '5434:5432'
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
+            interval: 3s
+            timeout: 3s
+            retries: 5
+
     adminer:
         image: adminer
-        restart: always
+        restart: unless-stopped
         ports:
             - '8080:8080'
+        environment:
+            - ADMINER_DEFAULT_SERVER=scraper-postgres,tg-bot-postgres

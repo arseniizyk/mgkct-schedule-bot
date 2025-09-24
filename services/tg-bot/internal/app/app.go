@@ -3,17 +3,18 @@ package app
 import (
 	"context"
 	"log/slog"
-	"os"
 	"time"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
+	"github.com/arseniizyk/mgkct-schedule-bot/libs/database"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/config"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/database"
+	"github.com/nats-io/nats.go"
 
 	scheduleUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/schedule/usecase"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/bus"
 	tbot "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery"
-	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/keyboard"
+	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/keyboard"
 	tbotRepo "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/postgres"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
 	tbotUC "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/usecase"
@@ -27,33 +28,30 @@ type App struct {
 	db  *database.Database
 	bot *tele.Bot
 	h   *tbot.Handler
+	nc  *nats.Conn
+	cfg *config.Config
 }
 
-func New() (*App, error) {
-	if err := config.LoadEnv(); err != nil {
-		slog.Error("can't load cfg", "err", err)
-		return nil, err
-	}
-
-	db, err := database.New()
+func New(cfg *config.Config) (*App, error) {
+	db, err := database.New(cfg)
 	if err != nil {
-		slog.Error("can't connect to DB", "err", err)
+		slog.Error("connect db", "err", err)
 		return nil, err
 	}
 
 	if err := db.Ping(context.Background()); err != nil {
-		slog.Error("bad ping to DB", "err", err)
+		slog.Error("bad ping db", "err", err)
 		return nil, err
 	}
 
-	token := os.Getenv("TELEGRAM_TOKEN")
-	if token == "" {
-		slog.Error("Provide telegram token to .env")
+	nc, err := nats.Connect(cfg.NatsURL)
+	if err != nil {
+		slog.Error("connect nats", "err", err)
 		return nil, err
 	}
 
 	pref := tele.Settings{
-		Token:  token,
+		Token:  cfg.BotToken,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
 	}
 
@@ -66,31 +64,32 @@ func New() (*App, error) {
 	return &App{
 		db:  db,
 		bot: b,
+		nc:  nc,
+		cfg: cfg,
 	}, nil
 }
 
 func (a *App) Run() error {
 	defer a.db.Close()
 
-	grpcUrl := os.Getenv("GRPC_ADDR")
-	if grpcUrl == "" {
-		grpcUrl = "localhost:" + os.Getenv("GRPC_PORT")
-	}
-
-	conn, err := grpc.NewClient(grpcUrl, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	grpcConn, err := grpc.NewClient(a.cfg.ScraperURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		slog.Error("failed to connect GRPC Server", "port", os.Getenv("GRPC_PORT"), "err", err)
+		slog.Error("failed to connect GRPC Server", "url", a.cfg.ScraperURL, "err", err)
 		return err
 	}
 
-	scheduleUC := scheduleUC.New(pb.NewScheduleServiceClient(conn))
+	scheduleUC := scheduleUC.New(pb.NewScheduleServiceClient(grpcConn))
 
 	userRepo := tbotRepo.New(a.db.Pool)
-	userUC := tbotUC.New(scheduleUC, userRepo)
+	userUC := tbotUC.NewUserUsecase(scheduleUC, userRepo)
 	sm := memory.NewMemory()
 
-	h := tbot.NewHandler(userUC, sm)
-	a.h = h
+	a.h = tbot.NewHandler(userUC, sm, a.bot)
+
+	b := bus.New(tbotUC.NewScheduleHandlerUsecase(a.h, userRepo), a.nc)
+	if err := b.SubscribeGroupUpdates(); err != nil {
+		slog.Error("can't subscribe to group updates", "err", err)
+	}
 
 	a.StartBot()
 

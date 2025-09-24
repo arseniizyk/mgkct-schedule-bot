@@ -83,7 +83,7 @@ func FindLastSubject(subjects []*pb.Subject) int {
 	}
 
 	for i := len(subjects) - 1; i >= 0; i-- {
-		if !subjects[i].Empty {
+		if !subjects[i].IsEmpty {
 			return i
 		}
 	}

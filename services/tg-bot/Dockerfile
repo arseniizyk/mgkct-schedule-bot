@@ -6,7 +6,7 @@ WORKDIR /app/services/tg-bot
 
 COPY services/tg-bot/go.mod services/tg-bot/go.sum ./
 
-COPY libs/proto ../../libs/proto
+COPY libs/ ../../libs/
 
 RUN go mod download
 

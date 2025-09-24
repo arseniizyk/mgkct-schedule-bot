@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -12,15 +13,15 @@ type Database struct {
 	Pool *pgxpool.Pool
 }
 
-func New() (*Database, error) {
+func New(cfg *config.Config) (*Database, error) {
 	url := fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		os.Getenv("POSTGRES_USER"),
-		os.Getenv("POSTGRES_PASSWORD"),
+		cfg.PostgresUser,
+		cfg.PostgresPassword,
 		os.Getenv("POSTGRES_HOST"),
-		os.Getenv("POSTGRES_PORT"),
-		os.Getenv("POSTGRES_DB"),
-		os.Getenv("POSTGRES_SSL"),
+		cfg.PostgresPort,
+		cfg.PostgresDB,
+		cfg.PostgresSSL,
 	)
 
 	pool, err := pgxpool.New(context.Background(), url)
