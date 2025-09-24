@@ -1,4 +1,4 @@
-package transport
+package bus
 
 import (
 	"context"
@@ -10,22 +10,25 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type NatsConsumer struct {
+type Bus struct {
 	nc      *nats.Conn
-	handler telegram.ScheduleHandler
+	handler telegram.ScheduleHandlerUsecase
 }
 
-func NewNatsConsumer(handler telegram.ScheduleHandler, conn *nats.Conn) (*NatsConsumer, error) {
-	return &NatsConsumer{
+func New(handler telegram.ScheduleHandlerUsecase, conn *nats.Conn) *Bus {
+	return &Bus{
 		nc:      conn,
 		handler: handler,
-	}, nil
+	}
 }
 
-func (n *NatsConsumer) SubscribeGroupUpdates() {
+func (n *Bus) SubscribeGroupUpdates() {
 	n.nc.Subscribe("schedule", func(msg *nats.Msg) {
 		group := &pb.GroupScheduleResponse{}
-		proto.Unmarshal(msg.Data, group)
+		err := proto.Unmarshal(msg.Data, group)
+		if err != nil {
+			slog.Error("unmarshalling proto", "err", err)
+		}
 		if err := n.handler.HandleScheduleUpdate(context.Background(), group); err != nil {
 			slog.Error("handle schedule update", "err", err)
 		}

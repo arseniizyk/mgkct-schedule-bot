@@ -7,7 +7,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 )
 
-type ScheduleHandler interface {
+type ScheduleHandlerUsecase interface {
 	HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleResponse) error
 }
 
