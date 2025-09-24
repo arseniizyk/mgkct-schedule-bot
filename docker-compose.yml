@@ -24,8 +24,6 @@ services:
                 condition: service_healthy
         restart: unless-stopped
         environment:
-            - IS_DOCKER=true
-            - GRPC_ADDR=scraper:${GRPC_PORT}
             - POSTGRES_HOST=tg-bot-postgres
 
     scraper:
@@ -43,11 +41,8 @@ services:
                 condition: service_healthy
         restart: unless-stopped
         expose:
-            - '${GRPC_PORT:-9001}'
-        ports:
-            - '${HTTP_PORT:-8000}:${HTTP_PORT:-8000}'
+            - '9001'
         environment:
-            - IS_DOCKER=true
             - POSTGRES_HOST=scraper-postgres
 
     scraper-postgres:

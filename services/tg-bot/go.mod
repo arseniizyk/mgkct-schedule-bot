@@ -3,14 +3,15 @@ module github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot
 go 1.25.0
 
 replace (
+	github.com/arseniizyk/mgkct-schedule-bot/libs/config => ../../libs/config
 	github.com/arseniizyk/mgkct-schedule-bot/libs/database => ../../libs/database
 	github.com/arseniizyk/mgkct-schedule-bot/libs/proto => ../../libs/proto
 )
 
 require (
+	github.com/arseniizyk/mgkct-schedule-bot/libs/config v0.0.0-00010101000000-000000000000
 	github.com/arseniizyk/mgkct-schedule-bot/libs/database v0.0.0-00010101000000-000000000000
 	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250903204728-9e1c94e1aa27
-	github.com/joho/godotenv v1.5.1
 	github.com/nats-io/nats.go v1.45.0
 	google.golang.org/grpc v1.75.0
 )
@@ -19,6 +20,8 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
+	github.com/kelseyhightower/envconfig v1.4.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect

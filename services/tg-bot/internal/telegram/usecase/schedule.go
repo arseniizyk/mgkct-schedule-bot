@@ -15,7 +15,7 @@ type ScheduleHandlerUsecase struct {
 	userRepo repository.UserRepository
 }
 
-func NewScheduleHandlerUsecase(h *delivery.Handler, userRepo repository.UserRepository) telegram.ScheduleHandler {
+func NewScheduleHandlerUsecase(h *delivery.Handler, userRepo repository.UserRepository) telegram.ScheduleHandlerUsecase {
 	return &ScheduleHandlerUsecase{
 		h:        h,
 		userRepo: userRepo,
@@ -23,9 +23,9 @@ func NewScheduleHandlerUsecase(h *delivery.Handler, userRepo repository.UserRepo
 }
 
 func (uc *ScheduleHandlerUsecase) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleResponse) error {
-	users, err := uc.userRepo.GetGroupUsers(ctx, int(g.GroupNum))
+	users, err := uc.userRepo.GetGroupUsers(ctx, int(g.Group.Id))
 	if err != nil {
-		slog.Error("can't get users for group", "groupNum", g.GroupNum, "err", err)
+		slog.Error("can't get users for group", "groupNum", g.Group.Id, "err", err)
 		return err
 	}
 

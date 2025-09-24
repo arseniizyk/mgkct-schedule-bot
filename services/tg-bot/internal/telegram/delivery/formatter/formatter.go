@@ -22,9 +22,9 @@ func FormatScheduleDay(day *pb.Day) string {
 
 func FormatScheduleWeek(resp *pb.GroupScheduleResponse) string {
 	var sb strings.Builder
-	sb.Grow(len(resp.Day) * 128)
+	sb.Grow(len(resp.Group.Days) * 128)
 
-	for _, day := range resp.Day {
+	for _, day := range resp.Group.Days {
 		sb.WriteString(FormatScheduleDay(day))
 	}
 
@@ -41,7 +41,7 @@ func formatSubjects(subjects []*pb.Subject) string {
 	}
 
 	for i, subject := range subjects {
-		if subject.Empty {
+		if subject.IsEmpty {
 			if i > lastSubject {
 				break
 			}

@@ -21,7 +21,7 @@ func New(stub pb.ScheduleServiceClient) schedule.ScheduleUsecase {
 
 func (sch *ScheduleUsecase) GetGroupSchedule(ctx context.Context, groupID int) (*pb.GroupScheduleResponse, error) {
 	resp, err := sch.scraperSvc.GetGroupSchedule(ctx, &pb.GroupScheduleRequest{
-		GroupNum: int32(groupID),
+		Id: int32(groupID),
 	})
 
 	if err != nil {

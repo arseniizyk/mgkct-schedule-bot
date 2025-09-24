@@ -9,9 +9,9 @@ import (
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	e "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/formatter"
+	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/utils"
-	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/keyboard"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -32,10 +32,11 @@ func (h *Handler) Day(c tele.Context) error {
 }
 
 func (h *Handler) SendUpdate(chatID int64, schedule *pb.GroupScheduleResponse) error {
-	msg := "Расписание обновлено\n"
+	msg := "*Расписание обновлено*\n\n"
 	msg += formatter.FormatScheduleWeek(schedule)
+	slog.Info("Send Updated Schedule", "chat_id", chatID, "group_id", schedule.Group.Id)
 
-	_, err := h.bot.Send(tele.ChatID(chatID), msg)
+	_, err := h.bot.Send(tele.ChatID(chatID), msg, tele.ModeMarkdown)
 	return err
 }
 
@@ -99,11 +100,11 @@ func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.GroupSched
 
 func (h *Handler) handleEndTime(c tele.Context, schedule *pb.GroupScheduleResponse) error {
 	dayIdx := utils.Day()
-	day := schedule.Day[dayIdx]
+	day := schedule.Group.Days[dayIdx]
 
 	lastSubject := utils.FindLastSubject(day.Subjects)
 	if lastSubject == -1 { // if no pairs in day
-		return c.Send(formatter.FormatScheduleDay(schedule.Day[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.GroupNum)))
+		return c.Send(formatter.FormatScheduleDay(schedule.Group.Days[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.Group.Id)))
 	}
 
 	now := time.Now()
@@ -111,9 +112,9 @@ func (h *Handler) handleEndTime(c tele.Context, schedule *pb.GroupScheduleRespon
 	endTime, ok := utils.GetEndTime(dayIdx, lastSubject)
 	if ok {
 		if now.After(endTime) || now.Equal(endTime) {
-			return c.Send(formatter.FormatScheduleDay(schedule.Day[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.GroupNum)))
+			return c.Send(formatter.FormatScheduleDay(schedule.Group.Days[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.Group.Id)))
 		}
 	}
 
-	return c.Send(formatter.FormatScheduleDay(schedule.Day[dayIdx]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.GroupNum)))
+	return c.Send(formatter.FormatScheduleDay(schedule.Group.Days[dayIdx]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.Group.Id)))
 }
