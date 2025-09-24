@@ -7,7 +7,6 @@ syntax = "proto3";
 //   --go-grpc_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
 //   scraper.proto
 
-
 package scraper;
 
 option go_package = "github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pb";
@@ -17,13 +16,21 @@ service ScheduleService {
 }
 
 message GroupScheduleRequest {
-    int32 groupNum = 1;
+    int32 id = 1;
 }
 
 message GroupScheduleResponse {
-    int32 groupNum = 1;
+    Group group = 1;
+}
+
+message Schedule {
+    map<int32, Group> groups = 1;
+}
+
+message Group {
+    int32 id = 1;
     string week = 2;
-    repeated Day day = 3;
+    repeated Day days = 3;
 }
 
 message Day {
@@ -33,7 +40,7 @@ message Day {
 
 message Subject {
     repeated Pair pairs = 1;
-    bool empty = 2;
+    bool is_empty = 2;
 }
 
 message Pair {

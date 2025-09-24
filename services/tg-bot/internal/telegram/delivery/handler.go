@@ -1,13 +1,15 @@
 package delivery
 
 import (
+	"context"
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/formatter"
+	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/messages"
-	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/keyboard"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram"
@@ -15,15 +17,39 @@ import (
 )
 
 type Handler struct {
-	uc telegram.UserUsecase
-	sm state.Manager
+	uc  telegram.UserUsecase
+	sm  state.Manager
+	bot *tele.Bot
 }
 
-func NewHandler(uc telegram.UserUsecase, sm state.Manager) *Handler {
+func NewHandler(uc telegram.UserUsecase, sm state.Manager, bot *tele.Bot) *Handler {
 	return &Handler{
-		uc: uc,
-		sm: sm,
+		uc:  uc,
+		sm:  sm,
+		bot: bot,
 	}
+}
+
+func (h *Handler) WaitingGroup(c tele.Context) error {
+	group, err := strconv.Atoi(c.Text())
+	if err != nil {
+		slog.Error("can't parse group to int", "input", c.Text(), "err", err)
+		return c.Send(msg.WaitingGroup)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := h.uc.SetUserGroup(ctx, c.Chat().ID, group); err != nil {
+		slog.Error("waitingGroup: failed to set group", "chat_id", c.Chat().ID, "group_id", group, "err", err)
+		return c.Send(msg.InternalTryWith)
+	}
+
+	if err := h.sm.Clear(c.Chat().ID); err != nil {
+		slog.Warn("waiting group: can't clear state", "chat_id", c.Chat().ID, "err", err)
+	}
+
+	return c.Send(msg.GroupSaved, kbd.ReplyScheduleKeyboard)
 }
 
 func (h *Handler) LogMessages(next tele.HandlerFunc) tele.HandlerFunc {
