@@ -22,8 +22,8 @@ func New(handler telegram.ScheduleHandlerUsecase, conn *nats.Conn) *Bus {
 	}
 }
 
-func (n *Bus) SubscribeGroupUpdates() error {
-	_, err := n.nc.Subscribe("schedule", func(msg *nats.Msg) {
+func (n *Bus) SubscribeScheduleUpdates() error {
+	_, err := n.nc.Subscribe("schedule.updates", func(msg *nats.Msg) {
 		group := &pb.GroupScheduleResponse{}
 		err := proto.Unmarshal(msg.Data, group)
 		if err != nil {
