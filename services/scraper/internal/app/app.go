@@ -102,8 +102,8 @@ func (a *App) shutdown(cancel context.CancelFunc) error {
 
 	<-sigChan
 
-	a.nc.Close()
 	a.db.Close()
 	a.grpcServer.GracefulStop()
-	return nil
+	err := a.nc.Close()
+	return err
 }
