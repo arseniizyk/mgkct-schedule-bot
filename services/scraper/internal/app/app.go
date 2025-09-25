@@ -20,7 +20,7 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/database"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/parser"
-	server "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
 	"google.golang.org/grpc"
 )
 
@@ -30,6 +30,7 @@ type App struct {
 	grpcServer *grpc.Server
 	parserSvc  *service.ParserService
 	scheduleUC schedule.ScheduleUsecase
+	nc         *transport.Nats
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -47,7 +48,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("db ping: %w", err)
 	}
 
-	nats, err := server.NewNats(cfg)
+	nc, err := transport.NewNats(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("can't connect to NATS")
 	}
@@ -55,7 +56,7 @@ func New(cfg *config.Config) (*App, error) {
 	parserObj := parser.New()
 	scheduleRepo := scheduleRepo.New(db.Pool)
 	scheduleUC := scheduleUC.New(scheduleRepo)
-	parserSvc := service.NewParserService(scheduleUC, parserObj, nats)
+	parserSvc := service.NewParserService(scheduleUC, parserObj, nc)
 
 	return &App{
 		lis:        lis,
@@ -63,6 +64,7 @@ func New(cfg *config.Config) (*App, error) {
 		grpcServer: grpc.NewServer(),
 		parserSvc:  parserSvc,
 		scheduleUC: scheduleUC,
+		nc:         nc,
 	}, nil
 }
 
@@ -81,7 +83,7 @@ func (a *App) Run() error {
 	}()
 
 	go func() {
-		pb.RegisterScheduleServiceServer(a.grpcServer, server.NewGRPCServer(a.scheduleUC))
+		pb.RegisterScheduleServiceServer(a.grpcServer, transport.NewGRPCServer(a.scheduleUC))
 		slog.Info("gRPC server started", "address", a.lis.Addr().String())
 		if err := a.grpcServer.Serve(a.lis); err != nil {
 			slog.Error("gRPC serve error", "err", err)
@@ -102,5 +104,6 @@ func (a *App) shutdown(cancel context.CancelFunc) error {
 
 	a.db.Close()
 	a.grpcServer.GracefulStop()
-	return nil
+	err := a.nc.Close()
+	return err
 }

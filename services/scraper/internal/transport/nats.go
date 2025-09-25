@@ -1,4 +1,4 @@
-package server
+package transport
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ type Nats struct {
 }
 
 func NewNats(cfg *config.Config) (*Nats, error) {
-	nc, err := nats.Connect(cfg.NatsURL)
+	nc, err := nats.Connect(cfg.NatsURL, nats.Name("scraper"))
 	if err != nil {
 		return nil, fmt.Errorf("connect to NATS: %w", err)
 	}
@@ -32,7 +32,7 @@ func (n *Nats) PublishScheduleUpdate(group *pb.Group) error {
 		slog.Error("PublishScheduleUpdate: marshal proto", "group", group, "err", err)
 		return err
 	}
-	return n.nc.Publish("schedule", data)
+	return n.nc.Publish("schedule.updates", data)
 }
 
 func (n *Nats) Close() error {

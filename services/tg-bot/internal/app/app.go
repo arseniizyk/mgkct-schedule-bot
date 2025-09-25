@@ -44,7 +44,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	nc, err := nats.Connect(cfg.NatsURL)
+	nc, err := nats.Connect(cfg.NatsURL, nats.Name("tg-bot"))
 	if err != nil {
 		slog.Error("connect nats", "err", err)
 		return nil, err
@@ -87,7 +87,7 @@ func (a *App) Run() error {
 	a.h = tbot.NewHandler(userUC, sm, a.bot)
 
 	b := bus.New(tbotUC.NewScheduleHandlerUsecase(a.h, userRepo), a.nc)
-	if err := b.SubscribeGroupUpdates(); err != nil {
+	if err := b.SubscribeScheduleUpdates(); err != nil {
 		slog.Error("can't subscribe to group updates", "err", err)
 	}
 
