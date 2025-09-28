@@ -1,4 +1,4 @@
-package usecase
+package schedule
 
 import (
 	"context"
@@ -7,23 +7,9 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
 )
 
-type ScheduleUsecase struct {
-	repo  repository.ScheduleRepository
-	cache *pb.Schedule
-}
-
-func New(repo repository.ScheduleRepository) schedule.ScheduleUsecase {
-	return &ScheduleUsecase{
-		repo:  repo,
-		cache: nil,
-	}
-}
-
-func (s *ScheduleUsecase) GetFullLatestSchedule(ctx context.Context) (*pb.Schedule, error) {
+func (s *service) GetFullLatestSchedule(ctx context.Context) (*pb.Schedule, error) {
 	if s.cache != nil {
 		return s.cache, nil
 	}
@@ -38,7 +24,7 @@ func (s *ScheduleUsecase) GetFullLatestSchedule(ctx context.Context) (*pb.Schedu
 	return sch, nil
 }
 
-func (s *ScheduleUsecase) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error) {
+func (s *service) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error) {
 	if s.cache != nil {
 		if group, ok := s.cache.Groups[groupID]; ok && !group.Week.AsTime().After(week) {
 			return group, nil
@@ -60,7 +46,7 @@ func (s *ScheduleUsecase) GetGroupScheduleByWeek(ctx context.Context, groupID in
 	return group, nil
 }
 
-func (s *ScheduleUsecase) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error) {
+func (s *service) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error) {
 	if s.cache != nil {
 		if group, ok := s.cache.Groups[groupID]; ok {
 			return group, nil
@@ -80,12 +66,4 @@ func (s *ScheduleUsecase) GetGroupLatestSchedule(ctx context.Context, groupID in
 	}
 
 	return group, nil
-}
-
-func (s *ScheduleUsecase) SaveToCache(sch *pb.Schedule) {
-	s.cache = sch
-}
-
-func (s *ScheduleUsecase) Save(ctx context.Context, week time.Time, sch *pb.Schedule) error {
-	return s.repo.Save(ctx, week, sch)
 }

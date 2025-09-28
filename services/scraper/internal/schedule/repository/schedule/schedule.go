@@ -1,4 +1,4 @@
-package postgres
+package schedule
 
 import (
 	"context"
@@ -8,27 +8,25 @@ import (
 
 	"github.com/Masterminds/squirrel"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/model"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-var ErrNotFound = errors.New("not found")
-
-type ScheduleRepository struct {
+type repository struct {
 	pool *pgxpool.Pool
 	sb   squirrel.StatementBuilderType
 }
 
-func New(pool *pgxpool.Pool) repository.ScheduleRepository {
-	return &ScheduleRepository{
+func New(pool *pgxpool.Pool) *repository {
+	return &repository{
 		pool: pool,
 		sb:   squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
 	}
 }
 
-func (repo *ScheduleRepository) Save(ctx context.Context, week time.Time, schedule *pb.Schedule) error {
+func (repo *repository) Save(ctx context.Context, week time.Time, schedule *pb.Schedule) error {
 	data, err := protojson.Marshal(schedule)
 	if err != nil {
 		return fmt.Errorf("repo: marshal schedule: %w", err)
@@ -47,7 +45,7 @@ func (repo *ScheduleRepository) Save(ctx context.Context, week time.Time, schedu
 	return err
 }
 
-func (repo *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (*pb.Schedule, error) {
+func (repo *repository) GetByWeek(ctx context.Context, week time.Time) (*pb.Schedule, error) {
 	query := repo.sb.Select("schedule").
 		From("schedules").
 		Where(squirrel.LtOrEq{"week": week}).
@@ -62,7 +60,7 @@ func (repo *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (
 	var raw []byte
 	if err := repo.pool.QueryRow(ctx, sql, args...).Scan(&raw); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 		return nil, fmt.Errorf("repo: get schedule: %w", err)
 	}
@@ -75,7 +73,7 @@ func (repo *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (
 	return &s, nil
 }
 
-func (repo *ScheduleRepository) GetLatest(ctx context.Context) (*pb.Schedule, error) {
+func (repo *repository) GetLatest(ctx context.Context) (*pb.Schedule, error) {
 	query := repo.sb.Select("schedule").
 		From("schedules").
 		OrderBy("updated_at DESC").
@@ -90,7 +88,7 @@ func (repo *ScheduleRepository) GetLatest(ctx context.Context) (*pb.Schedule, er
 	err = repo.pool.QueryRow(ctx, sql, args...).Scan(&raw)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return nil, model.ErrNotFound
 		}
 		return nil, fmt.Errorf("repo: get latest schedule: %w", err)
 	}

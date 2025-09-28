@@ -1,10 +1,13 @@
 package parser
 
 import (
+	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/utils"
 )
 
 func parseRows(trs *goquery.Selection) []*pb.Day {
@@ -69,12 +72,32 @@ func parsePairs(nameParts, classParts []string) []*pb.Pair {
 		class = strings.ReplaceAll(class, "(к)", "")
 
 		pairs = append(pairs, &pb.Pair{
-			Name:    cleanText(name),
-			Type:    cleanText(subjectType),
-			Teacher: cleanText(teacher),
-			Class:   cleanText(class),
+			Name:    utils.CleanText(name),
+			Type:    utils.CleanText(subjectType),
+			Teacher: utils.CleanText(teacher),
+			Class:   utils.CleanText(class),
 		})
 	}
 
 	return pairs
+}
+
+func splitByBr(td *goquery.Selection) []string {
+	html, err := td.Html()
+	if err != nil {
+		slog.Warn("splitByBr: can't get html content", "err", err)
+		return nil
+	}
+
+	re := regexp.MustCompile(`(?i)<br\s*/?>`)
+	parts := re.Split(html, -1)
+
+	res := make([]string, 0, len(parts))
+	for _, p := range parts {
+		text := utils.CleanText(p)
+		if text != "" {
+			res = append(res, text)
+		}
+	}
+	return res
 }
