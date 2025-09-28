@@ -45,7 +45,10 @@ func (p *ParserService) ParseScheduleEvery(ctx context.Context, interval time.Du
 		var sch *pb.Schedule
 		var err error
 
-		sch, err = p.schUC.GetLatest()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		sch, err = p.schUC.GetFullLatestSchedule(ctx)
 		if err != nil && errors.Is(err, postgres.ErrNotFound) {
 			if sch, updated, err := p.parseSchedule(ctx); err == nil && updated {
 				resCh <- sch
