@@ -50,7 +50,9 @@ func (repo *ScheduleRepository) Save(ctx context.Context, week time.Time, schedu
 func (repo *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (*pb.Schedule, error) {
 	query := repo.sb.Select("schedule").
 		From("schedules").
-		Where(squirrel.Eq{"week": week})
+		Where(squirrel.LtOrEq{"week": week}).
+		OrderBy("week DESC").
+		Limit(1)
 
 	sql, args, err := query.ToSql()
 	if err != nil {
@@ -59,6 +61,9 @@ func (repo *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (
 
 	var raw []byte
 	if err := repo.pool.QueryRow(ctx, sql, args...).Scan(&raw); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("repo: get schedule: %w", err)
 	}
 
