@@ -18,7 +18,7 @@ import (
 const url = `https://mgkct.minskedu.gov.by/%D0%BF%D0%B5%D1%80%D1%81%D0%BE%D0%BD%D0%B0%D0%BB%D0%B8%D0%B8/%D1%83%D1%87%D0%B0%D1%89%D0%B8%D0%BC%D1%81%D1%8F/%D1%80%D0%B0%D1%81%D0%BF%D0%B8%D1%81%D0%B0%D0%BD%D0%B8%D0%B5-%D0%B7%D0%B0%D0%BD%D1%8F%D1%82%D0%B8%D0%B9-%D0%BD%D0%B0-%D0%BD%D0%B5%D0%B4%D0%B5%D0%BB%D1%8E`
 
 var (
-	ErrBadGroup = errors.New("кол группа")
+	errBadGroup = errors.New("кол группа")
 	days        = []string{"Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
 )
 
@@ -46,7 +46,7 @@ func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
 	c.c.OnHTML("h2", func(e *colly.HTMLElement) {
 		groupNum, err := parseGroup(e.Text)
 		if err != nil {
-			if errors.Is(err, ErrBadGroup) {
+			if errors.Is(err, errBadGroup) {
 				return
 			}
 
@@ -80,7 +80,7 @@ func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
 
 func parseGroup(text string) (int32, error) {
 	if strings.Contains(text, "Кол") || strings.Contains(text, "кол") {
-		return 0, ErrBadGroup
+		return 0, errBadGroup
 	}
 
 	r := regexp.MustCompile(`\d+`)
