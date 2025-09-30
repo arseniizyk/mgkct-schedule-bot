@@ -27,7 +27,8 @@ type App struct {
 
 func New(cfg *config.Config) (*App, error) {
 	a := &App{
-		cfg: cfg,
+		cfg:        cfg,
+		grpcServer: grpc.NewServer(),
 	}
 
 	if err := a.initDeps(); err != nil {
@@ -35,18 +36,16 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	return &App{
-		grpcServer: grpc.NewServer(),
-	}, nil
+	return a, nil
 }
 
 func (a *App) Run() error {
 	defer a.db.Close()
 
 	go func() {
-		updatesCh := a.diContainer.scheduleService.CheckScheduleUpdates(time.Minute)
+		updatesCh := a.diContainer.ScheduleService().CheckScheduleUpdates(time.Minute)
 		for update := range updatesCh {
-			if err := a.diContainer.scheduleTransport.PublishScheduleUpdate(update.Group); err != nil {
+			if err := a.diContainer.ScheduleTransport().PublishScheduleUpdate(update.Group); err != nil {
 				slog.Error("Failed publishing new schedule to NATS")
 			}
 			slog.Info("New schedule parsed and published to NATS")
@@ -54,7 +53,7 @@ func (a *App) Run() error {
 	}()
 
 	go func() {
-		pb.RegisterScheduleServiceServer(a.grpcServer, &grpcAdapter{transport: a.diContainer.scheduleTransport})
+		pb.RegisterScheduleServiceServer(a.grpcServer, &grpcAdapter{transport: a.diContainer.ScheduleTransport()})
 		slog.Info("gRPC server started", "address", a.lis.Addr().String())
 		if err := a.grpcServer.Serve(a.lis); err != nil {
 			slog.Error("gRPC serve error", "err", err)
@@ -97,7 +96,7 @@ func (a *App) initDeps() error {
 
 func (a *App) initNATS() error {
 	var err error
-	a.nc, err = nats.Connect(a.cfg.NatsURL)
+	a.nc, err = nats.Connect(a.cfg.NatsURL, nats.Name("scraper"))
 	if err != nil {
 		slog.Error("can't connect NATS", "url", a.cfg.NatsURL, "err", err)
 		return err

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	e "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/errors"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -71,7 +71,7 @@ func InputNum(c tele.Context) (int, error) {
 
 	num, err := strconv.Atoi(c.Args()[0])
 	if err != nil {
-		return 0, e.ErrBadInput
+		return 0, models.ErrBadInput
 	}
 
 	return num, nil

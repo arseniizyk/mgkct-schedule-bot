@@ -6,7 +6,7 @@ import (
 	"unicode"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/utils"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 )
 
 func FormatScheduleDay(day *pb.Day) string {
@@ -20,11 +20,11 @@ func FormatScheduleDay(day *pb.Day) string {
 	return sb.String()
 }
 
-func FormatScheduleWeek(resp *pb.GroupScheduleResponse) string {
+func FormatScheduleWeek(group *pb.Group) string {
 	var sb strings.Builder
-	sb.Grow(len(resp.Group.Days) * 128)
+	sb.Grow(len(group.Days) * 128)
 
-	for _, day := range resp.Group.Days {
+	for _, day := range group.Days {
 		sb.WriteString(FormatScheduleDay(day))
 	}
 
