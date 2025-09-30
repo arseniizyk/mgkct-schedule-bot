@@ -10,11 +10,13 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/database"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot"
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -58,7 +60,26 @@ func (a *App) Run() error {
 	defer a.db.Close()
 
 	a.h = a.diContainer.TelegramBotHandler()
+	if err := a.subscribeScheduleUpdates(); err != nil {
+		slog.Error("subscribe to schedule updates failed", "err", err)
+		return err
+	}
+
 	return a.StartBot()
+}
+
+func (a *App) subscribeScheduleUpdates() error {
+	_, err := a.nc.Subscribe("schedule.updates", func(msg *nats.Msg) {
+		group := &pb.GroupScheduleResponse{}
+		err := proto.Unmarshal(msg.Data, group)
+		if err != nil {
+			slog.Error("unmarshalling proto", "err", err)
+		}
+		if err := a.diContainer.TelegramBotHandler().HandleScheduleUpdate(context.Background(), group); err != nil {
+			slog.Error("handle schedule update", "err", err)
+		}
+	})
+	return err
 }
 
 func (a *App) StartBot() error {

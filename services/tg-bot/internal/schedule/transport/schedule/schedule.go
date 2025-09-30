@@ -10,7 +10,6 @@ import (
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -49,21 +48,6 @@ func (t *transport) GetGroupScheduleByWeek(ctx context.Context, groupID int, wee
 	}
 
 	return resp.Group, nil
-}
-
-func (t *transport) SubscribeScheduleUpdates() error {
-	_, err := t.nc.Subscribe("schedule.updates", func(msg *nats.Msg) {
-		group := &pb.GroupScheduleResponse{}
-		err := proto.Unmarshal(msg.Data, group)
-		if err != nil {
-			slog.Error("unmarshalling proto", "err", err)
-		}
-		// TODO:
-		// if err := t.handler.HandleScheduleUpdate(context.Background(), group); err != nil {
-		// 	slog.Error("handle schedule update", "err", err)
-		// }
-	})
-	return err
 }
 
 func (t *transport) handleGRPCError(groupID int, err error) error {
