@@ -1,4 +1,4 @@
-package delivery
+package bot
 
 import (
 	"context"
@@ -7,11 +7,11 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	e "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/errors"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/formatter"
-	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/keyboard"
-	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/messages"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/utils"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/formatter"
+	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
+	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -31,10 +31,10 @@ func (h *Handler) Day(c tele.Context) error {
 	return h.handleEndTime(c, schedule)
 }
 
-func (h *Handler) SendUpdate(chatID int64, schedule *pb.GroupScheduleResponse) error {
+func (h *Handler) SendUpdate(chatID int64, group *pb.Group) error {
 	msg := "*Расписание обновлено*\n\n"
-	msg += formatter.FormatScheduleWeek(schedule)
-	slog.Info("Send Updated Schedule", "chat_id", chatID, "group_id", schedule.Group.Id)
+	msg += formatter.FormatScheduleWeek(group)
+	slog.Info("Send Updated Schedule", "chat_id", chatID, "group_id", group.Id)
 
 	_, err := h.bot.Send(tele.ChatID(chatID), msg, tele.ModeMarkdown)
 	return err
@@ -44,15 +44,15 @@ func (h *Handler) Calls(c tele.Context) error {
 	return c.Send(msg.Calls, tele.ModeMarkdown)
 }
 
-func (h *Handler) fetchSchedule(c tele.Context, groupID *int) (*pb.GroupScheduleResponse, string) {
+func (h *Handler) fetchSchedule(c tele.Context, groupID *int) (*pb.Group, string) {
 	group, err := h.getGroupSchedule(c, groupID)
 	if err != nil {
 		switch {
-		case errors.Is(err, e.ErrGroupNotFound):
+		case errors.Is(err, models.ErrGroupNotFound):
 			return nil, msg.GroupNotFound
-		case errors.Is(err, e.ErrUserNoGroup):
+		case errors.Is(err, models.ErrUserNoGroup):
 			return nil, msg.UserNoGroup
-		case errors.Is(err, e.ErrBadInput):
+		case errors.Is(err, models.ErrBadInput):
 			return nil, msg.OnlyNumbers
 		default:
 			return nil, msg.Internal
@@ -61,7 +61,7 @@ func (h *Handler) fetchSchedule(c tele.Context, groupID *int) (*pb.GroupSchedule
 	return group, ""
 }
 
-func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.GroupScheduleResponse, error) {
+func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.Group, error) {
 	var (
 		groupNum int
 		err      error
@@ -81,7 +81,7 @@ func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.GroupSched
 	defer cancel()
 
 	if groupNum != 0 {
-		group, err := h.uc.GetGroupScheduleByID(ctx, groupNum)
+		group, err := h.telegramService.GetGroupSchedule(ctx, groupNum)
 		if err != nil {
 			slog.Warn("getGroupSchedule: failed by id", "chat_id", c.Chat().ID, "group_id", groupNum, "err", err)
 			return nil, err
@@ -89,7 +89,7 @@ func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.GroupSched
 		return group, nil
 	}
 
-	group, err := h.uc.GetGroupScheduleByChatID(ctx, c.Chat().ID)
+	group, err := h.telegramService.GetGroupScheduleByChatID(ctx, c.Chat().ID)
 	if err != nil {
 		slog.Warn("getGroupSchedule:", "chat_id", c.Chat().ID, "err", err)
 		return nil, err
@@ -98,13 +98,13 @@ func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.GroupSched
 	return group, nil
 }
 
-func (h *Handler) handleEndTime(c tele.Context, schedule *pb.GroupScheduleResponse) error {
+func (h *Handler) handleEndTime(c tele.Context, group *pb.Group) error {
 	dayIdx := utils.Day()
-	day := schedule.Group.Days[dayIdx]
+	day := group.Days[dayIdx]
 
 	lastSubject := utils.FindLastSubject(day.Subjects)
 	if lastSubject == -1 { // if no pairs in day
-		return c.Send(formatter.FormatScheduleDay(schedule.Group.Days[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.Group.Id)))
+		return c.Send(formatter.FormatScheduleDay(group.Days[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(group.Id)))
 	}
 
 	now := time.Now()
@@ -112,9 +112,9 @@ func (h *Handler) handleEndTime(c tele.Context, schedule *pb.GroupScheduleRespon
 	endTime, ok := utils.GetEndTime(dayIdx, lastSubject)
 	if ok {
 		if now.After(endTime) || now.Equal(endTime) {
-			return c.Send(formatter.FormatScheduleDay(schedule.Group.Days[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.Group.Id)))
+			return c.Send(formatter.FormatScheduleDay(group.Days[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(group.Id)))
 		}
 	}
 
-	return c.Send(formatter.FormatScheduleDay(schedule.Group.Days[dayIdx]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(schedule.Group.Id)))
+	return c.Send(formatter.FormatScheduleDay(group.Days[dayIdx]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(group.Id)))
 }

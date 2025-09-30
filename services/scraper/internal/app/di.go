@@ -30,7 +30,7 @@ func NewDIContainer(nc *nats.Conn, pool *pgxpool.Pool) *diContainer {
 
 func (d *diContainer) ScheduleTransport() transport.ScheduleTransport {
 	if d.scheduleTransport == nil {
-		d.scheduleTransport = scheduleTransport.New(d.scheduleService, d.nc)
+		d.scheduleTransport = scheduleTransport.New(d.ScheduleService(), d.nc)
 	}
 
 	return d.scheduleTransport

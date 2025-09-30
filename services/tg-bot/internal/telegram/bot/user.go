@@ -1,13 +1,13 @@
-package delivery
+package bot
 
 import (
 	"context"
 	"log/slog"
 	"time"
 
-	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/keyboard"
-	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/messages"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/utils"
+	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
+	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 	tele "gopkg.in/telebot.v4"
 
@@ -28,7 +28,7 @@ func (h *Handler) Start(c tele.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := h.uc.SaveUser(ctx, u); err != nil {
+	if err := h.userRepo.SaveUser(ctx, u); err != nil {
 		slog.Error("can't save user from /start", "username", u.Username, "chat_id", u.ChatID, "err", err)
 	}
 
@@ -61,7 +61,7 @@ func (h *Handler) SetGroup(c tele.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := h.uc.SetUserGroup(ctx, c.Chat().ID, groupID); err != nil {
+	if err := h.userRepo.SetUserGroup(ctx, c.Chat().ID, groupID); err != nil {
 		slog.Error("setgroup: failed to save group", "chat_id", c.Chat().ID, "group_id", groupID, "err", err)
 		return c.Send(msg.InternalTryWith)
 	}

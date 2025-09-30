@@ -1,4 +1,4 @@
-package delivery
+package bot
 
 import (
 	"context"
@@ -7,26 +7,31 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/formatter"
-	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/keyboard"
-	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/delivery/messages"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	tele "gopkg.in/telebot.v4"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/formatter"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/service"
+
+	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
+	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 )
 
 type Handler struct {
-	uc  telegram.UserUsecase
-	sm  state.Manager
-	bot *tele.Bot
+	telegramService service.TelegramService
+	userRepo        repository.TelegramUserRepository
+	sm              state.Manager
+	bot             *tele.Bot
 }
 
-func NewHandler(uc telegram.UserUsecase, sm state.Manager, bot *tele.Bot) *Handler {
+func NewHandler(userRepo repository.TelegramUserRepository, service service.TelegramService, sm state.Manager, bot *tele.Bot) *Handler {
 	return &Handler{
-		uc:  uc,
-		sm:  sm,
-		bot: bot,
+		telegramService: service,
+		userRepo:        userRepo,
+		sm:              sm,
+		bot:             bot,
 	}
 }
 
@@ -40,7 +45,7 @@ func (h *Handler) WaitingGroup(c tele.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := h.uc.SetUserGroup(ctx, c.Chat().ID, group); err != nil {
+	if err := h.userRepo.SetUserGroup(ctx, c.Chat().ID, group); err != nil {
 		slog.Error("waitingGroup: failed to set group", "chat_id", c.Chat().ID, "group_id", group, "err", err)
 		return c.Send(msg.InternalTryWith)
 	}
@@ -109,4 +114,21 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 		slog.Warn("undefined callback", "chat_id", c.Chat().ID, "username", c.Sender().Username, "data", callback.Data)
 		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
 	}
+}
+
+func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleResponse) error {
+	users, err := h.userRepo.GetGroupUsers(ctx, int(g.Group.Id))
+	if err != nil {
+		slog.Error("can't get users for group", "groupNum", g.Group.Id, "err", err)
+		return err
+	}
+
+	for _, u := range users {
+		err := h.SendUpdate(u, g.Group)
+		if err != nil {
+			slog.Error("failed to send update to user", "userId", u, "err", err)
+		}
+	}
+
+	return nil
 }
