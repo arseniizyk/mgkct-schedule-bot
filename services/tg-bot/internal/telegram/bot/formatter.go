@@ -1,4 +1,4 @@
-package formatter
+package bot
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 )
 
-func FormatScheduleDay(day *pb.Day) string {
+func formatScheduleDay(day *pb.Day) string {
 	var sb strings.Builder
 	sb.Grow(256)
 
@@ -20,12 +20,12 @@ func FormatScheduleDay(day *pb.Day) string {
 	return sb.String()
 }
 
-func FormatScheduleWeek(group *pb.Group) string {
+func formatScheduleWeek(group *pb.Group) string {
 	var sb strings.Builder
 	sb.Grow(len(group.Days) * 128)
 
 	for _, day := range group.Days {
-		sb.WriteString(FormatScheduleDay(day))
+		sb.WriteString(formatScheduleDay(day))
 	}
 
 	return sb.String()

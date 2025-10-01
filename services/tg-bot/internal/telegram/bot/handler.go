@@ -10,7 +10,6 @@ import (
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	tele "gopkg.in/telebot.v4"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/service"
 
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
@@ -108,7 +107,7 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 		if msg != "" {
 			return c.Send(msg)
 		}
-		return c.Edit(formatter.FormatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
+		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
 
 	default:
 		slog.Warn("undefined callback", "chat_id", c.Chat().ID, "username", c.Sender().Username, "data", callback.Data)
@@ -124,10 +123,11 @@ func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleR
 	}
 
 	for _, u := range users {
-		err := h.SendUpdate(u, g.Group)
+		err := h.SendUpdatedSchedule(u, g.Group)
 		if err != nil {
 			slog.Error("failed to send update to user", "userId", u, "err", err)
 		}
+		slog.Info("Updated schedule sended", "group_id", g.Group.Id, "chat_id", u)
 	}
 
 	return nil
