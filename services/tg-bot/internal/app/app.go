@@ -46,12 +46,12 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
+	a.bot = bot
+
 	if err := a.initDeps(); err != nil {
 		slog.Error("error initializing DI", "err", err)
 		return nil, err
 	}
-
-	a.bot = bot
 
 	return a, nil
 }
@@ -75,6 +75,8 @@ func (a *App) subscribeScheduleUpdates() error {
 		if err != nil {
 			slog.Error("unmarshalling proto", "err", err)
 		}
+		slog.Info("Schedule updated", "group_id", group.Group.Id)
+
 		if err := a.diContainer.TelegramBotHandler().HandleScheduleUpdate(context.Background(), group); err != nil {
 			slog.Error("handle schedule update", "err", err)
 		}
