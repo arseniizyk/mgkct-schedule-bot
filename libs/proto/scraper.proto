@@ -9,14 +9,18 @@ syntax = "proto3";
 
 package scraper;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pb";
 
 service ScheduleService {
     rpc GetGroupSchedule(GroupScheduleRequest) returns (GroupScheduleResponse);
+    rpc GetGroupScheduleByWeek(GroupScheduleRequest) returns (GroupScheduleResponse);
 }
 
 message GroupScheduleRequest {
     int32 id = 1;
+    optional google.protobuf.Timestamp week = 2;
 }
 
 message GroupScheduleResponse {
@@ -29,7 +33,7 @@ message Schedule {
 
 message Group {
     int32 id = 1;
-    string week = 2;
+    google.protobuf.Timestamp week = 2;
     repeated Day days = 3;
 }
 

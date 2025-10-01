@@ -16,6 +16,7 @@ package pb
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -31,6 +32,7 @@ const (
 type GroupScheduleRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Week          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=week,proto3,oneof" json:"week,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -70,6 +72,13 @@ func (x *GroupScheduleRequest) GetId() int32 {
 		return x.Id
 	}
 	return 0
+}
+
+func (x *GroupScheduleRequest) GetWeek() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Week
+	}
+	return nil
 }
 
 type GroupScheduleResponse struct {
@@ -163,7 +172,7 @@ func (x *Schedule) GetGroups() map[int32]*Group {
 type Group struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int32                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Week          string                 `protobuf:"bytes,2,opt,name=week,proto3" json:"week,omitempty"`
+	Week          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=week,proto3" json:"week,omitempty"`
 	Days          []*Day                 `protobuf:"bytes,3,rep,name=days,proto3" json:"days,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -206,11 +215,11 @@ func (x *Group) GetId() int32 {
 	return 0
 }
 
-func (x *Group) GetWeek() string {
+func (x *Group) GetWeek() *timestamppb.Timestamp {
 	if x != nil {
 		return x.Week
 	}
-	return ""
+	return nil
 }
 
 func (x *Group) GetDays() []*Day {
@@ -396,19 +405,21 @@ var File_scraper_proto protoreflect.FileDescriptor
 
 const file_scraper_proto_rawDesc = "" +
 	"\n" +
-	"\rscraper.proto\x12\ascraper\"&\n" +
+	"\rscraper.proto\x12\ascraper\x1a\x1fgoogle/protobuf/timestamp.proto\"d\n" +
 	"\x14GroupScheduleRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x05R\x02id\"=\n" +
+	"\x02id\x18\x01 \x01(\x05R\x02id\x123\n" +
+	"\x04week\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x04week\x88\x01\x01B\a\n" +
+	"\x05_week\"=\n" +
 	"\x15GroupScheduleResponse\x12$\n" +
 	"\x05group\x18\x01 \x01(\v2\x0e.scraper.GroupR\x05group\"\x8c\x01\n" +
 	"\bSchedule\x125\n" +
 	"\x06groups\x18\x01 \x03(\v2\x1d.scraper.Schedule.GroupsEntryR\x06groups\x1aI\n" +
 	"\vGroupsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\x05R\x03key\x12$\n" +
-	"\x05value\x18\x02 \x01(\v2\x0e.scraper.GroupR\x05value:\x028\x01\"M\n" +
+	"\x05value\x18\x02 \x01(\v2\x0e.scraper.GroupR\x05value:\x028\x01\"i\n" +
 	"\x05Group\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x05R\x02id\x12\x12\n" +
-	"\x04week\x18\x02 \x01(\tR\x04week\x12 \n" +
+	"\x02id\x18\x01 \x01(\x05R\x02id\x12.\n" +
+	"\x04week\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x04week\x12 \n" +
 	"\x04days\x18\x03 \x03(\v2\f.scraper.DayR\x04days\"G\n" +
 	"\x03Day\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12,\n" +
@@ -420,9 +431,10 @@ const file_scraper_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x18\n" +
 	"\ateacher\x18\x03 \x01(\tR\ateacher\x12\x14\n" +
-	"\x05class\x18\x04 \x01(\tR\x05class2d\n" +
+	"\x05class\x18\x04 \x01(\tR\x05class2\xbd\x01\n" +
 	"\x0fScheduleService\x12Q\n" +
-	"\x10GetGroupSchedule\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponseB8Z6github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pbb\x06proto3"
+	"\x10GetGroupSchedule\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponse\x12W\n" +
+	"\x16GetGroupScheduleByWeek\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponseB8Z6github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pbb\x06proto3"
 
 var (
 	file_scraper_proto_rawDescOnce sync.Once
@@ -446,21 +458,26 @@ var file_scraper_proto_goTypes = []any{
 	(*Subject)(nil),               // 5: scraper.Subject
 	(*Pair)(nil),                  // 6: scraper.Pair
 	nil,                           // 7: scraper.Schedule.GroupsEntry
+	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
 }
 var file_scraper_proto_depIdxs = []int32{
-	3, // 0: scraper.GroupScheduleResponse.group:type_name -> scraper.Group
-	7, // 1: scraper.Schedule.groups:type_name -> scraper.Schedule.GroupsEntry
-	4, // 2: scraper.Group.days:type_name -> scraper.Day
-	5, // 3: scraper.Day.subjects:type_name -> scraper.Subject
-	6, // 4: scraper.Subject.pairs:type_name -> scraper.Pair
-	3, // 5: scraper.Schedule.GroupsEntry.value:type_name -> scraper.Group
-	0, // 6: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
-	1, // 7: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
-	7, // [7:8] is the sub-list for method output_type
-	6, // [6:7] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	8,  // 0: scraper.GroupScheduleRequest.week:type_name -> google.protobuf.Timestamp
+	3,  // 1: scraper.GroupScheduleResponse.group:type_name -> scraper.Group
+	7,  // 2: scraper.Schedule.groups:type_name -> scraper.Schedule.GroupsEntry
+	8,  // 3: scraper.Group.week:type_name -> google.protobuf.Timestamp
+	4,  // 4: scraper.Group.days:type_name -> scraper.Day
+	5,  // 5: scraper.Day.subjects:type_name -> scraper.Subject
+	6,  // 6: scraper.Subject.pairs:type_name -> scraper.Pair
+	3,  // 7: scraper.Schedule.GroupsEntry.value:type_name -> scraper.Group
+	0,  // 8: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
+	0,  // 9: scraper.ScheduleService.GetGroupScheduleByWeek:input_type -> scraper.GroupScheduleRequest
+	1,  // 10: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
+	1,  // 11: scraper.ScheduleService.GetGroupScheduleByWeek:output_type -> scraper.GroupScheduleResponse
+	10, // [10:12] is the sub-list for method output_type
+	8,  // [8:10] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_scraper_proto_init() }
@@ -468,6 +485,7 @@ func file_scraper_proto_init() {
 	if File_scraper_proto != nil {
 		return
 	}
+	file_scraper_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
