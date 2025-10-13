@@ -1,4 +1,4 @@
-package schedule
+package service
 
 import (
 	"context"
@@ -10,19 +10,27 @@ import (
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/model"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/service/schedule/parser"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/service/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/utils"
 )
 
+type Schedule interface {
+	GetFullLatestSchedule(ctx context.Context) (*pb.Schedule, error)
+	GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error)
+	GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error)
+	CheckScheduleUpdates(interval time.Duration) <-chan *model.Updated
+	GetAvailableWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
+}
+
 type service struct {
-	repo         repository.ScheduleRepository
+	repo         repository.Schedule
 	parser       *parser.Parser
 	cache        *pb.Schedule
 	scheduleHash [32]byte
 	groupsHashes map[int32][32]byte
 }
 
-func NewScheduleService(scheduleRepo repository.ScheduleRepository) *service {
+func NewScheduleService(scheduleRepo repository.Schedule) Schedule {
 	return &service{
 		repo:         scheduleRepo,
 		parser:       parser.New(),
@@ -57,6 +65,7 @@ func (p *service) CheckScheduleUpdates(interval time.Duration) <-chan *model.Upd
 		if sch == nil {
 			sch = &pb.Schedule{}
 		}
+		p.cache = sch
 		p.hashGroups(sch)
 
 		for range tick.C {
@@ -70,12 +79,24 @@ func (p *service) CheckScheduleUpdates(interval time.Duration) <-chan *model.Upd
 				continue
 			}
 
-			p.cache = sch
 			updatedGroups := p.findUpdatedGroups(sch)
 			for _, update := range updatedGroups {
+				var oldWeek time.Time
+				if group, ok := p.cache.Groups[update.Group.Id]; ok && group != nil {
+					oldWeek = group.Week.AsTime()
+				}
+				newWeek := update.Group.Week.AsTime()
+
+				if !oldWeek.IsZero() && !oldWeek.Equal(newWeek) {
+					update.IsWeekUpdated = true
+					resCh <- update
+					break
+				}
+
 				slog.Info("Group updated", "group_id", update.Group.Id)
 				resCh <- update
 			}
+			p.cache = sch
 			p.hashGroups(sch)
 		}
 	}()
@@ -139,5 +160,4 @@ func (p *service) parseSchedule(ctx context.Context) (*pb.Schedule, bool, error)
 	}
 
 	return sch, true, nil
-
 }

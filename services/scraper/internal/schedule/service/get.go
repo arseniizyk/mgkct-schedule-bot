@@ -1,4 +1,4 @@
-package schedule
+package service
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/model"
 )
 
 func (s *service) GetFullLatestSchedule(ctx context.Context) (*pb.Schedule, error) {
@@ -66,4 +67,14 @@ func (s *service) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*p
 	}
 
 	return group, nil
+}
+
+func (s *service) GetAvailableWeeks(ctx context.Context, week time.Time) (*model.Weeks, error) {
+	weeks, err := s.repo.GetWeeks(ctx, week)
+	if err != nil {
+		slog.Error("Service.GetAvailableWeeks.Repository.GetWeeks", "err", err)
+		return nil, err
+	}
+
+	return weeks, nil
 }

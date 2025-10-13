@@ -1,9 +1,10 @@
-package schedule
+package transport
 
 import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/model"
@@ -12,15 +13,24 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type Schedule interface {
+	PublishScheduleUpdate(*pb.Group) error
+	PublishWeekUpdates(date time.Time) error
+	GetGroupSchedule(context.Context, *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error)
+	GetGroupScheduleByWeek(context.Context, *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error)
+	GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error)
+}
+
 type transport struct {
-	service service.ScheduleService
+	service service.Schedule
 	nc      *nats.Conn
 	pb.UnimplementedScheduleServiceServer
 }
 
-func New(service service.ScheduleService, nc *nats.Conn) *transport {
+func New(service service.Schedule, nc *nats.Conn) *transport {
 	return &transport{
 		service: service,
 		nc:      nc,
@@ -56,6 +66,24 @@ func (t *transport) GetGroupScheduleByWeek(ctx context.Context, req *pb.GroupSch
 	}, nil
 }
 
+func (t *transport) GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error) {
+	var week time.Time
+	if req.Week != nil {
+		week = req.Week.AsTime()
+	}
+
+	weeks, err := t.service.GetAvailableWeeks(ctx, week)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "can't get weeks: %v", err)
+	}
+
+	return &pb.AvailableWeeksResponse{
+		Prev:    timestamppb.New(weeks.Prev),
+		Current: timestamppb.New(weeks.Current),
+		Next:    timestamppb.New(weeks.Next),
+	}, nil
+}
+
 func (t *transport) PublishScheduleUpdate(group *pb.Group) error {
 	slog.Debug("Publishing schedule update", "group_id", group.Id)
 	resp := &pb.GroupScheduleResponse{
@@ -67,4 +95,15 @@ func (t *transport) PublishScheduleUpdate(group *pb.Group) error {
 		return err
 	}
 	return t.nc.Publish("schedule.updates", data)
+}
+
+func (t *transport) PublishWeekUpdates(date time.Time) error {
+	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+	slog.Debug("Publishing week update", "date", date.Format("2006-01-02"))
+	data := []byte(date.Format(time.RFC3339))
+	if err := t.nc.Publish("schedule.week.updates", data); err != nil {
+		slog.Error("PublishWeekUpdate: failed to publish", "date", date.Format("2006-01-02"), "err", err)
+		return err
+	}
+	return nil
 }
