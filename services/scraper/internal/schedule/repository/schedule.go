@@ -1,9 +1,10 @@
-package schedule
+package repository
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/Masterminds/squirrel"
@@ -14,12 +15,19 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+type Schedule interface {
+	Save(ctx context.Context, week time.Time, schedule *pb.Schedule) error
+	GetByWeek(ctx context.Context, week time.Time) (*pb.Schedule, error)
+	GetLatest(ctx context.Context) (*pb.Schedule, error)
+	GetWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
+}
+
 type repository struct {
 	pool *pgxpool.Pool
 	sb   squirrel.StatementBuilderType
 }
 
-func New(pool *pgxpool.Pool) *repository {
+func New(pool *pgxpool.Pool) Schedule {
 	return &repository{
 		pool: pool,
 		sb:   squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
@@ -99,4 +107,86 @@ func (repo *repository) GetLatest(ctx context.Context) (*pb.Schedule, error) {
 	}
 
 	return &s, nil
+}
+
+func (repo *repository) GetWeeks(ctx context.Context, week time.Time) (*model.Weeks, error) {
+	week = time.Date(week.Year(), week.Month(), week.Day(), 0, 0, 0, 0, time.UTC)
+
+	if week.IsZero() {
+		query := repo.sb.Select("week").
+			From("schedules").
+			OrderBy("week DESC").
+			Limit(2)
+
+		sql, args, _ := query.ToSql()
+
+		rows, err := repo.pool.Query(ctx, sql, args...)
+		if err != nil {
+			return nil, fmt.Errorf("repository sql query: %w", err)
+		}
+		defer rows.Close()
+
+		var weeks []time.Time
+
+		for rows.Next() {
+			var w time.Time
+			if err := rows.Scan(&w); err != nil {
+				return nil, fmt.Errorf("repository scan rows: %w", err)
+			}
+			weeks = append(weeks, w)
+		}
+
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("sql rows err: %w", err)
+		}
+
+		if len(weeks) < 2 {
+			slog.Debug("Not enough weeks in db")
+			return nil, fmt.Errorf("not enough weeks")
+		}
+
+		return &model.Weeks{
+			Current: weeks[0],
+			Prev:    weeks[1],
+		}, nil
+	}
+
+	var current, prev, next time.Time
+
+	if err := repo.getWeek(ctx, squirrel.Eq{"week": week}, &current); err != nil {
+		return nil, fmt.Errorf("repository get current week: %w", err)
+	}
+
+	if err := repo.getWeek(ctx, squirrel.Lt{"week": week}, &prev); err != nil {
+		return nil, fmt.Errorf("repository get prev week: %w", err)
+	}
+
+	if err := repo.getWeek(ctx, squirrel.Gt{"week": week}, &next); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("repository get next week: %w", err)
+		}
+		next = time.Time{}
+	}
+
+	return &model.Weeks{
+		Prev:    prev,
+		Current: current,
+		Next:    next,
+	}, nil
+}
+
+func (repo *repository) getWeek(ctx context.Context, pred any, dest any) error {
+	query := repo.sb.Select("week").
+		From("schedules").
+		Where(pred).
+		OrderBy("week DESC").
+		Limit(1)
+	sql, args, _ := query.ToSql()
+
+	row := repo.pool.QueryRow(ctx, sql, args...)
+	if err := row.Scan(dest); err != nil {
+		return err
+	}
+
+	return nil
 }

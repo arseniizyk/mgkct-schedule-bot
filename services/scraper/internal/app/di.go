@@ -1,13 +1,9 @@
 package app
 
 import (
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/service"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/transport"
-
-	scheduleRepository "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository/schedule"
-	scheduleService "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/service/schedule"
-	scheduleTransport "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/transport/schedule"
+	scheduleRepository "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
+	scheduleService "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/service"
+	scheduleTransport "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/transport"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
@@ -16,9 +12,9 @@ import (
 type diContainer struct {
 	nc                 *nats.Conn
 	pool               *pgxpool.Pool
-	scheduleTransport  transport.ScheduleTransport
-	scheduleService    service.ScheduleService
-	scheduleRepository repository.ScheduleRepository
+	scheduleTransport  scheduleTransport.Schedule
+	scheduleService    scheduleService.Schedule
+	scheduleRepository scheduleRepository.Schedule
 }
 
 func NewDIContainer(nc *nats.Conn, pool *pgxpool.Pool) *diContainer {
@@ -28,7 +24,7 @@ func NewDIContainer(nc *nats.Conn, pool *pgxpool.Pool) *diContainer {
 	}
 }
 
-func (d *diContainer) ScheduleTransport() transport.ScheduleTransport {
+func (d *diContainer) ScheduleTransport() scheduleTransport.Schedule {
 	if d.scheduleTransport == nil {
 		d.scheduleTransport = scheduleTransport.New(d.ScheduleService(), d.nc)
 	}
@@ -36,7 +32,7 @@ func (d *diContainer) ScheduleTransport() transport.ScheduleTransport {
 	return d.scheduleTransport
 }
 
-func (d *diContainer) ScheduleService() service.ScheduleService {
+func (d *diContainer) ScheduleService() scheduleService.Schedule {
 	if d.scheduleService == nil {
 		d.scheduleService = scheduleService.NewScheduleService(d.ScheduleRepository())
 	}
@@ -44,7 +40,7 @@ func (d *diContainer) ScheduleService() service.ScheduleService {
 	return d.scheduleService
 }
 
-func (d *diContainer) ScheduleRepository() repository.ScheduleRepository {
+func (d *diContainer) ScheduleRepository() scheduleRepository.Schedule {
 	if d.scheduleRepository == nil {
 		d.scheduleRepository = scheduleRepository.New(d.pool)
 	}
