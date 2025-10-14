@@ -10,10 +10,21 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/utils"
 )
 
+var days []string
+
 func parseRows(trs *goquery.Selection) []*pb.Day {
-	res := make([]*pb.Day, 6)
-	for i, d := range days {
-		res[i] = &pb.Day{Name: d}
+	res := make([]*pb.Day, 0, 6)
+	if len(days) > 0 {
+		for _, d := range days {
+			res = append(res, &pb.Day{Name: d})
+		}
+	} else {
+		ths := trs.Eq(0).Find("th")
+		for col := 1; col < ths.Length(); col++ {
+			day := strings.ReplaceAll(ths.Eq(col).Text(), ",", " |")
+			days = append(days, day)
+			res = append(res, &pb.Day{Name: day})
+		}
 	}
 
 	for row := 2; row < trs.Length(); row++ {

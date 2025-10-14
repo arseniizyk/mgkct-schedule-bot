@@ -27,8 +27,10 @@ type App struct {
 
 func New(cfg *config.Config) (*App, error) {
 	a := &App{
-		cfg:        cfg,
-		grpcServer: grpc.NewServer(),
+		cfg: cfg,
+		grpcServer: grpc.NewServer(
+			grpc.UnaryInterceptor(loggingUnaryInterceptor),
+		),
 	}
 
 	if err := a.initDeps(); err != nil {
@@ -45,6 +47,14 @@ func (a *App) Run() error {
 	go func() {
 		updatesCh := a.diContainer.ScheduleService().CheckScheduleUpdates(time.Minute)
 		for update := range updatesCh {
+			if update.IsWeekUpdated {
+				slog.Info("Week updated, publishing to NATS", "week", update.Group.Week.AsTime())
+				if err := a.diContainer.ScheduleTransport().PublishWeekUpdates(update.Group.Week.AsTime()); err != nil {
+					slog.Error("Failed publishing new week to NATS")
+				}
+				continue
+			}
+
 			if err := a.diContainer.ScheduleTransport().PublishScheduleUpdate(update.Group); err != nil {
 				slog.Error("Failed publishing new schedule to NATS")
 			}

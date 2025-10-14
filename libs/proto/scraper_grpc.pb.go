@@ -28,6 +28,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ScheduleService_GetGroupSchedule_FullMethodName       = "/scraper.ScheduleService/GetGroupSchedule"
 	ScheduleService_GetGroupScheduleByWeek_FullMethodName = "/scraper.ScheduleService/GetGroupScheduleByWeek"
+	ScheduleService_GetAvailableWeeks_FullMethodName      = "/scraper.ScheduleService/GetAvailableWeeks"
 )
 
 // ScheduleServiceClient is the client API for ScheduleService service.
@@ -36,6 +37,7 @@ const (
 type ScheduleServiceClient interface {
 	GetGroupSchedule(ctx context.Context, in *GroupScheduleRequest, opts ...grpc.CallOption) (*GroupScheduleResponse, error)
 	GetGroupScheduleByWeek(ctx context.Context, in *GroupScheduleRequest, opts ...grpc.CallOption) (*GroupScheduleResponse, error)
+	GetAvailableWeeks(ctx context.Context, in *AvailableWeeksRequest, opts ...grpc.CallOption) (*AvailableWeeksResponse, error)
 }
 
 type scheduleServiceClient struct {
@@ -66,12 +68,23 @@ func (c *scheduleServiceClient) GetGroupScheduleByWeek(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *scheduleServiceClient) GetAvailableWeeks(ctx context.Context, in *AvailableWeeksRequest, opts ...grpc.CallOption) (*AvailableWeeksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AvailableWeeksResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_GetAvailableWeeks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ScheduleServiceServer is the server API for ScheduleService service.
 // All implementations must embed UnimplementedScheduleServiceServer
 // for forward compatibility.
 type ScheduleServiceServer interface {
 	GetGroupSchedule(context.Context, *GroupScheduleRequest) (*GroupScheduleResponse, error)
 	GetGroupScheduleByWeek(context.Context, *GroupScheduleRequest) (*GroupScheduleResponse, error)
+	GetAvailableWeeks(context.Context, *AvailableWeeksRequest) (*AvailableWeeksResponse, error)
 	mustEmbedUnimplementedScheduleServiceServer()
 }
 
@@ -87,6 +100,9 @@ func (UnimplementedScheduleServiceServer) GetGroupSchedule(context.Context, *Gro
 }
 func (UnimplementedScheduleServiceServer) GetGroupScheduleByWeek(context.Context, *GroupScheduleRequest) (*GroupScheduleResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetGroupScheduleByWeek not implemented")
+}
+func (UnimplementedScheduleServiceServer) GetAvailableWeeks(context.Context, *AvailableWeeksRequest) (*AvailableWeeksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAvailableWeeks not implemented")
 }
 func (UnimplementedScheduleServiceServer) mustEmbedUnimplementedScheduleServiceServer() {}
 func (UnimplementedScheduleServiceServer) testEmbeddedByValue()                         {}
@@ -145,6 +161,24 @@ func _ScheduleService_GetGroupScheduleByWeek_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ScheduleService_GetAvailableWeeks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AvailableWeeksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).GetAvailableWeeks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_GetAvailableWeeks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).GetAvailableWeeks(ctx, req.(*AvailableWeeksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ScheduleService_ServiceDesc is the grpc.ServiceDesc for ScheduleService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -159,6 +193,10 @@ var ScheduleService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetGroupScheduleByWeek",
 			Handler:    _ScheduleService_GetGroupScheduleByWeek_Handler,
+		},
+		{
+			MethodName: "GetAvailableWeeks",
+			Handler:    _ScheduleService_GetAvailableWeeks_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

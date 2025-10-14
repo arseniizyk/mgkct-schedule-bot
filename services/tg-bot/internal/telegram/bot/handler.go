@@ -10,22 +10,23 @@ import (
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 	tele "gopkg.in/telebot.v4"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/service"
+	telegramService "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/service"
 
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 )
 
 type Handler struct {
-	telegramService service.TelegramService
-	userRepo        repository.TelegramUserRepository
+	telegramService telegramService.Telegram
+	userRepo        repository.TelegramUser
 	sm              state.Manager
 	bot             *tele.Bot
 }
 
-func NewHandler(userRepo repository.TelegramUserRepository, service service.TelegramService, sm state.Manager, bot *tele.Bot) *Handler {
+func NewHandler(userRepo repository.TelegramUser, service telegramService.Telegram, sm state.Manager, bot *tele.Bot) *Handler {
 	return &Handler{
 		telegramService: service,
 		userRepo:        userRepo,
@@ -95,9 +96,8 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 	}
 
 	switch {
-	case strings.Contains(callback.Data, kbd.Week):
-		parts := strings.Split(callback.Data, "|")
-		groupID, err := strconv.Atoi(parts[1])
+	case strings.Contains(callback.Data, kbd.CurrentWeek):
+		groupID, err := strconv.Atoi(utils.ParseCallbackData(callback.Data))
 		if err != nil {
 			slog.Warn("callback: invalid data", "data", callback.Data, "chat_id", c.Chat().ID, "err", err)
 			return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
@@ -109,6 +109,11 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 		}
 		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
 
+	case strings.Contains(callback.Data, kbd.PrevWeek):
+		return h.handleWeekNavigation(c)
+
+	case strings.Contains(callback.Data, kbd.NextWeek):
+		return h.handleWeekNavigation(c)
 	default:
 		slog.Warn("undefined callback", "chat_id", c.Chat().ID, "username", c.Sender().Username, "data", callback.Data)
 		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
@@ -131,4 +136,41 @@ func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleR
 	}
 
 	return nil
+}
+
+func (h *Handler) handleWeekNavigation(c tele.Context) error {
+	callback := c.Callback()
+	parsed := utils.ParseCallbackData(callback.Data)
+
+	parts := strings.Split(parsed, ":")
+	if len(parts) < 2 {
+		slog.Error("Can't parse callback data to group and date", "text", parsed)
+		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+	}
+
+	groupID, err := strconv.Atoi(parts[0])
+	if err != nil {
+		slog.Error("Can't parse groupID to int", "text", parsed)
+		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+	}
+
+	date, err := time.Parse("02.01.2006", parts[1])
+	if err != nil {
+		slog.Error("Can't parse text to time.Time", "text", parsed, "err", err)
+		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+	}
+
+	schedule, err := h.telegramService.GetGroupScheduleByWeek(context.Background(), groupID, date)
+	if err != nil {
+		slog.Warn("can't get schedule for week", "group_id", groupID, "date", date, "err", err)
+		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+	}
+
+	weeks, err := h.telegramService.GetAvailableWeeks(context.Background(), &date)
+	if err != nil {
+		slog.Error("can't get available weeks", "date", date, "err", err)
+		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown)
+	}
+
+	return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.InlineWeekKeyboard(groupID, weeks))
 }

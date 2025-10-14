@@ -16,6 +16,17 @@ option go_package = "github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pb";
 service ScheduleService {
     rpc GetGroupSchedule(GroupScheduleRequest) returns (GroupScheduleResponse);
     rpc GetGroupScheduleByWeek(GroupScheduleRequest) returns (GroupScheduleResponse);
+    rpc GetAvailableWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);
+}
+
+message AvailableWeeksRequest{
+    optional google.protobuf.Timestamp week = 1;
+}
+
+message AvailableWeeksResponse{
+    optional google.protobuf.Timestamp next = 1;
+    google.protobuf.Timestamp current = 2;
+    google.protobuf.Timestamp prev = 3;
 }
 
 message GroupScheduleRequest {

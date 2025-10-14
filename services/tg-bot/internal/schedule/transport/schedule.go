@@ -1,4 +1,4 @@
-package schedule
+package transport
 
 import (
 	"context"
@@ -12,6 +12,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+type Schedule interface {
+	GetGroupSchedule(ctx context.Context, groupNum int) (*pb.Group, error)
+	GetGroupScheduleByWeek(ctx context.Context, groupNum int, week time.Time) (*pb.Group, error)
+	GetAvailableWeeks(ctx context.Context, week *time.Time) (models.Weeks, error)
+}
 
 type transport struct {
 	nc         *nats.Conn
@@ -38,7 +44,7 @@ func (t *transport) GetGroupSchedule(ctx context.Context, groupID int) (*pb.Grou
 }
 
 func (t *transport) GetGroupScheduleByWeek(ctx context.Context, groupID int, week time.Time) (*pb.Group, error) {
-	resp, err := t.scraperSvc.GetGroupSchedule(ctx, &pb.GroupScheduleRequest{
+	resp, err := t.scraperSvc.GetGroupScheduleByWeek(ctx, &pb.GroupScheduleRequest{
 		Id:   int32(groupID),
 		Week: timestamppb.New(week),
 	})
@@ -48,6 +54,30 @@ func (t *transport) GetGroupScheduleByWeek(ctx context.Context, groupID int, wee
 	}
 
 	return resp.Group, nil
+}
+
+func (t *transport) GetAvailableWeeks(ctx context.Context, week *time.Time) (models.Weeks, error) {
+	var w *timestamppb.Timestamp
+	if week != nil {
+		w = timestamppb.New(*week)
+	}
+
+	resp, err := t.scraperSvc.GetAvailableWeeks(ctx, &pb.AvailableWeeksRequest{Week: w})
+	if err != nil {
+		slog.Error("Error from GetAvailableWeeks", "err", err, "week", week, "w", w)
+		return models.Weeks{}, models.ErrInternal
+	}
+
+	res := models.Weeks{
+		Prev:    resp.Prev.AsTime(),
+		Current: resp.Current.AsTime(),
+	}
+
+	if resp.Next.IsValid() && !resp.Next.AsTime().IsZero() {
+		res.Next = resp.Next.AsTime()
+	}
+
+	return res, nil
 }
 
 func (t *transport) handleGRPCError(groupID int, err error) error {

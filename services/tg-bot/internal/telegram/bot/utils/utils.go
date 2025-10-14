@@ -2,6 +2,7 @@ package utils
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
@@ -89,4 +90,13 @@ func FindLastSubject(subjects []*pb.Subject) int {
 	}
 
 	return -1
+}
+
+func ParseCallbackData(data string) string {
+	parts := strings.Split(data, "|")
+	if len(parts) > 0 {
+		return parts[1]
+	}
+
+	return ""
 }

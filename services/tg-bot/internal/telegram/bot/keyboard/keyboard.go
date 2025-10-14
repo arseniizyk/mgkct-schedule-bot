@@ -1,16 +1,20 @@
 package keyboard
 
 import (
+	"fmt"
 	"strconv"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 	tele "gopkg.in/telebot.v4"
 )
 
 const (
-	BtnDay   = "📅 День"
-	BtnWeek  = "📆 Неделя"
-	BtnCalls = "⏰ Звонки"
-	Week     = "week"
+	BtnDay      = "📅 День"
+	BtnWeek     = "📆 Неделя"
+	BtnCalls    = "⏰ Звонки"
+	CurrentWeek = "currentweek"
+	PrevWeek    = "prevweek"
+	NextWeek    = "nextweek"
 )
 
 var (
@@ -25,9 +29,26 @@ var (
 func InlineScheduleKeyboard(groupID int) *tele.ReplyMarkup {
 	markup := &tele.ReplyMarkup{}
 
-	InlineBtnDay := markup.Data("🔽", Week, strconv.Itoa(groupID))
-	markup.Inline(markup.Row(InlineBtnDay))
+	inlineBtnDay := markup.Data("🔽", CurrentWeek, strconv.Itoa(groupID))
+	markup.Inline(markup.Row(inlineBtnDay))
 
+	return markup
+}
+
+func InlineWeekKeyboard(groupID int, weeks models.Weeks) *tele.ReplyMarkup {
+	markup := &tele.ReplyMarkup{}
+	var row []tele.Btn
+
+	if !weeks.Prev.IsZero() {
+		row = append(row, markup.Data("◀️", PrevWeek, fmt.Sprintf("%s:%s", strconv.Itoa(groupID), weeks.Prev.Format("02.01.2006"))))
+	}
+	if !weeks.Next.IsZero() {
+		row = append(row, markup.Data("▶️", NextWeek, fmt.Sprintf("%s:%s", strconv.Itoa(groupID), weeks.Next.Format("02.01.2006"))))
+	}
+
+	if len(row) > 0 {
+		markup.Inline(markup.Row(row...))
+	}
 	return markup
 }
 
