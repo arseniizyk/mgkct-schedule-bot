@@ -8,4 +8,5 @@ var (
 	ErrInternal        = errors.New("internal error")
 	ErrScraperInternal = errors.New("scraper error")
 	ErrBadInput        = errors.New("bad input")
+	ErrNoWeeks         = errors.New("no weeks")
 )
