@@ -20,11 +20,11 @@ type Telegram interface {
 }
 
 type service struct {
-	userRepo          repository.TelegramUserRepository
+	userRepo          repository.TelegramUser
 	scheduleTransport scheduleTransport.Schedule
 }
 
-func New(userRepo repository.TelegramUserRepository, scheduleTransport scheduleTransport.Schedule) *service {
+func New(userRepo repository.TelegramUser, scheduleTransport scheduleTransport.Schedule) *service {
 	return &service{
 		scheduleTransport: scheduleTransport,
 		userRepo:          userRepo,

@@ -1,4 +1,4 @@
-package telegram
+package repository
 
 import (
 	"context"
@@ -14,6 +14,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type TelegramUser interface {
+	SaveUser(ctx context.Context, u *models.User) error
+	GetUserGroup(ctx context.Context, chatID int64) (int, error)
+	SetUserGroup(ctx context.Context, chatID int64, groupID int) error
+	GetGroupUsers(ctx context.Context, groupID int) ([]int64, error)
+}
 
 type repository struct {
 	pool *pgxpool.Pool
