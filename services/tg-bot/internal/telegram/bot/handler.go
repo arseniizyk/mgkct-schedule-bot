@@ -21,12 +21,12 @@ import (
 
 type Handler struct {
 	telegramService telegramService.Telegram
-	userRepo        repository.TelegramUserRepository
+	userRepo        repository.TelegramUser
 	sm              state.Manager
 	bot             *tele.Bot
 }
 
-func NewHandler(userRepo repository.TelegramUserRepository, service telegramService.Telegram, sm state.Manager, bot *tele.Bot) *Handler {
+func NewHandler(userRepo repository.TelegramUser, service telegramService.Telegram, sm state.Manager, bot *tele.Bot) *Handler {
 	return &Handler{
 		telegramService: service,
 		userRepo:        userRepo,

@@ -6,11 +6,10 @@ import (
 	"gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
 
-	telegramRepository "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository/telegram"
+	telegramRepository "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	telegramService "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/service"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
@@ -25,7 +24,7 @@ type diContainer struct {
 
 	scheduleTransport  scheduleTransport.Schedule
 	telegramService    telegramService.Telegram
-	telegramRepository repository.TelegramUserRepository
+	telegramRepository telegramRepository.TelegramUser
 	telegramState      state.Manager
 	telegramBotHandler *bot.Handler
 }
@@ -47,7 +46,7 @@ func (d *diContainer) ScheduleTransport() scheduleTransport.Schedule {
 	return d.scheduleTransport
 }
 
-func (d *diContainer) TelegramRepository() repository.TelegramUserRepository {
+func (d *diContainer) TelegramRepository() telegramRepository.TelegramUser {
 	if d.telegramRepository == nil {
 		d.telegramRepository = telegramRepository.New(d.pool)
 	}
