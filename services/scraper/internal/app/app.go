@@ -27,8 +27,10 @@ type App struct {
 
 func New(cfg *config.Config) (*App, error) {
 	a := &App{
-		cfg:        cfg,
-		grpcServer: grpc.NewServer(),
+		cfg: cfg,
+		grpcServer: grpc.NewServer(
+			grpc.UnaryInterceptor(loggingUnaryInterceptor),
+		),
 	}
 
 	if err := a.initDeps(); err != nil {

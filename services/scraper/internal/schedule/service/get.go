@@ -26,12 +26,6 @@ func (s *service) GetFullLatestSchedule(ctx context.Context) (*pb.Schedule, erro
 }
 
 func (s *service) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error) {
-	if s.cache != nil {
-		if group, ok := s.cache.Groups[groupID]; ok && !group.Week.AsTime().After(week) {
-			return group, nil
-		}
-	}
-
 	sch, err := s.repo.GetByWeek(ctx, week)
 	if err != nil {
 		slog.Error("get by week error", "group_id", groupID, "week", week, "err", err)

@@ -158,13 +158,18 @@ func (repo *repository) GetWeeks(ctx context.Context, week time.Time) (*model.We
 	}
 
 	if err := repo.getWeek(ctx, squirrel.Lt{"week": week}, &prev); err != nil {
-		return nil, fmt.Errorf("repository get prev week: %w", err)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("repository get prev week: %w", err)
+		}
+		// if user has reached the edge, so we return nil as prev
+		prev = time.Time{}
 	}
 
 	if err := repo.getWeek(ctx, squirrel.Gt{"week": week}, &next); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("repository get next week: %w", err)
 		}
+		// if user has reached the edge, so we return nil as next
 		next = time.Time{}
 	}
 
