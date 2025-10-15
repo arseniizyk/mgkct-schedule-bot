@@ -20,11 +20,11 @@ type Telegram interface {
 }
 
 type service struct {
-	userRepo          repository.TelegramUser
+	userRepo          repository.User
 	scheduleTransport scheduleTransport.Schedule
 }
 
-func New(userRepo repository.TelegramUser, scheduleTransport scheduleTransport.Schedule) *service {
+func New(userRepo repository.User, scheduleTransport scheduleTransport.Schedule) *service {
 	return &service{
 		scheduleTransport: scheduleTransport,
 		userRepo:          userRepo,
@@ -32,9 +32,9 @@ func New(userRepo repository.TelegramUser, scheduleTransport scheduleTransport.S
 }
 
 func (s *service) GetGroupScheduleByChatID(ctx context.Context, chatID int64) (*pb.Group, error) {
-	groupNum, err := s.userRepo.GetUserGroup(ctx, chatID)
+	groupNum, err := s.userRepo.GetGroup(ctx, chatID)
 	if err != nil {
-		if errors.Is(err, models.ErrUserNoGroup) {
+		if errors.Is(err, repository.ErrNoGroup) {
 			return nil, err
 		}
 		return nil, err
