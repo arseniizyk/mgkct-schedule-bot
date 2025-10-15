@@ -153,11 +153,11 @@ func (repo *repository) GetWeeks(ctx context.Context, week time.Time) (*model.We
 
 	var current, prev, next time.Time
 
-	if err := repo.getWeek(ctx, squirrel.Eq{"week": week}, &current); err != nil {
+	if err := repo.getWeek(ctx, "DESC", squirrel.Eq{"week": week}, &current); err != nil {
 		return nil, fmt.Errorf("repository get current week: %w", err)
 	}
 
-	if err := repo.getWeek(ctx, squirrel.Lt{"week": week}, &prev); err != nil {
+	if err := repo.getWeek(ctx, "DESC", squirrel.Lt{"week": week}, &prev); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("repository get prev week: %w", err)
 		}
@@ -165,7 +165,7 @@ func (repo *repository) GetWeeks(ctx context.Context, week time.Time) (*model.We
 		prev = time.Time{}
 	}
 
-	if err := repo.getWeek(ctx, squirrel.Gt{"week": week}, &next); err != nil {
+	if err := repo.getWeek(ctx, "ASC", squirrel.Gt{"week": week}, &next); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("repository get next week: %w", err)
 		}
@@ -180,11 +180,11 @@ func (repo *repository) GetWeeks(ctx context.Context, week time.Time) (*model.We
 	}, nil
 }
 
-func (repo *repository) getWeek(ctx context.Context, pred any, dest any) error {
+func (repo *repository) getWeek(ctx context.Context, orderBy string, pred, dest any) error {
 	query := repo.sb.Select("week").
 		From("schedules").
 		Where(pred).
-		OrderBy("week DESC").
+		OrderBy("week " + orderBy).
 		Limit(1)
 	sql, args, _ := query.ToSql()
 
