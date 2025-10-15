@@ -1,6 +1,7 @@
-package utils
+package bot
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ var weekendTimeEnd = map[int][2]int{ // map[subjectIndex][hours, min]
 	6: {20, 00},
 }
 
-func GetEndTime(dayIdx, lastSubject int) (time.Time, bool) {
+func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
 	var hhmm [2]int
 	var ok bool
 
@@ -48,7 +49,7 @@ func GetEndTime(dayIdx, lastSubject int) (time.Time, bool) {
 	return end, true
 }
 
-func Day(add ...int) int {
+func weekDay(add ...int) int {
 	weekDay := int(time.Now().Weekday())
 
 	day := int(weekDay+6) % 7
@@ -65,7 +66,7 @@ func Day(add ...int) int {
 	return day
 }
 
-func InputNum(c tele.Context) (int, error) {
+func inputNum(c tele.Context) (int, error) {
 	if len(c.Args()) == 0 {
 		return 0, nil
 	}
@@ -78,7 +79,7 @@ func InputNum(c tele.Context) (int, error) {
 	return num, nil
 }
 
-func FindLastSubject(subjects []*pb.Subject) int {
+func findLastSubject(subjects []*pb.Subject) int {
 	if len(subjects) == 0 || subjects == nil {
 		return -1
 	}
@@ -92,11 +93,31 @@ func FindLastSubject(subjects []*pb.Subject) int {
 	return -1
 }
 
-func ParseCallbackData(data string) string {
+func parseCallbackData(data string) string {
 	parts := strings.Split(data, "|")
 	if len(parts) > 0 {
 		return parts[1]
 	}
 
 	return ""
+}
+
+func parseCallbackWeekNavigation(c *tele.Callback) (int, time.Time, error) {
+	parsed := parseCallbackData(c.Data)
+	parts := strings.Split(parsed, ":")
+	if len(parts) < 2 {
+		return 0, time.Time{}, fmt.Errorf("failed splitting data by parts")
+	}
+
+	groupID, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, time.Time{}, fmt.Errorf("failed parsing group_id to int: %w", err)
+	}
+
+	date, err := time.Parse("02.01.2006", parts[1])
+	if err != nil {
+		return 0, time.Time{}, fmt.Errorf("failed parsing text to date: %w", err)
+	}
+
+	return groupID, date, nil
 }

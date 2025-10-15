@@ -7,7 +7,6 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
 
 	telegramRepository "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	telegramService "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/service"
@@ -72,7 +71,7 @@ func (d *diContainer) TelegramBotHandler() *bot.Handler {
 
 func (d *diContainer) TelegramState() state.Manager {
 	if d.telegramState == nil {
-		d.telegramState = memory.NewMemory()
+		d.telegramState = state.NewMemory()
 	}
 
 	return d.telegramState
