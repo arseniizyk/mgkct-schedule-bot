@@ -58,7 +58,6 @@ func (a *App) Run() error {
 			if err := a.diContainer.ScheduleTransport().PublishScheduleUpdate(update.Group); err != nil {
 				slog.Error("Failed publishing new schedule to NATS")
 			}
-			slog.Info("New schedule parsed and published to NATS")
 		}
 	}()
 
