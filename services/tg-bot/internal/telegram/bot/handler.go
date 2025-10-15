@@ -14,7 +14,6 @@ import (
 
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 )
@@ -97,12 +96,14 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 
 	switch {
 	case strings.Contains(callback.Data, kbd.CurrentWeek):
-		return h.handleCurrentWeek(c)
+		return h.callbackCurrentWeek(c)
+
 	case strings.Contains(callback.Data, kbd.PrevWeek):
-		return h.handleWeekNavigation(c)
+		return h.callbackWeekNavigation(c)
 
 	case strings.Contains(callback.Data, kbd.NextWeek):
-		return h.handleWeekNavigation(c)
+		return h.callbackWeekNavigation(c)
+
 	default:
 		slog.Warn("undefined callback", "chat_id", c.Chat().ID, "username", c.Sender().Username, "data", callback.Data)
 		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
@@ -125,56 +126,4 @@ func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleR
 	}
 
 	return nil
-}
-
-func (h *Handler) handleCurrentWeek(c tele.Context) error {
-	callback := c.Callback()
-	groupID, err := strconv.Atoi(utils.ParseCallbackData(callback.Data))
-	if err != nil {
-		slog.Warn("callback: invalid data", "data", callback.Data, "chat_id", c.Chat().ID, "err", err)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-	}
-
-	schedule, msg := h.fetchSchedule(c, &groupID)
-	if msg != "" {
-		return c.Send(msg)
-	}
-	return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
-}
-
-func (h *Handler) handleWeekNavigation(c tele.Context) error {
-	callback := c.Callback()
-	parsed := utils.ParseCallbackData(callback.Data)
-
-	parts := strings.Split(parsed, ":")
-	if len(parts) < 2 {
-		slog.Error("Can't parse callback data to group and date", "text", parsed)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-	}
-
-	groupID, err := strconv.Atoi(parts[0])
-	if err != nil {
-		slog.Error("Can't parse groupID to int", "text", parsed)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-	}
-
-	date, err := time.Parse("02.01.2006", parts[1])
-	if err != nil {
-		slog.Error("Can't parse text to time.Time", "text", parsed, "err", err)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-	}
-
-	schedule, err := h.telegramService.GetGroupScheduleByWeek(context.Background(), groupID, date)
-	if err != nil {
-		slog.Warn("can't get schedule for week", "group_id", groupID, "date", date, "err", err)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-	}
-
-	weeks, err := h.telegramService.GetAvailableWeeks(context.Background(), &date)
-	if err != nil {
-		slog.Error("can't get available weeks", "date", date, "err", err)
-		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown)
-	}
-
-	return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.InlineWeekKeyboard(groupID, weeks))
 }

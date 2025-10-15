@@ -10,7 +10,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/models"
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	tele "gopkg.in/telebot.v4"
 )
@@ -75,7 +74,7 @@ func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.Group, err
 	if groupID != nil {
 		groupNum = *groupID
 	} else {
-		groupNum, err = utils.InputNum(c)
+		groupNum, err = inputNum(c)
 		if err != nil {
 			slog.Warn("getGroupSchedule: can't parse input to int", "input", c.Args()[0], "err", err)
 			return nil, err
@@ -104,20 +103,20 @@ func (h *Handler) getGroupSchedule(c tele.Context, groupID *int) (*pb.Group, err
 }
 
 func (h *Handler) handleEndTime(c tele.Context, group *pb.Group) error {
-	dayIdx := utils.Day()
+	dayIdx := weekDay()
 	day := group.Days[dayIdx]
 
-	lastSubject := utils.FindLastSubject(day.Subjects)
+	lastSubject := findLastSubject(day.Subjects)
 	if lastSubject == -1 { // if no pairs in day
-		return c.Send(formatScheduleDay(group.Days[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(group.Id)))
+		return c.Send(formatScheduleDay(group.Days[weekDay(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(group.Id)))
 	}
 
 	now := time.Now()
 
-	endTime, ok := utils.GetEndTime(dayIdx, lastSubject)
+	endTime, ok := getEndTime(dayIdx, lastSubject)
 	if ok {
 		if now.After(endTime) || now.Equal(endTime) {
-			return c.Send(formatScheduleDay(group.Days[utils.Day(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(group.Id)))
+			return c.Send(formatScheduleDay(group.Days[weekDay(1)]), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineScheduleKeyboard(int(group.Id)))
 		}
 	}
 

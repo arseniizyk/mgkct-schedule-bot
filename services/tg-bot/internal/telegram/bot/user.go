@@ -7,7 +7,6 @@ import (
 
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 	tele "gopkg.in/telebot.v4"
 
@@ -51,7 +50,7 @@ func (h *Handler) SetGroup(c tele.Context) error {
 		return c.Send(msg.WaitingGroup)
 	}
 
-	groupID, err := utils.InputNum(c)
+	groupID, err := inputNum(c)
 	if err != nil {
 		slog.Warn("setgroup: bad arg", "input", c.Args()[0], "chat_id", c.Chat().ID, "username", c.Chat().Username)
 		return c.Send(msg.OnlyNumbers)
