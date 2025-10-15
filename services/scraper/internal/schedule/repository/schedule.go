@@ -22,6 +22,8 @@ type Schedule interface {
 	GetWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
 }
 
+var ErrNotFound = errors.New("not found")
+
 type repository struct {
 	pool *pgxpool.Pool
 	sb   squirrel.StatementBuilderType
@@ -68,7 +70,7 @@ func (repo *repository) GetByWeek(ctx context.Context, week time.Time) (*pb.Sche
 	var raw []byte
 	if err := repo.pool.QueryRow(ctx, sql, args...).Scan(&raw); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, model.ErrNotFound
+			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("repo: get schedule: %w", err)
 	}
@@ -96,7 +98,7 @@ func (repo *repository) GetLatest(ctx context.Context) (*pb.Schedule, error) {
 	err = repo.pool.QueryRow(ctx, sql, args...).Scan(&raw)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, model.ErrNotFound
+			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("repo: get latest schedule: %w", err)
 	}
