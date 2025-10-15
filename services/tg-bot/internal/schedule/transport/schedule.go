@@ -37,7 +37,10 @@ func (t *transport) GetGroupSchedule(ctx context.Context, groupID int) (*pb.Grou
 	})
 
 	if err != nil {
-		return nil, t.handleGRPCError(groupID, err)
+		return nil, t.handleGRPCError(err,
+			slog.String("method", "GetGroupSchedule"),
+			slog.Int("group_id", groupID),
+		)
 	}
 
 	return resp.Group, nil
@@ -50,7 +53,12 @@ func (t *transport) GetGroupScheduleByWeek(ctx context.Context, groupID int, wee
 	})
 
 	if err != nil {
-		return nil, t.handleGRPCError(groupID, err)
+		slog.Error("scraperSvc.GetGroupScheduleByWeek", "group_id", groupID, "week", week.String())
+		return nil, t.handleGRPCError(err,
+			slog.String("method", "GetGroupScheduleByWeek"),
+			slog.Int("group_id", groupID),
+			slog.String("week", week.String()),
+		)
 	}
 
 	return resp.Group, nil
@@ -64,8 +72,11 @@ func (t *transport) GetAvailableWeeks(ctx context.Context, week *time.Time) (mod
 
 	resp, err := t.scraperSvc.GetAvailableWeeks(ctx, &pb.AvailableWeeksRequest{Week: w})
 	if err != nil {
-		slog.Error("Error from GetAvailableWeeks", "err", err, "week", week, "w", w)
-		return models.Weeks{}, models.ErrInternal
+		slog.Error("scraperSvc.GetAvailableWeeks", "week", week.String(), "err", err)
+		return models.Weeks{}, t.handleGRPCError(err,
+			slog.String("method", "GetAvailableWeeks"),
+			slog.String("week", week.String()),
+		)
 	}
 
 	res := models.Weeks{
@@ -80,22 +91,26 @@ func (t *transport) GetAvailableWeeks(ctx context.Context, week *time.Time) (mod
 	return res, nil
 }
 
-func (t *transport) handleGRPCError(groupID int, err error) error {
+func (t *transport) handleGRPCError(err error, attrs ...slog.Attr) error {
+	logger := slog.With(attrs)
+
 	st, ok := status.FromError(err)
 	if !ok {
-		slog.Error("undefined error from scraper", "group_id", groupID, "err", err)
+		logger.Error("undefined gRPC error", "err", err)
 		return models.ErrScraperInternal
 	}
 
 	switch st.Code() {
 	case codes.NotFound:
-		slog.Warn("group not found from scraper", "err", st.Message(), "code", st.Code(), "group_id", groupID)
+		logger.Warn("not found from scraper", "msg", st.Message(), "code", st.Code())
 		return models.ErrGroupNotFound
+
 	case codes.Unavailable:
-		slog.Error("scraper unavailable", "err", st.Message(), "code", st.Code(), "group_id", groupID)
+		logger.Error("scraper unavailable", "msg", st.Message(), "code", st.Code())
 		return models.ErrScraperInternal
+
 	default:
-		slog.Error("undefined error from scraper", "err", st.Message(), "code", st.Code(), "group_id", groupID)
+		logger.Error("undefined error from scraper", "msg", st.Message(), "code", st.Code())
 		return models.ErrScraperInternal
 	}
 }

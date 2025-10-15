@@ -11,6 +11,7 @@ import (
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -54,7 +55,7 @@ func (h *Handler) fetchSchedule(c tele.Context, groupID *int) (*pb.Group, string
 		switch {
 		case errors.Is(err, models.ErrGroupNotFound):
 			return nil, msg.GroupNotFound
-		case errors.Is(err, models.ErrUserNoGroup):
+		case errors.Is(err, repository.ErrNoGroup):
 			return nil, msg.UserNoGroup
 		case errors.Is(err, models.ErrBadInput):
 			return nil, msg.OnlyNumbers

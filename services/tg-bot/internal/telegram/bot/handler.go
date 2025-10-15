@@ -21,12 +21,12 @@ import (
 
 type Handler struct {
 	telegramService telegramService.Telegram
-	userRepo        repository.TelegramUser
+	userRepo        repository.User
 	sm              state.Manager
 	bot             *tele.Bot
 }
 
-func NewHandler(userRepo repository.TelegramUser, service telegramService.Telegram, sm state.Manager, bot *tele.Bot) *Handler {
+func NewHandler(userRepo repository.User, service telegramService.Telegram, sm state.Manager, bot *tele.Bot) *Handler {
 	return &Handler{
 		telegramService: service,
 		userRepo:        userRepo,
@@ -45,7 +45,7 @@ func (h *Handler) WaitingGroup(c tele.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := h.userRepo.SetUserGroup(ctx, c.Chat().ID, group); err != nil {
+	if err := h.userRepo.SetGroup(ctx, c.Chat().ID, group); err != nil {
 		slog.Error("waitingGroup: failed to set group", "chat_id", c.Chat().ID, "group_id", group, "err", err)
 		return c.Send(msg.InternalTryWith)
 	}
@@ -97,18 +97,7 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 
 	switch {
 	case strings.Contains(callback.Data, kbd.CurrentWeek):
-		groupID, err := strconv.Atoi(utils.ParseCallbackData(callback.Data))
-		if err != nil {
-			slog.Warn("callback: invalid data", "data", callback.Data, "chat_id", c.Chat().ID, "err", err)
-			return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-		}
-
-		schedule, msg := h.fetchSchedule(c, &groupID)
-		if msg != "" {
-			return c.Send(msg)
-		}
-		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
-
+		return h.handleCurrentWeek(c)
 	case strings.Contains(callback.Data, kbd.PrevWeek):
 		return h.handleWeekNavigation(c)
 
@@ -121,7 +110,7 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 }
 
 func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleResponse) error {
-	users, err := h.userRepo.GetGroupUsers(ctx, int(g.Group.Id))
+	users, err := h.userRepo.GetUsersByGroup(ctx, int(g.Group.Id))
 	if err != nil {
 		slog.Error("can't get users for group", "groupNum", g.Group.Id, "err", err)
 		return err
@@ -136,6 +125,21 @@ func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleR
 	}
 
 	return nil
+}
+
+func (h *Handler) handleCurrentWeek(c tele.Context) error {
+	callback := c.Callback()
+	groupID, err := strconv.Atoi(utils.ParseCallbackData(callback.Data))
+	if err != nil {
+		slog.Warn("callback: invalid data", "data", callback.Data, "chat_id", c.Chat().ID, "err", err)
+		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+	}
+
+	schedule, msg := h.fetchSchedule(c, &groupID)
+	if msg != "" {
+		return c.Send(msg)
+	}
+	return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
 }
 
 func (h *Handler) handleWeekNavigation(c tele.Context) error {

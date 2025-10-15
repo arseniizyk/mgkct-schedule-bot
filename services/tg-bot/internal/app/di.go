@@ -24,7 +24,7 @@ type diContainer struct {
 
 	scheduleTransport  scheduleTransport.Schedule
 	telegramService    telegramService.Telegram
-	telegramRepository telegramRepository.TelegramUser
+	telegramRepository telegramRepository.User
 	telegramState      state.Manager
 	telegramBotHandler *bot.Handler
 }
@@ -46,7 +46,7 @@ func (d *diContainer) ScheduleTransport() scheduleTransport.Schedule {
 	return d.scheduleTransport
 }
 
-func (d *diContainer) TelegramRepository() telegramRepository.TelegramUser {
+func (d *diContainer) TelegramRepository() telegramRepository.User {
 	if d.telegramRepository == nil {
 		d.telegramRepository = telegramRepository.New(d.pool)
 	}
