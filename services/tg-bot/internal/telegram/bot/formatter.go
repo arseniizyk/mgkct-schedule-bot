@@ -6,7 +6,6 @@ import (
 	"unicode"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 )
 
 func formatScheduleDay(day *pb.Day) string {
@@ -35,7 +34,7 @@ func formatSubjects(subjects []*pb.Subject) string {
 	var sb strings.Builder
 	sb.Grow(len(subjects) * 80)
 
-	lastSubject := utils.FindLastSubject(subjects)
+	lastSubject := findLastSubject(subjects)
 	if lastSubject == -1 { // if no pairs in day
 		return "*Выходной*"
 	}

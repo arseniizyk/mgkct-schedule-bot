@@ -15,7 +15,6 @@ import (
 )
 
 type Schedule interface {
-	GetFullLatestSchedule(ctx context.Context) (*pb.Schedule, error)
 	GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error)
 	GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error)
 	CheckScheduleUpdates(interval time.Duration) <-chan *model.Updated
@@ -53,7 +52,7 @@ func (p *service) CheckScheduleUpdates(interval time.Duration) <-chan *model.Upd
 		defer cancel()
 
 		sch, err = p.repo.GetLatest(ctx)
-		if err != nil && errors.Is(err, model.ErrNotFound) {
+		if err != nil && errors.Is(err, repository.ErrNotFound) {
 			if sch, updated, err := p.parseSchedule(ctx); err == nil && updated {
 				p.cache = sch
 				updatedGroups := p.findUpdatedGroups(sch)

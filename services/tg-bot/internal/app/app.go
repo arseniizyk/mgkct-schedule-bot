@@ -64,6 +64,10 @@ func (a *App) Run() error {
 		slog.Error("subscribe to schedule updates failed", "err", err)
 		return err
 	}
+	if err := a.subscribeWeekUpdates(); err != nil {
+		slog.Error("subscribe to week updates failed", "err", err)
+		return err
+	}
 
 	return a.StartBot()
 }
@@ -79,6 +83,17 @@ func (a *App) subscribeScheduleUpdates() error {
 
 		if err := a.diContainer.TelegramBotHandler().HandleScheduleUpdate(context.Background(), group); err != nil {
 			slog.Error("handle schedule update", "err", err)
+		}
+	})
+	return err
+}
+
+func (a *App) subscribeWeekUpdates() error {
+	_, err := a.nc.Subscribe("schedule.week.updates", func(msg *nats.Msg) {
+		slog.Info("Week updated", "date", msg.Data)
+
+		if err := a.diContainer.TelegramBotHandler().HandleWeekUpdate(context.Background()); err != nil {
+			slog.Error("handle week update", "err", err)
 		}
 	})
 	return err

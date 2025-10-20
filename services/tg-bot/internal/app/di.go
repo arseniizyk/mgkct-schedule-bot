@@ -7,7 +7,6 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state/memory"
 
 	telegramRepository "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	telegramService "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/service"
@@ -24,7 +23,7 @@ type diContainer struct {
 
 	scheduleTransport  scheduleTransport.Schedule
 	telegramService    telegramService.Telegram
-	telegramRepository telegramRepository.TelegramUser
+	telegramRepository telegramRepository.User
 	telegramState      state.Manager
 	telegramBotHandler *bot.Handler
 }
@@ -46,7 +45,7 @@ func (d *diContainer) ScheduleTransport() scheduleTransport.Schedule {
 	return d.scheduleTransport
 }
 
-func (d *diContainer) TelegramRepository() telegramRepository.TelegramUser {
+func (d *diContainer) TelegramRepository() telegramRepository.User {
 	if d.telegramRepository == nil {
 		d.telegramRepository = telegramRepository.New(d.pool)
 	}
@@ -72,7 +71,7 @@ func (d *diContainer) TelegramBotHandler() *bot.Handler {
 
 func (d *diContainer) TelegramState() state.Manager {
 	if d.telegramState == nil {
-		d.telegramState = memory.NewMemory()
+		d.telegramState = state.NewMemory()
 	}
 
 	return d.telegramState

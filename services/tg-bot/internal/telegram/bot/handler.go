@@ -14,19 +14,18 @@ import (
 
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 )
 
 type Handler struct {
 	telegramService telegramService.Telegram
-	userRepo        repository.TelegramUser
+	userRepo        repository.User
 	sm              state.Manager
 	bot             *tele.Bot
 }
 
-func NewHandler(userRepo repository.TelegramUser, service telegramService.Telegram, sm state.Manager, bot *tele.Bot) *Handler {
+func NewHandler(userRepo repository.User, service telegramService.Telegram, sm state.Manager, bot *tele.Bot) *Handler {
 	return &Handler{
 		telegramService: service,
 		userRepo:        userRepo,
@@ -45,7 +44,7 @@ func (h *Handler) WaitingGroup(c tele.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := h.userRepo.SetUserGroup(ctx, c.Chat().ID, group); err != nil {
+	if err := h.userRepo.SetGroup(ctx, c.Chat().ID, group); err != nil {
 		slog.Error("waitingGroup: failed to set group", "chat_id", c.Chat().ID, "group_id", group, "err", err)
 		return c.Send(msg.InternalTryWith)
 	}
@@ -97,23 +96,14 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 
 	switch {
 	case strings.Contains(callback.Data, kbd.CurrentWeek):
-		groupID, err := strconv.Atoi(utils.ParseCallbackData(callback.Data))
-		if err != nil {
-			slog.Warn("callback: invalid data", "data", callback.Data, "chat_id", c.Chat().ID, "err", err)
-			return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-		}
-
-		schedule, msg := h.fetchSchedule(c, &groupID)
-		if msg != "" {
-			return c.Send(msg)
-		}
-		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
+		return h.callbackCurrentWeek(c)
 
 	case strings.Contains(callback.Data, kbd.PrevWeek):
-		return h.handleWeekNavigation(c)
+		return h.callbackWeekNavigation(c)
 
 	case strings.Contains(callback.Data, kbd.NextWeek):
-		return h.handleWeekNavigation(c)
+		return h.callbackWeekNavigation(c)
+
 	default:
 		slog.Warn("undefined callback", "chat_id", c.Chat().ID, "username", c.Sender().Username, "data", callback.Data)
 		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
@@ -121,7 +111,7 @@ func (h *Handler) HandleCallback(c tele.Context) error {
 }
 
 func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleResponse) error {
-	users, err := h.userRepo.GetGroupUsers(ctx, int(g.Group.Id))
+	users, err := h.userRepo.GetUsersByGroup(ctx, int(g.Group.Id))
 	if err != nil {
 		slog.Error("can't get users for group", "groupNum", g.Group.Id, "err", err)
 		return err
@@ -131,6 +121,7 @@ func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleR
 		err := h.SendUpdatedSchedule(u, g.Group)
 		if err != nil {
 			slog.Error("failed to send update to user", "userId", u, "err", err)
+			continue
 		}
 		slog.Info("Updated schedule sended", "group_id", g.Group.Id, "chat_id", u)
 	}
@@ -138,39 +129,21 @@ func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleR
 	return nil
 }
 
-func (h *Handler) handleWeekNavigation(c tele.Context) error {
-	callback := c.Callback()
-	parsed := utils.ParseCallbackData(callback.Data)
-
-	parts := strings.Split(parsed, ":")
-	if len(parts) < 2 {
-		slog.Error("Can't parse callback data to group and date", "text", parsed)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-	}
-
-	groupID, err := strconv.Atoi(parts[0])
+func (h *Handler) HandleWeekUpdate(ctx context.Context) error {
+	users, err := h.userRepo.SelectAll(ctx)
 	if err != nil {
-		slog.Error("Can't parse groupID to int", "text", parsed)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+		slog.Error("can't select all users", "err", err)
+		return err
 	}
 
-	date, err := time.Parse("02.01.2006", parts[1])
-	if err != nil {
-		slog.Error("Can't parse text to time.Time", "text", parsed, "err", err)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
+	for _, u := range users {
+		err := h.SendUpdatedWeek(u)
+		if err != nil {
+			slog.Error("failed to send week update to user", "user_id", u.ChatID, "err", err)
+			continue
+		}
+		slog.Info("Updated week sended", "group_id", u.Group, "chat_id", u.ChatID)
 	}
 
-	schedule, err := h.telegramService.GetGroupScheduleByWeek(context.Background(), groupID, date)
-	if err != nil {
-		slog.Warn("can't get schedule for week", "group_id", groupID, "date", date, "err", err)
-		return c.Respond(&tele.CallbackResponse{Text: msg.Internal, ShowAlert: true})
-	}
-
-	weeks, err := h.telegramService.GetAvailableWeeks(context.Background(), &date)
-	if err != nil {
-		slog.Error("can't get available weeks", "date", date, "err", err)
-		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown)
-	}
-
-	return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.InlineWeekKeyboard(groupID, weeks))
+	return nil
 }

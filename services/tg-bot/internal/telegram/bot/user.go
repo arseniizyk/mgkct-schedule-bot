@@ -7,7 +7,6 @@ import (
 
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	msg "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/messages"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/utils"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/state"
 	tele "gopkg.in/telebot.v4"
 
@@ -19,16 +18,15 @@ func (h *Handler) Help(c tele.Context) error {
 }
 
 func (h *Handler) Start(c tele.Context) error {
-	user := c.Sender()
-	u := &models.User{
+	u := models.User{
 		ChatID:   c.Chat().ID,
-		Username: user.Username,
+		Username: c.Sender().Username,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := h.userRepo.SaveUser(ctx, u); err != nil {
+	if err := h.userRepo.Save(ctx, u); err != nil {
 		slog.Error("can't save user from /start", "username", u.Username, "chat_id", u.ChatID, "err", err)
 	}
 
@@ -52,7 +50,7 @@ func (h *Handler) SetGroup(c tele.Context) error {
 		return c.Send(msg.WaitingGroup)
 	}
 
-	groupID, err := utils.InputNum(c)
+	groupID, err := inputNum(c)
 	if err != nil {
 		slog.Warn("setgroup: bad arg", "input", c.Args()[0], "chat_id", c.Chat().ID, "username", c.Chat().Username)
 		return c.Send(msg.OnlyNumbers)
@@ -61,7 +59,7 @@ func (h *Handler) SetGroup(c tele.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if err := h.userRepo.SetUserGroup(ctx, c.Chat().ID, groupID); err != nil {
+	if err := h.userRepo.SetGroup(ctx, c.Chat().ID, groupID); err != nil {
 		slog.Error("setgroup: failed to save group", "chat_id", c.Chat().ID, "group_id", groupID, "err", err)
 		return c.Send(msg.InternalTryWith)
 	}

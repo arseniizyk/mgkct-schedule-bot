@@ -7,7 +7,7 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/model"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/service"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc/codes"
@@ -38,24 +38,23 @@ func New(service service.Schedule, nc *nats.Conn) *transport {
 }
 
 func (t *transport) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
-	sch, err := t.service.GetFullLatestSchedule(ctx)
+	sch, err := t.service.GetGroupLatestSchedule(ctx, req.Id)
 	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "group not found")
+		}
 		return nil, status.Errorf(codes.Unavailable, "can't get schedule")
 	}
 
-	group, ok := sch.Groups[req.Id]
-	if !ok {
-		return nil, status.Error(codes.NotFound, "group not found")
-	}
 	return &pb.GroupScheduleResponse{
-		Group: group,
+		Group: sch,
 	}, nil
 }
 
 func (t *transport) GetGroupScheduleByWeek(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
 	group, err := t.service.GetGroupScheduleByWeek(ctx, req.Id, req.Week.AsTime())
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
+		if errors.Is(err, repository.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "group not found")
 		}
 		return nil, status.Errorf(codes.Unavailable, "can't get schedule")
