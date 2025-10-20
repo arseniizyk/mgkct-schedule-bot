@@ -121,8 +121,28 @@ func (h *Handler) HandleScheduleUpdate(ctx context.Context, g *pb.GroupScheduleR
 		err := h.SendUpdatedSchedule(u, g.Group)
 		if err != nil {
 			slog.Error("failed to send update to user", "userId", u, "err", err)
+			continue
 		}
 		slog.Info("Updated schedule sended", "group_id", g.Group.Id, "chat_id", u)
+	}
+
+	return nil
+}
+
+func (h *Handler) HandleWeekUpdate(ctx context.Context) error {
+	users, err := h.userRepo.SelectAll(ctx)
+	if err != nil {
+		slog.Error("can't select all users", "err", err)
+		return err
+	}
+
+	for _, u := range users {
+		err := h.SendUpdatedWeek(u)
+		if err != nil {
+			slog.Error("failed to send week update to user", "user_id", u.ChatID, "err", err)
+			continue
+		}
+		slog.Info("Updated week sended", "group_id", u.Group, "chat_id", u.ChatID)
 	}
 
 	return nil

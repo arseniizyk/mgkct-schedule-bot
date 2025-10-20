@@ -1,10 +1,13 @@
 package models
 
-import "time"
+import (
+	"time"
+)
 
 type User struct {
 	ChatID   int64
 	Username string
+	Group    int
 }
 
 type Weeks struct {
