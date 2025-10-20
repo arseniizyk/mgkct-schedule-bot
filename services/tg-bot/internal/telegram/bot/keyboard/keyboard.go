@@ -29,6 +29,10 @@ var (
 func InlineScheduleKeyboard(groupID int) *tele.ReplyMarkup {
 	markup := &tele.ReplyMarkup{}
 
+	if groupID == 0 {
+		return nil
+	}
+
 	inlineBtnDay := markup.Data("🔽", CurrentWeek, strconv.Itoa(groupID))
 	markup.Inline(markup.Row(inlineBtnDay))
 

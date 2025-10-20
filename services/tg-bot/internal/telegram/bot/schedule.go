@@ -38,9 +38,15 @@ func (h *Handler) Day(c tele.Context) error {
 func (h *Handler) SendUpdatedSchedule(chatID int64, group *pb.Group) error {
 	msg := "*Расписание обновлено*\n\n"
 	msg += formatScheduleWeek(group)
-	slog.Info("Send Updated Schedule", "chat_id", chatID, "group_id", group.Id)
+	slog.Debug("Send Updated Schedule", "chat_id", chatID, "group_id", group.Id)
 
 	_, err := h.bot.Send(tele.ChatID(chatID), msg, tele.ModeMarkdown)
+	return err
+}
+
+func (h *Handler) SendUpdatedWeek(u models.User) error {
+	_, err := h.bot.Send(tele.ChatID(u.ChatID), "Доступно расписание на следующую неделю", kbd.InlineScheduleKeyboard(u.Group))
+
 	return err
 }
 

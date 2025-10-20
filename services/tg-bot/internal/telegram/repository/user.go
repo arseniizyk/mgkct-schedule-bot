@@ -14,7 +14,7 @@ import (
 )
 
 type User interface {
-	SelectAll(ctx context.Context) ([]int64, error)
+	SelectAll(ctx context.Context) ([]models.User, error)
 	Save(ctx context.Context, u models.User) error
 	GetGroup(ctx context.Context, chatID int64) (int, error)
 	SetGroup(ctx context.Context, chatID int64, groupID int) error
@@ -51,8 +51,8 @@ func (r *repository) Save(ctx context.Context, u models.User) error {
 	return nil
 }
 
-func (r *repository) SelectAll(ctx context.Context) ([]int64, error) {
-	query := r.sb.Select("chat_id").
+func (r *repository) SelectAll(ctx context.Context) ([]models.User, error) {
+	query := r.sb.Select("chat_id, group_id").
 		From("users")
 
 	sql, args, err := query.ToSql()
@@ -65,17 +65,26 @@ func (r *repository) SelectAll(ctx context.Context) ([]int64, error) {
 		return nil, wrap(ErrQuery, err)
 	}
 
-	var chatIDs []int64
+	var users []models.User
 	for rows.Next() {
-		var u int64
-		if err := rows.Scan(&u); err != nil {
+		var chatID int64
+		var groupID *int
+		if err := rows.Scan(&chatID, &groupID); err != nil {
 			return nil, wrap(ErrScan, err, "chat_id")
 		}
 
-		chatIDs = append(chatIDs, u)
+		group := 0
+		if groupID != nil {
+			group = *groupID
+		}
+
+		users = append(users, models.User{
+			ChatID: chatID,
+			Group:  group,
+		})
 	}
 
-	return chatIDs, nil
+	return users, nil
 }
 
 func (r *repository) GetGroup(ctx context.Context, chatID int64) (int, error) {

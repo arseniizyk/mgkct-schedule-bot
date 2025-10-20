@@ -22,7 +22,14 @@ func (h *Handler) callbackCurrentWeek(c tele.Context) error {
 	if msg != "" {
 		return c.Send(msg)
 	}
-	return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
+
+	weeks, err := h.telegramService.GetAvailableWeeks(context.Background(), nil)
+	if err != nil {
+		slog.Error("can't get available weeks", "err", err)
+		return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard, kbd.InlineEmptyKeyboard)
+	}
+	return c.Edit(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.InlineWeekKeyboard(groupID, weeks))
+
 }
 
 func (h *Handler) callbackWeekNavigation(c tele.Context) error {
