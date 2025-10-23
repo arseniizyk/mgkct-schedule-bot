@@ -8,28 +8,28 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/model"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/service/parser"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/model"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/service/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/utils"
 )
 
-type Schedule interface {
-	GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error)
-	GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error)
-	CheckScheduleUpdates(interval time.Duration) <-chan *model.Updated
-	GetAvailableWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
+type ScheduleRepository interface {
+	Save(ctx context.Context, week time.Time, schedule *pb.Schedule) error
+	GetByWeek(ctx context.Context, week time.Time) (*pb.Schedule, error)
+	GetLatest(ctx context.Context) (*pb.Schedule, error)
+	GetWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
 }
 
 type service struct {
-	repo         repository.Schedule
+	repo         ScheduleRepository
 	parser       *parser.Parser
 	cache        *pb.Schedule
 	scheduleHash [32]byte
 	groupsHashes map[int32][32]byte
 }
 
-func NewScheduleService(scheduleRepo repository.Schedule) Schedule {
+func NewScheduleService(scheduleRepo ScheduleRepository) *service {
 	return &service{
 		repo:         scheduleRepo,
 		parser:       parser.New(),
