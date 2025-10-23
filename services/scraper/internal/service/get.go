@@ -7,8 +7,8 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/model"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/model"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 )
 
 func (s *service) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error) {

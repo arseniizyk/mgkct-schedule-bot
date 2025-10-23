@@ -4,11 +4,10 @@ import (
 	"context"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/transport"
 )
 
 type grpcAdapter struct {
-	transport transport.Schedule
+	transport ScheduleTransport
 	pb.UnimplementedScheduleServiceServer
 }
 

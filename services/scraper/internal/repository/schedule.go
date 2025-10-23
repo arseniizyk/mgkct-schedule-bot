@@ -9,18 +9,11 @@ import (
 
 	"github.com/Masterminds/squirrel"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/model"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/model"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/encoding/protojson"
 )
-
-type Schedule interface {
-	Save(ctx context.Context, week time.Time, schedule *pb.Schedule) error
-	GetByWeek(ctx context.Context, week time.Time) (*pb.Schedule, error)
-	GetLatest(ctx context.Context) (*pb.Schedule, error)
-	GetWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
-}
 
 var ErrNotFound = errors.New("not found")
 
@@ -29,7 +22,7 @@ type repository struct {
 	sb   squirrel.StatementBuilderType
 }
 
-func New(pool *pgxpool.Pool) Schedule {
+func NewScheduleRepository(pool *pgxpool.Pool) *repository {
 	return &repository{
 		pool: pool,
 		sb:   squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
@@ -143,7 +136,7 @@ func (repo *repository) GetWeeks(ctx context.Context, week time.Time) (*model.We
 		}
 
 		if len(weeks) < 2 {
-			slog.Debug("Not enough weeks in db")
+			slog.Warn("repository.GetWeeks: Not enough weeks in db")
 			return nil, fmt.Errorf("not enough weeks")
 		}
 
