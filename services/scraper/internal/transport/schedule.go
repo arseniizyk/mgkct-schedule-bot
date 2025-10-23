@@ -7,8 +7,8 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/repository"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/schedule/service"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/model"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,21 +16,20 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type Schedule interface {
-	PublishScheduleUpdate(*pb.Group) error
-	PublishWeekUpdates(date time.Time) error
-	GetGroupSchedule(context.Context, *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error)
-	GetGroupScheduleByWeek(context.Context, *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error)
-	GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error)
+type ScheduleService interface {
+	GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error)
+	GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error)
+	CheckScheduleUpdates(interval time.Duration) <-chan *model.Updated
+	GetAvailableWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
 }
 
 type transport struct {
-	service service.Schedule
+	service ScheduleService
 	nc      *nats.Conn
 	pb.UnimplementedScheduleServiceServer
 }
 
-func New(service service.Schedule, nc *nats.Conn) *transport {
+func NewScheduleTransport(service ScheduleService, nc *nats.Conn) *transport {
 	return &transport{
 		service: service,
 		nc:      nc,

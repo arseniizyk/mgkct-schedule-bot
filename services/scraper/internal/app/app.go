@@ -12,17 +12,29 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/database"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/service"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 )
 
+type ScheduleTransport interface {
+	PublishScheduleUpdate(*pb.Group) error
+	PublishWeekUpdates(date time.Time) error
+	GetGroupSchedule(context.Context, *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error)
+	GetGroupScheduleByWeek(context.Context, *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error)
+	GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error)
+}
+
 type App struct {
-	diContainer *diContainer
-	cfg         *config.Config
-	lis         net.Listener
-	db          *database.Database
-	grpcServer  *grpc.Server
-	nc          *nats.Conn
+	cfg               *config.Config
+	lis               net.Listener
+	db                *database.Database
+	grpcServer        *grpc.Server
+	nc                *nats.Conn
+	scheduleSvc       transport.ScheduleService
+	scheduleTransport ScheduleTransport
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -38,6 +50,10 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
+	scheduleRepo := repository.NewScheduleRepository(a.db.Pool)
+	a.scheduleSvc = service.NewScheduleService(scheduleRepo)
+	a.scheduleTransport = transport.NewScheduleTransport(a.scheduleSvc, a.nc)
+
 	return a, nil
 }
 
@@ -45,24 +61,24 @@ func (a *App) Run() error {
 	defer a.db.Close()
 
 	go func() {
-		updatesCh := a.diContainer.ScheduleService().CheckScheduleUpdates(time.Minute)
+		updatesCh := a.scheduleSvc.CheckScheduleUpdates(time.Minute)
 		for update := range updatesCh {
 			if update.IsWeekUpdated {
 				slog.Info("Week updated, publishing to NATS", "week", update.Group.Week.AsTime())
-				if err := a.diContainer.ScheduleTransport().PublishWeekUpdates(update.Group.Week.AsTime()); err != nil {
+				if err := a.scheduleTransport.PublishWeekUpdates(update.Group.Week.AsTime()); err != nil {
 					slog.Error("Failed publishing new week to NATS")
 				}
 				continue
 			}
 
-			if err := a.diContainer.ScheduleTransport().PublishScheduleUpdate(update.Group); err != nil {
+			if err := a.scheduleTransport.PublishScheduleUpdate(update.Group); err != nil {
 				slog.Error("Failed publishing new schedule to NATS")
 			}
 		}
 	}()
 
 	go func() {
-		pb.RegisterScheduleServiceServer(a.grpcServer, &grpcAdapter{transport: a.diContainer.ScheduleTransport()})
+		pb.RegisterScheduleServiceServer(a.grpcServer, &grpcAdapter{transport: a.scheduleTransport})
 		slog.Info("gRPC server started", "address", a.lis.Addr().String())
 		if err := a.grpcServer.Serve(a.lis); err != nil {
 			slog.Error("gRPC serve error", "err", err)
@@ -91,7 +107,6 @@ func (a *App) initDeps() error {
 		a.initNATS,
 		a.initNetListener,
 		a.initDB,
-		a.initDI,
 	}
 
 	for _, f := range inits {
@@ -135,9 +150,4 @@ func (a *App) initDB() error {
 		return err
 	}
 	return err
-}
-
-func (a *App) initDI() error {
-	a.diContainer = NewDIContainer(a.nc, a.db.Pool)
-	return nil
 }
