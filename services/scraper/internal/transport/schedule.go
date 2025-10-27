@@ -72,6 +72,9 @@ func (t *transport) GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeek
 
 	weeks, err := t.service.GetAvailableWeeks(ctx, week)
 	if err != nil {
+		if errors.Is(err, repository.ErrNoAvailableWeeks) {
+			return nil, status.Errorf(codes.NotFound, "%s", err.Error())
+		}
 		return nil, status.Errorf(codes.Internal, "can't get weeks: %v", err)
 	}
 

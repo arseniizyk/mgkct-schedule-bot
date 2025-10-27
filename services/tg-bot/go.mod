@@ -13,7 +13,7 @@ require (
 	github.com/arseniizyk/mgkct-schedule-bot/libs/database v0.0.0-20250925210302-2191841f424e
 	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250925210302-2191841f424e
 	github.com/nats-io/nats.go v1.46.0
-	google.golang.org/grpc v1.75.1
+	google.golang.org/grpc v1.76.0
 )
 
 require (
