@@ -72,6 +72,9 @@ func (t *transport) GetAvailableWeeks(ctx context.Context, week *time.Time) (mod
 
 	resp, err := t.scraperSvc.GetAvailableWeeks(ctx, &pb.AvailableWeeksRequest{Week: w})
 	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return models.Weeks{}, nil
+		}
 		slog.Error("scraperSvc.GetAvailableWeeks", "week", week.String(), "err", err)
 		return models.Weeks{}, t.handleGRPCError(err,
 			slog.String("method", "GetAvailableWeeks"),

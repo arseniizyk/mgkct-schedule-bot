@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/Masterminds/squirrel"
@@ -15,7 +14,10 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound         = errors.New("not found")
+	ErrNoAvailableWeeks = errors.New("no available weeks")
+)
 
 type repository struct {
 	pool *pgxpool.Pool
@@ -136,8 +138,7 @@ func (repo *repository) GetWeeks(ctx context.Context, week time.Time) (*model.We
 		}
 
 		if len(weeks) < 2 {
-			slog.Warn("repository.GetWeeks: Not enough weeks in db")
-			return nil, fmt.Errorf("not enough weeks")
+			return nil, ErrNoAvailableWeeks
 		}
 
 		return &model.Weeks{

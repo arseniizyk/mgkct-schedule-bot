@@ -22,7 +22,7 @@ func (h *Handler) Week(c tele.Context) error {
 
 	weeks, err := h.telegramService.GetAvailableWeeks(context.Background(), nil)
 	if err != nil {
-		return c.Send(c.Send(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard))
+		return c.Send(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.ReplyScheduleKeyboard)
 	}
 	return c.Send(formatScheduleWeek(schedule), tele.ModeMarkdown, kbd.InlineWeekKeyboard(int(schedule.Id), weeks))
 }

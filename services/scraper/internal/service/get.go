@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -52,7 +53,9 @@ func (s *service) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*p
 func (s *service) GetAvailableWeeks(ctx context.Context, week time.Time) (*model.Weeks, error) {
 	weeks, err := s.repo.GetWeeks(ctx, week)
 	if err != nil {
-		slog.Error("Service.GetAvailableWeeks.Repository.GetWeeks", "err", err)
+		if !errors.Is(err, repository.ErrNoAvailableWeeks) {
+			slog.Error("Service.GetAvailableWeeks.Repository.GetWeeks", "err", err)
+		}
 		return nil, err
 	}
 
