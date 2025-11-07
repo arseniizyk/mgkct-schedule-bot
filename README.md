@@ -86,3 +86,4 @@ rpc GetAvailableWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);  
 * Unit тесты
 * Адекватный CI/CD
 * Поддержка расписания преподавателей
+* Telegram Mini App (React/Vue)
