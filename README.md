@@ -82,4 +82,4 @@ rpc GetAvailableWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);  
 * Рефакторинг
 * Багфиксы
 * Фиксы докерфайлов
-* Поддержка расписаний преподавателей
+* Поддержка расписания преподавателей
