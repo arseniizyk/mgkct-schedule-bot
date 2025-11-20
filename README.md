@@ -84,6 +84,7 @@ rpc GetAvailableWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);  
 * Багфиксы
 * Фиксы докерфайлов
 * Unit тесты
+* Redis для кеширования
 * Адекватный CI/CD
 * Поддержка расписания преподавателей
 * Telegram Mini App (React/Vue)
