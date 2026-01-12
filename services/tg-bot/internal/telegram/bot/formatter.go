@@ -36,7 +36,7 @@ func formatSubjects(subjects []*pb.Subject) string {
 
 	lastSubject := findLastSubject(subjects)
 	if lastSubject == -1 { // if no pairs in day
-		return "*Выходной*"
+		return "*Выходной*\n"
 	}
 
 	for i, subject := range subjects {
