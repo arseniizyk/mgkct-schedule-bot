@@ -15,6 +15,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/service"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 )
@@ -30,7 +31,7 @@ type ScheduleTransport interface {
 type App struct {
 	cfg               *config.Config
 	lis               net.Listener
-	db                *database.Database
+	pool              *pgxpool.Pool
 	grpcServer        *grpc.Server
 	nc                *nats.Conn
 	scheduleSvc       transport.ScheduleService
@@ -50,7 +51,7 @@ func New(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	scheduleRepo := repository.NewScheduleRepository(a.db.Pool)
+	scheduleRepo := repository.NewScheduleRepository(a.pool)
 	a.scheduleSvc = service.NewScheduleService(scheduleRepo)
 	a.scheduleTransport = transport.NewScheduleTransport(a.scheduleSvc, a.nc)
 
@@ -58,7 +59,7 @@ func New(cfg *config.Config) (*App, error) {
 }
 
 func (a *App) Run() error {
-	defer a.db.Close()
+	defer a.pool.Close()
 
 	go func() {
 		updatesCh := a.scheduleSvc.CheckScheduleUpdates(time.Minute)
@@ -96,7 +97,7 @@ func (a *App) shutdown() error {
 
 	<-sigChan
 
-	a.db.Close()
+	a.pool.Close()
 	a.grpcServer.GracefulStop()
 	err := a.nc.Drain()
 	return err
@@ -120,9 +121,9 @@ func (a *App) initDeps() error {
 
 func (a *App) initNATS() error {
 	var err error
-	a.nc, err = nats.Connect(a.cfg.NatsURL, nats.Name("scraper"))
+	a.nc, err = nats.Connect(a.cfg.Nats.URL, nats.Name("scraper"))
 	if err != nil {
-		slog.Error("can't connect NATS", "url", a.cfg.NatsURL, "err", err)
+		slog.Error("can't connect NATS", "url", a.cfg.Nats.URL, "err", err)
 		return err
 	}
 	return err
@@ -140,12 +141,12 @@ func (a *App) initNetListener() error {
 
 func (a *App) initDB() error {
 	var err error
-	a.db, err = database.New(a.cfg)
+	a.pool, err = database.Connect(&a.cfg.Scraper.DB)
 	if err != nil {
 		slog.Error("can't connect to database")
 		return err
 	}
-	if err := a.db.Ping(context.Background()); err != nil {
+	if err := a.pool.Ping(context.Background()); err != nil {
 		slog.Error("Database ping error", "err", err)
 		return err
 	}

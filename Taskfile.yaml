@@ -1,0 +1,7 @@
+version: '3'
+
+tasks:
+    run:
+        desc: Starts docker compose
+        cmds:
+            - docker compose --env-file=./configs/.env up --build -d

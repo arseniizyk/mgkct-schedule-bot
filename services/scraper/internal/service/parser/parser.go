@@ -1,9 +1,11 @@
 package parser
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,9 +28,20 @@ type Parser struct {
 }
 
 func New() *Parser {
-	return &Parser{
-		c: colly.NewCollector(colly.AllowURLRevisit()),
-	}
+	c := colly.NewCollector(
+		colly.AllowURLRevisit(),
+	)
+
+	c.WithTransport(&http.Transport{
+		DisableKeepAlives: true,
+		ForceAttemptHTTP2: false,
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			MaxVersion: tls.VersionTLS12,
+		},
+	})
+
+	return &Parser{c: c}
 }
 
 func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {

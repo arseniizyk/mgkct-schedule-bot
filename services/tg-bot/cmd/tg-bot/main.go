@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -10,7 +11,10 @@ import (
 )
 
 func main() {
-	cfg, err := config.New()
+	var configPath string
+	flag.StringVar(&configPath, "config_path", "", "path to config")
+
+	cfg, err := config.New(configPath)
 	if err != nil {
 		log.Fatal(fmt.Errorf("config: %w", err))
 	}
