@@ -3,25 +3,19 @@ package database
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Database struct {
-	Pool *pgxpool.Pool
-}
-
-func New(cfg *config.Config) (*Database, error) {
+func Connect(cfg *config.PostgresConfig) (*pgxpool.Pool, error) {
 	url := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		cfg.PostgresUser,
-		cfg.PostgresPassword,
-		os.Getenv("POSTGRES_HOST"),
-		cfg.PostgresPort,
-		cfg.PostgresDB,
-		cfg.PostgresSSL,
+		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		cfg.User,
+		cfg.Password,
+		cfg.Host,
+		cfg.Port,
+		cfg.DBName,
 	)
 
 	pool, err := pgxpool.New(context.Background(), url)
@@ -29,15 +23,5 @@ func New(cfg *config.Config) (*Database, error) {
 		return nil, fmt.Errorf("db: connect to database: url: %s, err: %w", url, err)
 	}
 
-	return &Database{
-		Pool: pool,
-	}, nil
-}
-
-func (d *Database) Close() {
-	d.Pool.Close()
-}
-
-func (d *Database) Ping(ctx context.Context) error {
-	return d.Pool.Ping(ctx)
+	return pool, nil
 }
