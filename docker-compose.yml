@@ -6,81 +6,145 @@ services:
             - '8222:8222' # мониторинг
         command: '-DV -m 8222'
         restart: unless-stopped
+        networks:
+            - internal
 
     tg-bot:
         build:
             context: .
             dockerfile: services/tg-bot/Dockerfile
+            target: tg-bot
         container_name: tg-bot
         command: ./tg-bot
-        env_file:
-            - .env
+        env_file: ./configs/.env
         depends_on:
-            # scraper:
-            # condition: service_healthy #TODO healthcheck for scraper
             nats:
                 condition: service_started
             tg-bot-postgres:
                 condition: service_healthy
+            tg-bot-migrations:
+                condition: service_completed_successfully
         restart: unless-stopped
-        environment:
-            - POSTGRES_HOST=tg-bot-postgres
+        networks:
+            - internal
 
     scraper:
         build:
             context: .
             dockerfile: services/scraper/Dockerfile
+            target: scraper
         container_name: scraper
         command: ./scraper
-        env_file:
-            - .env
+        env_file: ./configs/.env
         depends_on:
             nats:
                 condition: service_started
             scraper-postgres:
                 condition: service_healthy
+            scraper-migrations:
+                condition: service_completed_successfully
         restart: unless-stopped
         ports:
             - '9001:9001'
-        environment:
-            - POSTGRES_HOST=scraper-postgres
+        networks:
+            - internal
 
     scraper-postgres:
-        image: postgres
+        image: postgres:18
         container_name: scraper-postgres
         restart: unless-stopped
-        volumes:
-            - ./migrations/scraper:/docker-entrypoint-initdb.d/
-        env_file:
-            - .env
-        ports:
-            - '5433:5432'
+        env_file: ./configs/.env
         healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
+            test:
+                [
+                    'CMD-SHELL',
+                    'pg_isready -U ${SCRAPER_DB_USER} -d ${SCRAPER_DB_NAME}',
+                ]
             interval: 3s
             timeout: 3s
             retries: 5
+        volumes:
+            - scraper-postgres:/var/lib/postgresql
+        networks:
+            - internal
+        environment:
+            POSTGRES_USER: ${SCRAPER_DB_USER}
+            POSTGRES_PASSWORD: ${SCRAPER_DB_PASSWORD}
+            POSTGRES_DB: ${SCRAPER_DB_NAME}
 
     tg-bot-postgres:
-        image: postgres
+        image: postgres:18
         container_name: tg-bot-postgres
         restart: unless-stopped
-        volumes:
-            - ./migrations/tg-bot:/docker-entrypoint-initdb.d/
-        env_file:
-            - .env
-        ports:
-            - '5434:5432'
+        env_file: ./configs/.env
         healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
+            test:
+                ['CMD-SHELL', 'pg_isready -U ${BOT_DB_USER} -d ${BOT_DB_NAME}']
             interval: 3s
             timeout: 3s
             retries: 5
+        volumes:
+            - tg-bot-postgres:/var/lib/postgresql
+        networks:
+            - internal
+        environment:
+            POSTGRES_USER: ${BOT_DB_USER}
+            POSTGRES_PASSWORD: ${BOT_DB_PASSWORD}
+            POSTGRES_DB: ${BOT_DB_NAME}
 
+    tg-bot-migrations:
+        build:
+            context: .
+            dockerfile: services/tg-bot/Dockerfile
+            target: migrate
+        container_name: tg-bot-migrations
+        entrypoint:
+            [
+                '/app/migrate',
+                '-migrations_path',
+                './migrations/tg-bot',
+                '-command',
+                'up',
+            ]
+        env_file: ./configs/.env
+        depends_on:
+            tg-bot-postgres:
+                condition: service_healthy
+        networks:
+            - internal
+    scraper-migrations:
+        build:
+            context: .
+            dockerfile: services/scraper/Dockerfile
+            target: migrate
+        container_name: scraper-migrations
+        entrypoint:
+            [
+                '/app/migrate',
+                '-migrations_path',
+                './migrations/scraper',
+                '-command',
+                'up',
+            ]
+        env_file: ./configs/.env
+        depends_on:
+            scraper-postgres:
+                condition: service_healthy
+        networks:
+            - internal
     adminer:
         image: adminer
         restart: unless-stopped
         ports:
             - '8080:8080'
         environment:
-            - ADMINER_DEFAULT_SERVER=scraper-postgres,tg-bot-postgres
+            - ADMINER_DEFAULT_SERVER=scraper-postgres
+        networks:
+            - internal
+
+volumes:
+    tg-bot-postgres:
+    scraper-postgres:
+
+networks:
+    internal:
