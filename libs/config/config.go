@@ -18,10 +18,10 @@ type Config struct {
 	PostgresPort     string `default:"5432" envconfig:"POSTGRES_PORT"`
 }
 
-func New() (*Config, error) {
+func New(configPath string) (*Config, error) {
 	var cfg Config
 
-	_ = godotenv.Load("../../.env")
+	_ = godotenv.Load(configPath)
 	if err := envconfig.Process("", &cfg); err != nil {
 		return nil, err
 	}
