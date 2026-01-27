@@ -3,14 +3,15 @@ package app
 import (
 	"context"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
-	"github.com/arseniizyk/mgkct-schedule-bot/libs/database"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/infra/db"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot"
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/telegram/bot/keyboard"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -157,7 +158,7 @@ func (a *App) initDeps() error {
 
 func (a *App) initDB() error {
 	var err error
-	a.pool, err = database.Connect(&a.cfg.Bot.DB)
+	a.pool, err = db.Connect(&a.cfg.Bot.DB)
 	if err != nil {
 		slog.Error("can't connect to database")
 		return err
@@ -186,9 +187,11 @@ func (a *App) initDI() error {
 
 func (a *App) initGRPC() error {
 	var err error
-	a.grpcConn, err = grpc.NewClient(a.cfg.Scraper.URL, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	scraperURL := net.JoinHostPort("scraper", a.cfg.Scraper.GRPCPort)
+	a.grpcConn, err = grpc.NewClient(scraperURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		slog.Error("failed to connect GRPC Server", "url", a.cfg.Scraper.URL, "err", err)
+		slog.Error("failed to connect GRPC Server", "url", scraperURL, "err", err)
 		return err
 	}
 

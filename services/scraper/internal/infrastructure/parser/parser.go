@@ -20,14 +20,15 @@ import (
 const url = `https://mgkct.minskedu.gov.by/personnel/for-students/weekly-timetable`
 
 var (
-	errBadGroup = errors.New("кол группа")
+	ErrBadGroup = errors.New("кол группа")
 )
 
 type Parser struct {
-	c *colly.Collector
+	log *slog.Logger
+	c   *colly.Collector
 }
 
-func New() *Parser {
+func New(log *slog.Logger) *Parser {
 	c := colly.NewCollector(
 		colly.AllowURLRevisit(),
 	)
@@ -41,16 +42,21 @@ func New() *Parser {
 		},
 	})
 
-	return &Parser{c: c}
+	return &Parser{
+		c:   c,
+		log: log,
+	}
 }
 
 func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
+	log := c.log.With("operation", "infrastructure.parser.Parser.Parse")
+
 	schedule := pb.Schedule{
 		Groups: make(map[int32]*pb.Group),
 	}
 
 	c.c.OnError(func(r *colly.Response, err error) {
-		slog.Error("visit error", "url", r.Request.URL, "err", err)
+		log.Error("visit error", "url", r.Request.URL, "error", err)
 	})
 
 	var week time.Time
@@ -58,11 +64,11 @@ func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
 	c.c.OnHTML("h2", func(e *colly.HTMLElement) {
 		groupNum, err := parseGroup(e.Text)
 		if err != nil {
-			if errors.Is(err, errBadGroup) {
+			if errors.Is(err, ErrBadGroup) {
 				return
 			}
 
-			slog.Error("can't get group from h2", "err", err)
+			log.Error("can't get group from h2", "error", err)
 			return
 		}
 
@@ -70,7 +76,7 @@ func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
 
 		week, err = parseWeek(e.DOM.Next()) // <h3>
 		if err != nil {
-			slog.Error("can't parse week", "err", err)
+			log.Error("can't parse week", "error", err)
 			week = time.Now()
 		}
 
@@ -92,7 +98,7 @@ func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
 
 func parseGroup(text string) (int32, error) {
 	if strings.Contains(text, "Кол") || strings.Contains(text, "кол") {
-		return 0, errBadGroup
+		return 0, ErrBadGroup
 	}
 
 	r := regexp.MustCompile(`\d+`)
@@ -103,8 +109,7 @@ func parseGroup(text string) (int32, error) {
 
 	group, err := strconv.Atoi(matched)
 	if err != nil {
-		slog.Error("can't parse group to int", "text", text, "err", err)
-		return 0, err
+		return 0, fmt.Errorf("can't parse group(%s) to int: %w", text, err)
 	}
 
 	return int32(group), nil

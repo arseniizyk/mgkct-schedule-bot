@@ -1,4 +1,4 @@
-package model
+package entities
 
 import (
 	"time"
@@ -6,12 +6,12 @@ import (
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 )
 
-type Updated struct {
+type UpdatedGroup struct {
 	Group         *pb.Group
 	IsWeekUpdated bool
 }
 
-type Weeks struct {
+type WeekNavigation struct {
 	Prev    time.Time
 	Current time.Time
 	Next    time.Time

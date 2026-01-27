@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -10,9 +11,12 @@ import (
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
-	"github.com/arseniizyk/mgkct-schedule-bot/libs/database"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
+	database "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/infrastructure/db"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/infrastructure/logger"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/infrastructure/parser"
+	repository "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository/postgres"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/service"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,40 +24,65 @@ import (
 	"google.golang.org/grpc"
 )
 
+type WeekService interface {
+	GetAvailableWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error)
+}
+
+type ScheduleService interface {
+	GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error)
+	GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error)
+	CheckScheduleUpdates(ctx context.Context, interval time.Duration) <-chan *entities.UpdatedGroup
+}
+
 type ScheduleTransport interface {
-	PublishScheduleUpdate(*pb.Group) error
-	PublishWeekUpdates(date time.Time) error
 	GetGroupSchedule(context.Context, *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error)
 	GetGroupScheduleByWeek(context.Context, *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error)
+	PublishScheduleUpdate(*pb.Group) error
+}
+
+type WeekTransport interface {
 	GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error)
+	PublishWeekUpdates(date time.Time) error
 }
 
 type App struct {
-	cfg               *config.Config
-	lis               net.Listener
-	pool              *pgxpool.Pool
-	grpcServer        *grpc.Server
-	nc                *nats.Conn
-	scheduleSvc       transport.ScheduleService
+	log *slog.Logger
+	cfg *config.Config
+
+	lis  net.Listener
+	pool *pgxpool.Pool
+
+	grpcServer *grpc.Server
+	nc         *nats.Conn
+
+	scheduleService   ScheduleService
 	scheduleTransport ScheduleTransport
+
+	weekService   WeekService
+	weekTransport WeekTransport
 }
 
-func New(cfg *config.Config) (*App, error) {
+func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	a := &App{
-		cfg: cfg,
-		grpcServer: grpc.NewServer(
-			grpc.UnaryInterceptor(loggingUnaryInterceptor),
-		),
+		log:        log,
+		cfg:        cfg,
+		grpcServer: grpc.NewServer(grpc.UnaryInterceptor(logger.LoggingUnaryInterceptor(log))),
 	}
 
 	if err := a.initDeps(); err != nil {
-		slog.Error("can't init dependencies", "err", err)
+		log.Error("can't init dependencies", "err", err)
 		return nil, err
 	}
 
 	scheduleRepo := repository.NewScheduleRepository(a.pool)
-	a.scheduleSvc = service.NewScheduleService(scheduleRepo)
-	a.scheduleTransport = transport.NewScheduleTransport(a.scheduleSvc, a.nc)
+
+	parser := parser.New(a.log)
+
+	a.scheduleService = service.NewScheduleService(a.log, scheduleRepo, parser)
+	a.weekService = service.NewWeekService(a.log, scheduleRepo)
+
+	a.scheduleTransport = transport.NewScheduleTransport(a.log, a.scheduleService, a.nc)
+	a.weekTransport = transport.NewWeekTransport(a.log, a.weekService, a.nc)
 
 	return a, nil
 }
@@ -61,28 +90,39 @@ func New(cfg *config.Config) (*App, error) {
 func (a *App) Run() error {
 	defer a.pool.Close()
 
+	log := a.log.With("operation", "app.App.Run")
+
+	ctx := context.Background()
+
 	go func() {
-		updatesCh := a.scheduleSvc.CheckScheduleUpdates(time.Minute)
+		updatesCh := a.scheduleService.CheckScheduleUpdates(ctx, time.Minute)
 		for update := range updatesCh {
 			if update.IsWeekUpdated {
-				slog.Info("Week updated, publishing to NATS", "week", update.Group.Week.AsTime())
-				if err := a.scheduleTransport.PublishWeekUpdates(update.Group.Week.AsTime()); err != nil {
-					slog.Error("Failed publishing new week to NATS")
+				log.Info("week updated, publishing to NATS", "week", update.Group.Week.AsTime())
+				if err := a.weekTransport.PublishWeekUpdates(update.Group.Week.AsTime()); err != nil {
+					log.Error("failed publishing new week to NATS")
+				} else {
+					log.Info("updated Week Successfully published")
 				}
 				continue
 			}
 
 			if err := a.scheduleTransport.PublishScheduleUpdate(update.Group); err != nil {
-				slog.Error("Failed publishing new schedule to NATS")
+				log.Error("failed publishing updated schedule to NATS")
+			} else {
+				log.Info("updated schedule successfully published")
 			}
 		}
 	}()
 
 	go func() {
-		pb.RegisterScheduleServiceServer(a.grpcServer, &grpcAdapter{transport: a.scheduleTransport})
-		slog.Info("gRPC server started", "address", a.lis.Addr().String())
+		pb.RegisterScheduleServiceServer(a.grpcServer, &grpcAdapter{
+			scheduleTransport: a.scheduleTransport,
+			weekTransport:     a.weekTransport,
+		})
+		log.Info("gRPC server started", "address", a.lis.Addr().String())
 		if err := a.grpcServer.Serve(a.lis); err != nil {
-			slog.Error("gRPC serve error", "err", err)
+			log.Error("gRPC serve error", "err", err)
 		}
 	}()
 
@@ -99,8 +139,11 @@ func (a *App) shutdown() error {
 
 	a.pool.Close()
 	a.grpcServer.GracefulStop()
-	err := a.nc.Drain()
-	return err
+	if err := a.nc.Drain(); err != nil {
+		return fmt.Errorf("failed to drain from NATS")
+	}
+
+	return nil
 }
 
 func (a *App) initDeps() error {
@@ -110,8 +153,8 @@ func (a *App) initDeps() error {
 		a.initDB,
 	}
 
-	for _, f := range inits {
-		if err := f(); err != nil {
+	for _, init := range inits {
+		if err := init(); err != nil {
 			return err
 		}
 	}
@@ -121,34 +164,37 @@ func (a *App) initDeps() error {
 
 func (a *App) initNATS() error {
 	var err error
+
 	a.nc, err = nats.Connect(a.cfg.Nats.URL, nats.Name("scraper"))
 	if err != nil {
-		slog.Error("can't connect NATS", "url", a.cfg.Nats.URL, "err", err)
-		return err
+		return fmt.Errorf("can't connect NATS: URL: %s, error: %w", a.cfg.Nats.URL, err)
 	}
-	return err
+
+	return nil
 }
 
 func (a *App) initNetListener() error {
 	var err error
-	a.lis, err = net.Listen("tcp", ":"+"9001")
+
+	a.lis, err = net.Listen("tcp", fmt.Sprintf(":%s", a.cfg.Scraper.GRPCPort))
 	if err != nil {
-		slog.Error("can't start net listener", "err", err)
-		return err
+		return fmt.Errorf("can't start net listener: Port: %s, error: %w", a.cfg.Scraper.GRPCPort, err)
 	}
-	return err
+
+	return nil
 }
 
 func (a *App) initDB() error {
 	var err error
+
 	a.pool, err = database.Connect(&a.cfg.Scraper.DB)
 	if err != nil {
-		slog.Error("can't connect to database")
-		return err
+		return fmt.Errorf("can't connect to database: %w", err)
 	}
+
 	if err := a.pool.Ping(context.Background()); err != nil {
-		slog.Error("Database ping error", "err", err)
-		return err
+		return fmt.Errorf("ping database error: %w", err)
 	}
-	return err
+
+	return nil
 }

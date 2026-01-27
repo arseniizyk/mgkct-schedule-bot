@@ -7,42 +7,46 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/model"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type ScheduleService interface {
 	GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error)
 	GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error)
-	CheckScheduleUpdates(interval time.Duration) <-chan *model.Updated
-	GetAvailableWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
+	CheckScheduleUpdates(ctx context.Context, interval time.Duration) <-chan *entities.UpdatedGroup
 }
 
-type transport struct {
-	service ScheduleService
-	nc      *nats.Conn
-	pb.UnimplementedScheduleServiceServer
+type ScheduleTransport struct {
+	log             *slog.Logger
+	scheduleService ScheduleService
+	natsConn        *nats.Conn
 }
 
-func NewScheduleTransport(service ScheduleService, nc *nats.Conn) *transport {
-	return &transport{
-		service: service,
-		nc:      nc,
+func NewScheduleTransport(log *slog.Logger, scheduleService ScheduleService, natsConn *nats.Conn) *ScheduleTransport {
+	return &ScheduleTransport{
+		log:             log,
+		scheduleService: scheduleService,
+		natsConn:        natsConn,
 	}
 }
 
-func (t *transport) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
-	sch, err := t.service.GetGroupLatestSchedule(ctx, req.Id)
+func (t *ScheduleTransport) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
+	sch, err := t.scheduleService.GetGroupLatestSchedule(ctx, req.Id)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
+		if errors.Is(err, repository.ErrGroupNotFound) {
 			return nil, status.Errorf(codes.NotFound, "group not found")
 		}
-		return nil, status.Errorf(codes.Unavailable, "can't get schedule")
+
+		if errors.Is(err, repository.ErrScheduleNotFound) {
+			return nil, status.Errorf(codes.NotFound, "schedule not found, internal error")
+		}
+
+		return nil, status.Errorf(codes.Internal, "failed to get group schedule")
 	}
 
 	return &pb.GroupScheduleResponse{
@@ -50,13 +54,17 @@ func (t *transport) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleR
 	}, nil
 }
 
-func (t *transport) GetGroupScheduleByWeek(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
-	group, err := t.service.GetGroupScheduleByWeek(ctx, req.Id, req.Week.AsTime())
+func (t *ScheduleTransport) GetGroupScheduleByWeek(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
+	group, err := t.scheduleService.GetGroupScheduleByWeek(ctx, req.Id, req.Week.AsTime())
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
+		if errors.Is(err, repository.ErrGroupNotFound) {
 			return nil, status.Errorf(codes.NotFound, "group not found")
 		}
-		return nil, status.Errorf(codes.Unavailable, "can't get schedule")
+
+		if errors.Is(err, repository.ErrWeekNotFound) {
+			return nil, status.Errorf(codes.NotFound, "week not found")
+		}
+		return nil, status.Errorf(codes.Internal, "can't get schedule")
 	}
 
 	return &pb.GroupScheduleResponse{
@@ -64,47 +72,26 @@ func (t *transport) GetGroupScheduleByWeek(ctx context.Context, req *pb.GroupSch
 	}, nil
 }
 
-func (t *transport) GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error) {
-	var week time.Time
-	if req.Week != nil {
-		week = req.Week.AsTime()
-	}
+func (t *ScheduleTransport) PublishScheduleUpdate(group *pb.Group) error {
+	log := t.log.With(
+		"operation", "transport.schedule.ScheduleTransport.PublishScheduleUpdate",
+		"group_id", group.Id,
+		"week", group.Week.String(),
+	)
 
-	weeks, err := t.service.GetAvailableWeeks(ctx, week)
-	if err != nil {
-		if errors.Is(err, repository.ErrNoAvailableWeeks) {
-			return nil, status.Errorf(codes.NotFound, "%s", err.Error())
-		}
-		return nil, status.Errorf(codes.Internal, "can't get weeks: %v", err)
-	}
+	log.Info("Publishing schedule update")
+	resp := &pb.GroupScheduleResponse{Group: group}
 
-	return &pb.AvailableWeeksResponse{
-		Prev:    timestamppb.New(weeks.Prev),
-		Current: timestamppb.New(weeks.Current),
-		Next:    timestamppb.New(weeks.Next),
-	}, nil
-}
-
-func (t *transport) PublishScheduleUpdate(group *pb.Group) error {
-	slog.Debug("Publishing schedule update", "group_id", group.Id)
-	resp := &pb.GroupScheduleResponse{
-		Group: group,
-	}
 	data, err := proto.Marshal(resp)
 	if err != nil {
-		slog.Error("PublishScheduleUpdate: marshal proto", "group", group, "err", err)
+		log.Error("failed marshalling proto", "error", err)
 		return err
 	}
-	return t.nc.Publish("schedule.updates", data)
-}
 
-func (t *transport) PublishWeekUpdates(date time.Time) error {
-	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
-	slog.Debug("Publishing week update", "date", date.Format("2006-01-02"))
-	data := []byte(date.Format(time.RFC3339))
-	if err := t.nc.Publish("schedule.week.updates", data); err != nil {
-		slog.Error("PublishWeekUpdate: failed to publish", "date", date.Format("2006-01-02"), "err", err)
+	if err := t.natsConn.Publish("schedule.updates", data); err != nil {
+		log.Error("failed publishing schedule update to nats", "error", err)
 		return err
 	}
+
 	return nil
 }

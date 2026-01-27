@@ -2,43 +2,114 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/model"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/service/parser"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/utils"
 )
 
 type ScheduleRepository interface {
 	Save(ctx context.Context, week time.Time, schedule *pb.Schedule) error
 	GetByWeek(ctx context.Context, week time.Time) (*pb.Schedule, error)
 	GetLatest(ctx context.Context) (*pb.Schedule, error)
-	GetWeeks(ctx context.Context, week time.Time) (*model.Weeks, error)
+	GetWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error)
 }
 
-type service struct {
-	repo         ScheduleRepository
-	parser       *parser.Parser
+type Parser interface {
+	Parse() (schedule *pb.Schedule, week *time.Time, err error)
+}
+
+type ScheduleService struct {
+	log *slog.Logger
+
+	scheduleRepo ScheduleRepository
+	parser       Parser
+
 	cache        *pb.Schedule
 	scheduleHash [32]byte
-	groupsHashes map[int32][32]byte
+	groupHashes  map[int32][32]byte
 }
 
-func NewScheduleService(scheduleRepo ScheduleRepository) *service {
-	return &service{
-		repo:         scheduleRepo,
-		parser:       parser.New(),
-		groupsHashes: make(map[int32][32]byte),
+func NewScheduleService(log *slog.Logger, scheduleRepo ScheduleRepository, parser Parser) *ScheduleService {
+	return &ScheduleService{
+		log:          log,
+		scheduleRepo: scheduleRepo,
+		parser:       parser,
+		groupHashes:  make(map[int32][32]byte),
 	}
 }
 
-func (p *service) CheckScheduleUpdates(interval time.Duration) <-chan *model.Updated {
-	resCh := make(chan *model.Updated, 1)
+func (ss *ScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*pb.Group, error) {
+	const op = "service.schedule.ScheduleService.GetGroupScheduleByWeek"
+	log := ss.log.With(
+		"operation", op,
+		"group_id", groupID,
+		"week", week,
+	)
+
+	sch, err := ss.scheduleRepo.GetByWeek(ctx, week)
+	if err != nil {
+		if errors.Is(err, repository.ErrWeekNotFound) {
+			log.Error("week not found")
+			return nil, err
+		}
+		log.Error("failed get by week", "err", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	group, ok := sch.Groups[groupID]
+	if !ok {
+		log.Error("group not found", "err", err)
+		return nil, repository.ErrGroupNotFound
+	}
+
+	return group, nil
+}
+
+func (ss *ScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*pb.Group, error) {
+	const op = "service.schedule.ScheduleService.GetGroupLatestSchedule"
+
+	log := ss.log.With("operation", op, "group_id", groupID)
+
+	if ss.cache != nil {
+		group, ok := ss.cache.Groups[groupID]
+		if !ok {
+			log.Warn("can't get group from cache")
+		}
+		return group, nil
+	}
+
+	sch, err := ss.scheduleRepo.GetLatest(ctx)
+	if err != nil {
+		if errors.Is(err, repository.ErrScheduleNotFound) {
+			log.Error("schedule not found in repository", "error", err)
+			return nil, err
+		}
+		log.Error("failed get by latest", "error", err)
+		return nil, fmt.Errorf("get by week error: %w", err)
+	}
+
+	group, ok := sch.Groups[groupID]
+	if !ok {
+		log.Warn("group not found", "err", err)
+		return nil, repository.ErrGroupNotFound
+	}
+
+	return group, nil
+}
+
+func (ss *ScheduleService) CheckScheduleUpdates(ctx context.Context, interval time.Duration) <-chan *entities.UpdatedGroup {
+	const op = "service.schedule.ScheduleService.CheckScheduleUpdates"
+
+	log := ss.log.With("operation", op, "interval", interval.Seconds())
+
+	resCh := make(chan *entities.UpdatedGroup, 5)
 
 	go func() {
 		tick := time.NewTicker(interval)
@@ -48,115 +119,152 @@ func (p *service) CheckScheduleUpdates(interval time.Duration) <-chan *model.Upd
 		var sch *pb.Schedule
 		var err error
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		repoCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		sch, err = ss.scheduleRepo.GetLatest(repoCtx)
+		cancel()
 
-		sch, err = p.repo.GetLatest(ctx)
-		if err != nil && errors.Is(err, repository.ErrNotFound) {
-			if sch, updated, err := p.parseSchedule(ctx); err == nil && updated {
-				p.cache = sch
-				updatedGroups := p.findUpdatedGroups(sch)
-				for _, update := range updatedGroups {
-					resCh <- update
+		if err != nil {
+			if errors.Is(err, repository.ErrScheduleNotFound) {
+				sch, updated, err := ss.parseSchedule(repoCtx)
+				if err != nil {
+					log.Error("failed to parse schedule after failed getting from repo", "error", err)
+				} else if updated {
+					ss.cache = sch
+					updatedGroups := ss.findUpdatedGroups(sch)
+					for _, update := range updatedGroups {
+						resCh <- update
+					}
+					log.Info("schedule updated on start")
 				}
+			} else {
+				log.Error("failed to get latest schedule from repo", "error", err)
 			}
 		}
+
+		// If failed getting from repository and parse
 		if sch == nil {
 			sch = &pb.Schedule{}
 		}
-		p.cache = sch
-		p.hashGroups(sch)
 
-		for range tick.C {
-			sch, updated, err := p.parseSchedule(context.Background())
-			if err != nil {
-				slog.Error("checkscheduleupdates: parseSchedule", "err", err)
-				continue
-			}
-			if !updated {
-				slog.Debug("schedule wasn't updated")
-				continue
-			}
+		ss.cache = sch
+		ss.hashGroups(sch)
 
-			updatedGroups := p.findUpdatedGroups(sch)
-			for _, update := range updatedGroups {
-				var oldWeek time.Time
-				if group, ok := p.cache.Groups[update.Group.Id]; ok && group != nil {
-					oldWeek = group.Week.AsTime()
+		for {
+			select {
+			case <-tick.C:
+				parseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				sch, updated, err := ss.parseSchedule(parseCtx)
+				cancel()
+
+				if err != nil {
+					log.Error("failed on parsing schedule", "error", err)
+					continue
 				}
-				newWeek := update.Group.Week.AsTime()
-
-				if !oldWeek.IsZero() && !oldWeek.Equal(newWeek) {
-					update.IsWeekUpdated = true
-					resCh <- update
-					break
+				if !updated {
+					log.Info("schedule wasn't updated after parsing")
+					continue
 				}
 
-				slog.Info("Group updated", "group_id", update.Group.Id)
-				resCh <- update
+				updatedGroups := ss.findUpdatedGroups(sch)
+				for _, updatedGroup := range updatedGroups {
+					var oldWeek time.Time
+					if group, ok := ss.cache.Groups[updatedGroup.Group.Id]; ok && group != nil {
+						oldWeek = group.Week.AsTime()
+					}
+					newWeek := updatedGroup.Group.Week.AsTime()
+
+					if !oldWeek.IsZero() && !oldWeek.Equal(newWeek) {
+						updatedGroup.IsWeekUpdated = true
+					}
+
+					log.Info("group updated", "group_id", updatedGroup.Group.Id, "is_week_updated", updatedGroup.IsWeekUpdated)
+					resCh <- updatedGroup
+				}
+
+				ss.cache = sch
+				ss.hashGroups(sch)
+
+			case <-ctx.Done():
+				log.Info("ctx.Done Received")
+				return
 			}
-			p.cache = sch
-			p.hashGroups(sch)
 		}
 	}()
 
 	return resCh
 }
 
-func (p *service) findUpdatedGroups(new *pb.Schedule) []*model.Updated {
-	updated := make([]*model.Updated, 0, 1)
-	for key, group := range new.Groups {
-		newGroupHash, err := utils.HashJSON(group)
+func (ss *ScheduleService) findUpdatedGroups(new *pb.Schedule) []*entities.UpdatedGroup {
+	const op = "services.schedule.ScheduleService.findUpdatedGroups"
+
+	log := ss.log.With("operation", op)
+
+	updated := make([]*entities.UpdatedGroup, 0, 1)
+	for groupID, group := range new.Groups {
+		newGroupHash, err := hashJSON(group)
 		if err != nil {
-			slog.Error("groupHash failed", "group", key, "err", err)
+			log.Error("failed to hash group", "group", groupID, "err", err)
 			continue
 		}
-		if p.groupsHashes[key] != newGroupHash {
-			p.groupsHashes[key] = newGroupHash
-			updated = append(updated, &model.Updated{
-				Group: group,
-			})
+
+		if ss.groupHashes[groupID] != newGroupHash {
+			ss.groupHashes[groupID] = newGroupHash
+			updated = append(updated, &entities.UpdatedGroup{Group: group})
 		}
 	}
 
 	return updated
 }
 
-func (p *service) hashGroups(sch *pb.Schedule) {
+func (ss *ScheduleService) hashGroups(sch *pb.Schedule) {
 	for num, g := range sch.Groups {
-		if h, err := utils.HashJSON(g); err == nil {
-			p.groupsHashes[num] = h
+		if h, err := hashJSON(g); err == nil {
+			ss.groupHashes[num] = h
 		} else {
-			slog.Error("group hash failed", "group", num, "err", err)
+			ss.log.Error("failed to hash groups", "group", num, "err", err)
 		}
 	}
 }
 
-func (p *service) parseSchedule(ctx context.Context) (*pb.Schedule, bool, error) {
+func (ss *ScheduleService) parseSchedule(ctx context.Context) (*pb.Schedule, bool, error) {
+	const op = "services.schedule.ScheduleService.parseSchedule"
+
+	log := ss.log.With("operation", op)
+
 	start := time.Now()
-	slog.Debug("parsing")
+	log.Debug("Parsing Schedule")
 	defer func() {
-		slog.Debug("parsed", "duration", time.Since(start))
+		log.Debug("Schedule Parsed", "duration", time.Since(start))
 	}()
 
-	sch, week, err := p.parser.Parse()
+	sch, week, err := ss.parser.Parse()
 	if err != nil {
-		return nil, false, fmt.Errorf("parsing: %w", err)
+		return nil, false, fmt.Errorf("%s: parsing failed: %w", op, err)
 	}
 
-	h, err := utils.HashJSON(sch)
+	h, err := hashJSON(sch)
 	if err != nil {
-		return nil, false, fmt.Errorf("can't get hash for schedule: %w", err)
+		return nil, false, fmt.Errorf("%s: can't hash schedule: %w", op, err)
 	}
 
-	if h == p.scheduleHash { // if previous hash schedule == parsed hash schedule
+	// if previous hash schedule == parsed hash schedule
+	if h == ss.scheduleHash {
 		return nil, false, nil
 	}
 
-	p.scheduleHash = h
-	if err := p.repo.Save(ctx, *week, sch); err != nil {
-		return nil, false, fmt.Errorf("save to db: %w", err)
+	ss.scheduleHash = h
+	if err := ss.scheduleRepo.Save(ctx, *week, sch); err != nil {
+		return nil, false, fmt.Errorf("%s: failed to save schedule in repository: %w", op, err)
 	}
 
 	return sch, true, nil
+}
+
+func hashJSON[T any](t T) ([32]byte, error) {
+	var zero [32]byte
+	b, err := json.Marshal(t)
+	if err != nil {
+		return zero, fmt.Errorf("failed to marshal json: %w", err)
+	}
+	return sha256.Sum256(b), nil
 }
