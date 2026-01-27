@@ -6,14 +6,23 @@ import (
 	"github.com/ilyakaznacheev/cleanenv"
 )
 
+type Env string
+
+const (
+	EnvDev  Env = "dev"
+	EnvProd Env = "prod"
+)
+
 type Config struct {
+	Env Env `env:"ENV" env-default:"dev"`
+
 	Scraper ScraperConfig
 	Bot     BotConfig
 	Nats    NatsConfig
 }
 
 type ScraperConfig struct {
-	URL string `env:"SCRAPER_URL" env-default:"scraper:9001"`
+	GRPCPort string `env:"SCRAPER_GRPC_PORT" env-default:"9001"`
 
 	DB PostgresConfig `env-prefix:"SCRAPER_DB_"`
 }
