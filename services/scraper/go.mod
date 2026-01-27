@@ -4,15 +4,13 @@ go 1.25.0
 
 replace (
 	github.com/arseniizyk/mgkct-schedule-bot/libs/config => ../../libs/config
-	github.com/arseniizyk/mgkct-schedule-bot/libs/database => ../../libs/database
 	github.com/arseniizyk/mgkct-schedule-bot/libs/proto => ../../proto
 )
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/PuerkitoBio/goquery v1.10.3
-	github.com/arseniizyk/mgkct-schedule-bot/libs/database v0.0.0-00010101000000-000000000000
-	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250921184721-009ae94e57f3
+	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-00010101000000-000000000000
 	github.com/gocolly/colly v1.2.0
 	github.com/nats-io/nats.go v1.46.0
 	google.golang.org/grpc v1.75.1

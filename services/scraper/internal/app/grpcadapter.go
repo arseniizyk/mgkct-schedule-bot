@@ -7,18 +7,19 @@ import (
 )
 
 type grpcAdapter struct {
-	transport ScheduleTransport
+	scheduleTransport ScheduleTransport
+	weekTransport     WeekTransport
 	pb.UnimplementedScheduleServiceServer
 }
 
 func (g *grpcAdapter) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
-	return g.transport.GetGroupSchedule(ctx, req)
+	return g.scheduleTransport.GetGroupSchedule(ctx, req)
 }
 
 func (g *grpcAdapter) GetGroupScheduleByWeek(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
-	return g.transport.GetGroupScheduleByWeek(ctx, req)
+	return g.scheduleTransport.GetGroupScheduleByWeek(ctx, req)
 }
 
 func (g *grpcAdapter) GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error) {
-	return g.transport.GetAvailableWeeks(ctx, req)
+	return g.weekTransport.GetAvailableWeeks(ctx, req)
 }

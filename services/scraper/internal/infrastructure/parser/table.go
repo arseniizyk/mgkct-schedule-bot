@@ -7,7 +7,6 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/pkg/utils"
 )
 
 var days []string
@@ -83,10 +82,10 @@ func parsePairs(nameParts, classParts []string) []*pb.Pair {
 		class = strings.ReplaceAll(class, "(к)", "")
 
 		pairs = append(pairs, &pb.Pair{
-			Name:    utils.CleanText(name),
-			Type:    utils.CleanText(subjectType),
-			Teacher: utils.CleanText(teacher),
-			Class:   utils.CleanText(class),
+			Name:    cleanText(name),
+			Type:    cleanText(subjectType),
+			Teacher: cleanText(teacher),
+			Class:   cleanText(class),
 		})
 	}
 
@@ -105,10 +104,15 @@ func splitByBr(td *goquery.Selection) []string {
 
 	res := make([]string, 0, len(parts))
 	for _, p := range parts {
-		text := utils.CleanText(p)
+		text := cleanText(p)
 		if text != "" {
 			res = append(res, text)
 		}
 	}
 	return res
+}
+
+func cleanText(s string) string {
+	s = strings.ReplaceAll(s, "\u00a0", "")
+	return strings.TrimSpace(s)
 }
