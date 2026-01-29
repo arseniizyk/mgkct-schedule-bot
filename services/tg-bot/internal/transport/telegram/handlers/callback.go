@@ -103,7 +103,7 @@ func respondInternalError(c tele.Context) error {
 
 func dataFromCallbackData(data string) string {
 	parts := strings.Split(data, "|")
-	if len(parts) < 2 {
+	if len(parts) > 0 {
 		return parts[1]
 	}
 
