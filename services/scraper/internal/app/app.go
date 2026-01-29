@@ -70,7 +70,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	}
 
 	if err := a.initDeps(); err != nil {
-		log.Error("can't init dependencies", "err", err)
+		log.Error("can't init dependencies", "error", err)
 		return nil, err
 	}
 
