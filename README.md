@@ -80,7 +80,7 @@ rpc GetAvailableWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);  
 
 ## ✅ Todo
 
-* Рефакторинг
+* Рефакторинг ✅
 * Багфиксы
 * Фиксы докерфайлов
 * Unit тесты
