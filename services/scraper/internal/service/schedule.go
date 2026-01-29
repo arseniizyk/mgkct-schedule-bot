@@ -79,10 +79,10 @@ func (ss *ScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID i
 
 	if ss.cache != nil {
 		group, ok := ss.cache.Groups[groupID]
-		if !ok {
-			log.Warn("can't get group from cache")
+		if ok {
+			return group, nil
 		}
-		return group, nil
+		log.Warn("can't get group from cache")
 	}
 
 	sch, err := ss.scheduleRepo.GetLatest(ctx)
