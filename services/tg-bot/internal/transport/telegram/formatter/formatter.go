@@ -31,13 +31,6 @@ func FormatErrorMessage(err error) string {
 	}
 }
 
-func FormatTransportError(err error) string {
-	switch {
-	default:
-		return messages.Internal
-	}
-}
-
 func formatScheduleDay(day *pb.Day) string {
 	var sb strings.Builder
 	sb.Grow(256)
