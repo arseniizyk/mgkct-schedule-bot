@@ -38,7 +38,7 @@ func Week(log *slog.Logger, scheduleProvider ScheduleProvider, weekProvider Week
 
 			if schedule, err = scheduleProvider.GetGroupSchedule(ctx, groupID); err != nil {
 				log.Error("failed to get group schedule", "group_id", groupID, "error", err)
-				return c.Send(formatter.FormatTransportError(err), tele.ModeMarkdown)
+				return c.Send(formatter.FormatErrorMessage(err), tele.ModeMarkdown)
 			}
 		} else {
 			schedule, err = scheduleProvider.GetGroupScheduleByChatID(ctx, c.Chat().ID)
