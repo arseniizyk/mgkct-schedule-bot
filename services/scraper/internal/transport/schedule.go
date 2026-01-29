@@ -43,7 +43,7 @@ func (t *ScheduleTransport) GetGroupSchedule(ctx context.Context, req *pb.GroupS
 		}
 
 		if errors.Is(err, repository.ErrScheduleNotFound) {
-			return nil, status.Errorf(codes.NotFound, "schedule not found, internal error")
+			return nil, status.Errorf(codes.NotFound, "schedule not found")
 		}
 
 		return nil, status.Errorf(codes.Internal, "failed to get group schedule")

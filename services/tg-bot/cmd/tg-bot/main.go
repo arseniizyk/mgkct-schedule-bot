@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"os"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/app"
@@ -16,16 +17,35 @@ func main() {
 
 	cfg, err := config.New(configPath)
 	if err != nil {
-		log.Fatal(fmt.Errorf("config: %w", err))
+		log.Fatalf("can't initialize config: %s", err)
 	}
-	slog.SetLogLoggerLevel(slog.LevelDebug)
 
-	app, err := app.New(cfg)
+	log := setupLogger(cfg.Env)
+
+	app, err := app.New(log, cfg)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	if err := app.Run(); err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
+}
+
+func setupLogger(env config.Env) *slog.Logger {
+	var log *slog.Logger
+	switch env {
+	case config.EnvDev:
+		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}))
+	case config.EnvProd:
+		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		}))
+	default:
+		panic(fmt.Sprintf("invalid ENV value: %s", env))
+	}
+
+	return log
 }
