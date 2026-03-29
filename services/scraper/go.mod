@@ -40,7 +40,7 @@ require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/antchfx/htmlquery v1.3.4 // indirect
 	github.com/antchfx/xmlquery v1.4.4 // indirect
-	github.com/antchfx/xpath v1.3.5 // indirect
+	github.com/antchfx/xpath v1.3.6 // indirect
 	github.com/arseniizyk/mgkct-schedule-bot/libs/config v0.0.0-00010101000000-000000000000
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/golang-migrate/migrate/v4 v4.19.1
