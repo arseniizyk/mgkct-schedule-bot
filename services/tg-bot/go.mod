@@ -12,7 +12,7 @@ require (
 	github.com/arseniizyk/mgkct-schedule-bot/libs/proto v0.0.0-20250925210302-2191841f424e
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/nats-io/nats.go v1.48.0
-	google.golang.org/grpc v1.78.0
+	google.golang.org/grpc v1.79.3
 )
 
 require (
