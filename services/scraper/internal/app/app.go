@@ -22,6 +22,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 type WeekService interface {
@@ -53,6 +55,7 @@ type App struct {
 	pool *pgxpool.Pool
 
 	grpcServer *grpc.Server
+	health     *health.Server
 	nc         *nats.Conn
 
 	scheduleService   ScheduleService
@@ -67,6 +70,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		log:        log,
 		cfg:        cfg,
 		grpcServer: grpc.NewServer(grpc.UnaryInterceptor(logger.LoggingUnaryInterceptor(log))),
+		health:     health.NewServer(),
 	}
 
 	if err := a.initDeps(); err != nil {
@@ -88,11 +92,10 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 }
 
 func (a *App) Run() error {
-	defer a.pool.Close()
-
 	log := a.log.With("operation", "app.App.Run")
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	go func() {
 		updatesCh := a.scheduleService.CheckScheduleUpdates(ctx, time.Minute)
@@ -100,7 +103,7 @@ func (a *App) Run() error {
 			if update.IsWeekUpdated {
 				log.Info("week updated, publishing to NATS", "week", update.Group.Week.AsTime())
 				if err := a.weekTransport.PublishWeekUpdates(update.Group.Week.AsTime()); err != nil {
-					log.Error("failed publishing new week to NATS")
+					log.Error("failed publishing new week to NATS", "err", err)
 				} else {
 					log.Info("updated Week Successfully published")
 				}
@@ -108,7 +111,7 @@ func (a *App) Run() error {
 			}
 
 			if err := a.scheduleTransport.PublishScheduleUpdate(update.Group); err != nil {
-				log.Error("failed publishing updated schedule to NATS")
+				log.Error("failed publishing updated schedule to NATS", "err", err)
 			} else {
 				log.Info("updated schedule successfully published")
 			}
@@ -120,16 +123,19 @@ func (a *App) Run() error {
 			scheduleTransport: a.scheduleTransport,
 			weekTransport:     a.weekTransport,
 		})
+		healthpb.RegisterHealthServer(a.grpcServer, a.health)
+		a.health.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+
 		log.Info("gRPC server started", "address", a.lis.Addr().String())
 		if err := a.grpcServer.Serve(a.lis); err != nil {
 			log.Error("gRPC serve error", "err", err)
 		}
 	}()
 
-	return a.shutdown()
+	return a.shutdown(cancel)
 }
 
-func (a *App) shutdown() error {
+func (a *App) shutdown(stopUpdates context.CancelFunc) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
 
@@ -137,11 +143,15 @@ func (a *App) shutdown() error {
 
 	<-sigChan
 
-	a.pool.Close()
+	a.health.Shutdown()
 	a.grpcServer.GracefulStop()
+
+	stopUpdates()
+
 	if err := a.nc.Drain(); err != nil {
-		return fmt.Errorf("failed to drain from NATS")
+		return fmt.Errorf("failed to drain from NATS: %w", err)
 	}
+	a.pool.Close()
 
 	return nil
 }

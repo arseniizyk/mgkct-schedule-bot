@@ -38,7 +38,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to migrate: Path: %s, error: %s", migrationsPath, err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
 	switch command {
 	case "up":

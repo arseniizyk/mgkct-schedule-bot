@@ -27,6 +27,10 @@ FROM alpine:3.22 AS runtime
 
 RUN apk add --no-cache ca-certificates curl
 
+ADD https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/v0.4.56/grpc_health_probe-linux-amd64 /usr/local/bin/grpc_health_probe
+
+RUN chmod +x /usr/local/bin/grpc_health_probe
+
 RUN addgroup -g 1000 appuser \
  && adduser -D -u 1000 -G appuser appuser
 

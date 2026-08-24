@@ -24,6 +24,12 @@ services:
                 condition: service_healthy
             tg-bot-migrations:
                 condition: service_completed_successfully
+        healthcheck:
+            test: ['CMD', 'curl', '-f', 'http://localhost:8081/healthz']
+            interval: 10s
+            timeout: 3s
+            retries: 3
+            start_period: 15s
         restart: unless-stopped
         networks:
             - internal
@@ -43,6 +49,12 @@ services:
                 condition: service_healthy
             scraper-migrations:
                 condition: service_completed_successfully
+        healthcheck:
+            test: ['CMD', '/usr/local/bin/grpc_health_probe', '-addr=:9001']
+            interval: 10s
+            timeout: 3s
+            retries: 3
+            start_period: 15s
         restart: unless-stopped
         ports:
             - '9001:9001'
