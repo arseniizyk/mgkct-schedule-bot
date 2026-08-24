@@ -1,6 +1,6 @@
 module github.com/arseniizyk/mgkct-schedule-bot/libs/config
 
-go 1.25.0
+go 1.27.0
 
 require github.com/ilyakaznacheev/cleanenv v1.5.0
 
