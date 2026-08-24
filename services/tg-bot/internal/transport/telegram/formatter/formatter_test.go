@@ -74,6 +74,57 @@ func TestFormatSubjectsEscapesDynamicFields(t *testing.T) {
 	}
 }
 
+func TestFormatScheduleDaySecondShift(t *testing.T) {
+	// группа второй смены: слоты 1-3 пустые, пары начинаются с №4
+	day := &pb.Day{
+		Name: "Понедельник",
+		Subjects: []*pb.Subject{
+			{IsEmpty: true},
+			{IsEmpty: true},
+			{IsEmpty: true},
+			{Pairs: []*pb.Pair{{Name: "Математика", Type: "лк", Teacher: "Костян Д. Р.", Class: "1-322"}}},
+			{IsEmpty: true},
+			{IsEmpty: true},
+			{Pairs: []*pb.Pair{{Name: "Физика", Type: "лк", Teacher: "Лебедкина Н. В.", Class: "2-314"}}},
+		},
+	}
+
+	got := formatScheduleDay(day)
+
+	if !strings.Contains(got, "*Понедельник (2 смена") {
+		t.Errorf("день второй смены должен иметь маркер в заголовке, got:\n%s", got)
+	}
+	if strings.Contains(got, "1: ──") || strings.Contains(got, "2: ──") || strings.Contains(got, "3: ──") {
+		t.Errorf("чужие слоты первой смены не должны отображаться, got:\n%s", got)
+	}
+	if !strings.Contains(got, "4: Математика | лк | Костян Д. Р. | 1-322") {
+		t.Errorf("нумерация пар должна идти по номерам сайта, got:\n%s", got)
+	}
+	if !strings.Contains(got, "7: Физика | лк | Лебедкина Н. В. | 2-314") {
+		t.Errorf("пара №7 должна иметь свой номер, got:\n%s", got)
+	}
+}
+
+func TestFormatScheduleDayFirstShiftLeadingEmpty(t *testing.T) {
+	// обычная группа: первый слот свободен — он информативный и должен показываться
+	day := &pb.Day{
+		Name: "Вторник",
+		Subjects: []*pb.Subject{
+			{IsEmpty: true},
+			{Pairs: []*pb.Pair{{Name: "История", Type: "лк", Teacher: "Галенко Е. Л."}}},
+		},
+	}
+
+	got := formatScheduleDay(day)
+
+	if !strings.Contains(got, "*Вторник\n*") {
+		t.Errorf("маркера смены быть не должно, got:\n%s", got)
+	}
+	if !strings.Contains(got, "1: ──\n2: История") {
+		t.Errorf("свободный слот первой смены должен отображаться, got:\n%s", got)
+	}
+}
+
 func TestFindLastSubject(t *testing.T) {
 	tests := []struct {
 		name     string
