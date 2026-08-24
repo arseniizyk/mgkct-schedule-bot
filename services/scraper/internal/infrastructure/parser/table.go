@@ -3,35 +3,64 @@ package parser
 import (
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 )
 
-var days []string
+var brRe = regexp.MustCompile(`(?i)<br\s*/?>`)
 
 func parseRows(trs *goquery.Selection) []*pb.Day {
 	res := make([]*pb.Day, 0, 6)
-	if len(days) > 0 {
-		for _, d := range days {
-			res = append(res, &pb.Day{Name: d})
-		}
-	} else {
-		ths := trs.Eq(0).Find("th")
-		for col := 1; col < ths.Length(); col++ {
-			day := strings.ReplaceAll(ths.Eq(col).Text(), ",", " |")
-			days = append(days, day)
-			res = append(res, &pb.Day{Name: day})
-		}
+
+	ths := trs.Eq(0).Find("th")
+	for col := 1; col < ths.Length(); col++ {
+		day := strings.ReplaceAll(ths.Eq(col).Text(), ",", " |")
+		res = append(res, &pb.Day{Name: day})
 	}
 
 	for row := 2; row < trs.Length(); row++ {
-		tds := trs.Eq(row).Find("td")
-		parseColumns(tds, res)
+		tr := trs.Eq(row)
+
+		num, ok := parsePairNumber(tr)
+		if !ok {
+			num = len(res[0].Subjects) + 1
+		}
+
+		ensurePairIndex(res, num)
+
+		parseColumns(tr.Find("td"), res)
 	}
 
 	return res
+}
+
+// parsePairNumber достаёт номер пары из первой ячейки строки данных (<th>).
+func parsePairNumber(tr *goquery.Selection) (int, bool) {
+	th := tr.Find("th").First()
+	if th.Length() == 0 {
+		return 0, false
+	}
+
+	num, err := strconv.Atoi(cleanText(th.Text()))
+	if err != nil || num < 1 {
+		return 0, false
+	}
+
+	return num, true
+}
+
+// ensurePairIndex дополняет дни пустыми парами так, чтобы следующий добавленный
+// субъект встал на позицию номера пары со страницы. У групп второй смены
+// таблица начинается с пары №4 — без этого они сдвинулись бы на первую.
+func ensurePairIndex(days []*pb.Day, num int) {
+	for _, d := range days {
+		for len(d.Subjects) < num-1 {
+			d.Subjects = append(d.Subjects, &pb.Subject{IsEmpty: true})
+		}
+	}
 }
 
 func parseColumns(tds *goquery.Selection, days []*pb.Day) {
@@ -99,8 +128,7 @@ func splitByBr(td *goquery.Selection) []string {
 		return nil
 	}
 
-	re := regexp.MustCompile(`(?i)<br\s*/?>`)
-	parts := re.Split(html, -1)
+	parts := brRe.Split(html, -1)
 
 	res := make([]string, 0, len(parts))
 	for _, p := range parts {

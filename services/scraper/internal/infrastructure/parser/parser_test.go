@@ -2,11 +2,13 @@ package parser
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
 )
 
 func newSelectionText(text string) *goquery.Selection {
@@ -82,4 +84,97 @@ func TestParseWeek(t *testing.T) {
 			t.Error("parseWeek() expected error for invalid date")
 		}
 	})
+}
+
+// buildTable собирает таблицу расписания в формате сайта:
+// строка заголовков (№ + дни), затем строки данных "<th>№</th>" + ячейки пар.
+func buildTable(numbers []int, subject string) string {
+	var sb strings.Builder
+
+	sb.WriteString("<table><tbody>")
+	sb.WriteString("<tr><th>№</th><th>Понедельник, 31.08.2026</th></tr>")
+	sb.WriteString("<tr><td class=\"sub\">Дисциплина</td><td class=\"sub\">Ауд.</td></tr>")
+
+	for _, n := range numbers {
+		fmt.Fprintf(&sb,
+			"<tr><th>%d</th><td>%s<br />(Лек)<br />Препод Т. Т.</td><td class=\"sub\">3-113</td></tr>",
+			n, subject)
+	}
+
+	sb.WriteString("</tbody></table>")
+	return sb.String()
+}
+
+func parseTable(t *testing.T, html string) []*pb.Day {
+	t.Helper()
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("failed to parse fixture: %v", err)
+	}
+
+	return parseRows(doc.Find("tbody tr"))
+}
+
+func TestParseRowsStandardLayout(t *testing.T) {
+	days := parseTable(t, buildTable([]int{1, 2, 3}, "Математика"))
+
+	if len(days) != 1 {
+		t.Fatalf("got %d days, want 1", len(days))
+	}
+
+	subjects := days[0].Subjects
+	if len(subjects) != 3 {
+		t.Fatalf("got %d subjects, want 3", len(subjects))
+	}
+
+	for i, s := range subjects {
+		if s.IsEmpty {
+			t.Errorf("subject[%d] should not be empty", i)
+			continue
+		}
+		if got := subjects[i].Pairs[0].Name; got != "Математика" {
+			t.Errorf("subject[%d] name = %q", i, got)
+		}
+	}
+}
+
+func TestParseRowsSecondShiftLayout(t *testing.T) {
+	days := parseTable(t, buildTable([]int{4, 5, 6, 7}, "Физика"))
+
+	subjects := days[0].Subjects
+	if len(subjects) != 7 {
+		t.Fatalf("got %d subjects, want 7 (с паддингом пустых слотов)", len(subjects))
+	}
+
+	for i := 0; i < 3; i++ {
+		if !subjects[i].IsEmpty {
+			t.Errorf("subject[%d] должен быть пустым слотом второй смены", i)
+		}
+	}
+
+	for i := 3; i < 7; i++ {
+		if subjects[i].IsEmpty {
+			t.Errorf("subject[%d] не должен быть пустым", i)
+			continue
+		}
+		if got := subjects[i].Pairs[0].Name; got != "Физика" {
+			t.Errorf("subject[%d] name = %q, want Физика (номер пары = индекс+1)", i, got)
+		}
+	}
+}
+
+func TestParseRowsNoStateBetweenCalls(t *testing.T) {
+	// регрессия глобального кэша имён дней: разные таблицы не должны влиять друг на друга
+	first := parseTable(t, buildTable([]int{1}, "Первый"))
+	second := parseTable(t, buildTable([]int{4}, "Второй"))
+
+	if len(first[0].Subjects) != 1 || len(second[0].Subjects) != 4 {
+		t.Fatalf("subjects lengths = %d и %d, want 1 и 4",
+			len(first[0].Subjects), len(second[0].Subjects))
+	}
+
+	if got := second[0].Subjects[3].Pairs[0].Name; got != "Второй" {
+		t.Errorf("subject[3] name = %q, want Второй", got)
+	}
 }

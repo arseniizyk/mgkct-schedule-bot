@@ -32,15 +32,38 @@ func FormatErrorMessage(err error) string {
 	}
 }
 
+// secondShiftMinIndex — минимальный индекс непустой пары, начиная с которого
+// группа считается обучающейся во вторую смену (пары №4 и далее).
+const secondShiftMinIndex = 3
+
 func formatScheduleDay(day *pb.Day) string {
 	var sb strings.Builder
 	sb.Grow(256)
 
-	fmt.Fprintf(&sb, "*%s\n*", escapeMD(day.Name))
-	sb.WriteString(formatSubjects(day.Subjects))
+	first := findFirstSubject(day.Subjects)
+
+	skip := 0
+	if first >= secondShiftMinIndex {
+		fmt.Fprintf(&sb, "*%s %s\n*", escapeMD(day.Name), messages.SecondShift)
+		skip = first // чужие слоты первой смены не показываем
+	} else {
+		fmt.Fprintf(&sb, "*%s\n*", escapeMD(day.Name))
+	}
+
+	sb.WriteString(formatSubjects(day.Subjects, skip))
 	sb.WriteString("\n")
 
 	return sb.String()
+}
+
+func findFirstSubject(subjects []*pb.Subject) int {
+	for i, subject := range subjects {
+		if !subject.IsEmpty {
+			return i
+		}
+	}
+
+	return -1
 }
 
 func weekDay(add ...int) int {
@@ -155,7 +178,7 @@ func FormatScheduleWeek(group *pb.Group) string {
 	return sb.String()
 }
 
-func formatSubjects(subjects []*pb.Subject) string {
+func formatSubjects(subjects []*pb.Subject, start int) string {
 	var sb strings.Builder
 	sb.Grow(len(subjects) * 80)
 
@@ -164,7 +187,9 @@ func formatSubjects(subjects []*pb.Subject) string {
 		return "*Выходной*\n"
 	}
 
-	for i, subject := range subjects {
+	for i := start; i < len(subjects); i++ {
+		subject := subjects[i]
+
 		if subject.IsEmpty {
 			if i > lastSubject {
 				break
