@@ -3,6 +3,7 @@ package formatter
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -184,8 +185,8 @@ func findLastSubject(subjects []*pb.Subject) int {
 		return -1
 	}
 
-	for i := len(subjects) - 1; i >= 0; i-- {
-		if !subjects[i].IsEmpty {
+	for i, subject := range slices.Backward(subjects) {
+		if !subject.IsEmpty {
 			return i
 		}
 	}
