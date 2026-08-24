@@ -43,21 +43,21 @@ func TestInlineDayKeyboard(t *testing.T) {
 		t.Errorf("InlineDayKeyboard(0, ...) = %v, want nil", got)
 	}
 
-	t.Run("offset 0 hides today button", func(t *testing.T) {
+	t.Run("monday", func(t *testing.T) {
 		m := InlineDayKeyboard(88, 0)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
-		want := []string{"prevday|88:0", "nextday|88:0", "currentweek|88"}
+		want := []string{"prevday|88:5", "currentweek|88", "nextday|88:1"}
 		if strings.Join(datas, ",") != strings.Join(want, ",") {
 			t.Errorf("buttons = %v, want %v", datas, want)
 		}
 	})
 
-	t.Run("offset non-zero shows today button", func(t *testing.T) {
-		m := InlineDayKeyboard(88, -3)
+	t.Run("saturday wraps to monday", func(t *testing.T) {
+		m := InlineDayKeyboard(88, 5)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
-		want := []string{"prevday|88:-3", "currentday|88", "nextday|88:-3", "currentweek|88"}
+		want := []string{"prevday|88:4", "currentweek|88", "nextday|88:0"}
 		if strings.Join(datas, ",") != strings.Join(want, ",") {
 			t.Errorf("buttons = %v, want %v", datas, want)
 		}

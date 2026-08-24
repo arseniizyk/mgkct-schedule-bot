@@ -62,21 +62,20 @@ func TestParseCallbackDayNavigation(t *testing.T) {
 		name       string
 		data       string
 		wantGroup  int
-		wantOffset int
+		wantDayIdx int
 	}{
-		{name: "today", data: "currentday|88:0", wantGroup: 88, wantOffset: 0},
-		{name: "back three days", data: "prevday|88:-3", wantGroup: 88, wantOffset: -3},
-		{name: "forward", data: "nextday|100:1", wantGroup: 100, wantOffset: 1},
+		{name: "to monday", data: "prevday|88:0", wantGroup: 88, wantDayIdx: 0},
+		{name: "mid week", data: "nextday|100:3", wantGroup: 100, wantDayIdx: 3},
 	}
 
 	for _, tt := range validCases {
 		t.Run(tt.name, func(t *testing.T) {
-			groupID, offset, err := parseCallbackDayNavigation(tt.data)
+			groupID, dayIdx, err := parseCallbackDayNavigation(tt.data)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if groupID != tt.wantGroup || offset != tt.wantOffset {
-				t.Errorf("got (%d, %d), want (%d, %d)", groupID, offset, tt.wantGroup, tt.wantOffset)
+			if groupID != tt.wantGroup || dayIdx != tt.wantDayIdx {
+				t.Errorf("got (%d, %d), want (%d, %d)", groupID, dayIdx, tt.wantGroup, tt.wantDayIdx)
 			}
 		})
 	}
@@ -87,7 +86,7 @@ func TestParseCallbackDayNavigation(t *testing.T) {
 	}{
 		{name: "missing colon", data: "nextday|88"},
 		{name: "bad group id", data: "nextday|x:1"},
-		{name: "bad offset", data: "nextday|88:y"},
+		{name: "bad day index", data: "nextday|88:y"},
 	}
 
 	for _, tt := range errorCases {

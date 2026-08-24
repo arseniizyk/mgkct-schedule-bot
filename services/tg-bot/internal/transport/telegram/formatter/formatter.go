@@ -66,67 +66,54 @@ func findFirstSubject(subjects []*pb.Subject) int {
 	return -1
 }
 
-func weekDay(add ...int) int {
-	weekDay := int(time.Now().Weekday())
+// EffectiveDayIndex возвращает индекс дня, который показываем по умолчанию:
+// сегодня, а если пары закончились или день пуст — следующий рабочий день.
+func EffectiveDayIndex(group *pb.Group) int {
+	today := (int(time.Now().Weekday()) + 6) % 7 // Пн=0 .. Вс=6
 
-	day := (weekDay + 6) % 7
-
-	if len(add) > 0 {
-		day += add[0]
+	if today >= len(group.Days) {
+		return 0
 	}
 
-	// skip sunday
-	if day >= 6 {
-		day = 0
+	lastSubject := findLastSubject(group.Days[today].Subjects)
+	if lastSubject == -1 {
+		return nextWorkDayIndex(today)
 	}
 
-	return day
+	if endTime, ok := getEndTime(today, lastSubject); ok && !time.Now().Before(endTime) {
+		return nextWorkDayIndex(today)
+	}
+
+	return today
 }
 
-func FormatScheduleDay(group *pb.Group) string {
-	dayIdx := weekDay()
-	day := group.Days[dayIdx]
-
-	lastSubject := findLastSubject(day.Subjects)
-	if lastSubject == -1 { // if no pairs in day
-		return formatScheduleDay(group.Days[weekDay(1)])
+// воскресенья в расписании нет, за субботой идёт понедельник
+func nextWorkDayIndex(idx int) int {
+	next := idx + 1
+	if next >= 6 {
+		next = 0
 	}
+	return next
+}
 
-	now := time.Now()
+// FormatScheduleDay форматирует день по умолчанию (см. EffectiveDayIndex).
+func FormatScheduleDay(group *pb.Group) string {
+	dayIdx := EffectiveDayIndex(group)
 
-	endTime, ok := getEndTime(dayIdx, lastSubject)
-	if ok {
-		if now.After(endTime) || now.Equal(endTime) {
-			return formatScheduleDay(group.Days[weekDay(1)])
-		}
+	if dayIdx >= len(group.Days) {
+		return formatScheduleDay(group.Days[0])
 	}
 
 	return formatScheduleDay(group.Days[dayIdx])
 }
 
-// FormatScheduleDayOffset возвращает расписание на день со смещением offset
-// от сегодняшнего дня (0 — сегодня, -1 — вчера, 1 — завтра).
-func FormatScheduleDayOffset(group *pb.Group, offset int) (string, error) {
-	dayIdx := dayIndexByOffset(offset)
-
-	if dayIdx >= len(group.Days) {
+// FormatScheduleDayAt форматирует конкретный день недели (0 — понедельник).
+func FormatScheduleDayAt(group *pb.Group, dayIdx int) (string, error) {
+	if dayIdx < 0 || dayIdx >= len(group.Days) {
 		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(group.Days))
 	}
 
 	return formatScheduleDay(group.Days[dayIdx]), nil
-}
-
-func dayIndexByOffset(offset int) int {
-	today := (int(time.Now().Weekday()) + 6) % 7 // Пн=0 .. Вс=6
-
-	day := ((today+offset)%7 + 7) % 7
-
-	// воскресенья в расписании нет
-	if day >= 6 {
-		day = 0
-	}
-
-	return day
 }
 
 var weekdaysTimeEnd = map[int][2]int{ // map[subjectIndex][hours, min]
