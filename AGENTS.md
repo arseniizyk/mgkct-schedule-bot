@@ -12,9 +12,10 @@
 
 ## Commands
 
-- Full stack: `task run` (= `docker compose --env-file=./configs/.env up --build -d`). Requires `configs/.env` copied from `configs/.env.example` with a real `TELEGRAM_TOKEN`.
-- Tests from repo root: `task test` (unit), `task test-integration` (needs Docker; build tag `integration`).
-- Build/lint a service or lib: from its module dir run `go build ./...`, `go vet ./...`, `golangci-lint run`. Lint config lives at the repo root `.golangci.yml` (golangci-lint v2) and is found by walking up from any module cwd. Integration-tagged code needs `--build-tags integration`.
+- Full stack: `task run` (= `docker compose --env-file=./configs/.env up --build -d`), stop+purge: `task down`. Requires `configs/.env` copied from `configs/.env.example` with a real `TELEGRAM_TOKEN`.
+- Root orchestration over all modules (`scraper`, `tg-bot`, `config`, `proto` includes): `task test` (unit), `task test-integration` (needs Docker; build tag `integration`), `task lint` / `task lint:fix` / `task format`, `task deps:tidy`.
+- Per-module tasks live in each module's own Taskfile (`services/<svc>/Taskfile.yml`, `libs/config/Taskfile.yml`, `proto/Taskfile.yml`): `task <mod>:build|vet|test|test:integration|format|lint|lint:fix|tidy`.
+- Lint/format use a pinned golangci-lint auto-installed into `./bin` on first use (root task `install-golangci-lint`; config at repo root `.golangci.yml`). `bin/` is gitignored. Integration-tagged code needs `-tags=integration`.
 
 ## Config & environment
 
