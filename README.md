@@ -21,26 +21,67 @@
 3. **Получить API через [BotFather](https://t.me/botfather)**
 4. **Создать `.env` на основе `.env.example`:**
 
-   ```env
-   # scraper
-   SCRAPER_URL=scraper:9001
-   NATS_URL="nats://nats:4222"
-
-   # tg-bot
-   TELEGRAM_TOKEN=token
-
-   # postgres
-   POSTGRES_PASSWORD=password
-   POSTGRES_USER=postgres
-   POSTGRES_DB=postgres
-   POSTGRES_SSL=disable
-   POSTGRES_PORT=5432
+   ```bash
+   cp configs/.env.example configs/.env
    ```
+
+   и указать в нём реальный `TELEGRAM_TOKEN`.
 5. **Запустить:**
 
    ```bash
-   docker compose up --build -d
+   task run
    ```
+
+   или напрямую:
+
+   ```bash
+   docker compose --env-file=./configs/.env up --build -d
+   ```
+
+### Порты на хосте
+
+| Сервис            | Порт | Назначение                          |
+| ----------------- | ---- | ----------------------------------- |
+| scraper (gRPC)    | 9001 | gRPC API расписаний                 |
+| NATS              | 4223 | клиентские подключения (внутри compose — 4222) |
+| NATS мониторинг   | 8222 | http://localhost:8222               |
+| Adminer           | 8080 | веб-интерфейс для БД                |
+| tg-bot healthz    | 8081 | только внутри сети compose          |
+
+### Переменные окружения
+
+Основные переменные описаны в `configs/.env.example`. Ключевое:
+
+* `ENV` — `dev` или `prod`, любое другое значение уронит сервисы на старте;
+* `TELEGRAM_TOKEN` — токен бота из BotFather;
+* БД скрапера — префикс `SCRAPER_DB_*` (`HOST` и `NAME` обязательны);
+* БД бота — префикс `BOT_DB_*`;
+* `NATS_URL` по умолчанию `nats://nats:4222` (адрес внутри compose-сети).
+
+### Миграции
+
+Миграции выполняются через [goose](https://github.com/pressly/goose): SQL-файлы
+**встроены в бинарники** (`embed`) и применяются автоматически при старте
+каждого сервиса. Отдельные контейнеры миграций не нужны.
+
+Чтобы добавить новую миграцию для сервиса `<svc>`:
+
+1. Создайте файл `services/<svc>/internal/infrastructure/db/migrations/NNNNNN_название.sql`
+   с секциями:
+
+   ```sql
+   -- +goose Up
+   CREATE TABLE ...;
+
+   -- +goose Down
+   DROP TABLE ...;
+   ```
+
+2. Для plpgsql-функций и процедур оборачивайте определение в
+   `-- +goose StatementBegin` / `-- +goose StatementEnd`.
+
+Применённые версии фиксируются в таблице `goose_db_version` каждой БД,
+повторный старт сервиса повторно миграции не применяет.
 
 ---
 
@@ -78,13 +119,22 @@ rpc GetAvailableWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);  
 
 ---
 
+## 🧪 Тесты
+
+```bash
+task test              # unit-тесты
+task test-integration  # интеграционные (нужен запущенный Docker)
+```
+
+---
+
 ## ✅ Todo
 
 * Рефакторинг ✅
 * Багфиксы
-* Фиксы докерфайлов
-* Unit тесты
+* Фиксы докерфайлов ✅
+* Unit тесты ✅
 * Redis для кеширования
-* Адекватный CI/CD
+* Адекватный CI/CD ✅
 * Поддержка расписания преподавателей
 * Telegram Mini App (React/Vue)
