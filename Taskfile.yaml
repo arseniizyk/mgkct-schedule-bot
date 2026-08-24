@@ -5,3 +5,15 @@ tasks:
         desc: Starts docker compose
         cmds:
             - docker compose --env-file=./configs/.env up --build -d
+
+    test:
+        desc: Unit-тесты всех сервисов
+        cmds:
+            - cd services/scraper && go test ./...
+            - cd services/tg-bot && go test ./...
+
+    test-integration:
+        desc: Интеграционные тесты (требуется запущенный Docker)
+        cmds:
+            - cd services/scraper && go test -tags=integration ./...
+            - cd services/tg-bot && go test -tags=integration ./...
