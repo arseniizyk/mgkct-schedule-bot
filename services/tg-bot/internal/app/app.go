@@ -228,14 +228,15 @@ func (a *App) initDeps() error {
 }
 
 func (a *App) initDB() error {
-	var err error
+	ctx := context.Background()
 
-	a.pool, err = db.Connect(&a.cfg.Bot.DB)
+	pool, err := db.Connect(ctx, &a.cfg.Bot.DB)
 	if err != nil {
 		return fmt.Errorf("can't connect to database: %w", err)
 	}
+	a.pool = pool
 
-	if err := a.pool.Ping(context.Background()); err != nil {
+	if err := a.pool.Ping(ctx); err != nil {
 		return fmt.Errorf("ping database error: %w", err)
 	}
 

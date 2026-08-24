@@ -195,14 +195,15 @@ func (a *App) initNetListener() error {
 }
 
 func (a *App) initDB() error {
-	var err error
+	ctx := context.Background()
 
-	a.pool, err = database.Connect(&a.cfg.Scraper.DB)
+	pool, err := database.Connect(ctx, &a.cfg.Scraper.DB)
 	if err != nil {
 		return fmt.Errorf("can't connect to database: %w", err)
 	}
+	a.pool = pool
 
-	if err := a.pool.Ping(context.Background()); err != nil {
+	if err := a.pool.Ping(ctx); err != nil {
 		return fmt.Errorf("ping database error: %w", err)
 	}
 
