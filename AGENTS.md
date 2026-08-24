@@ -28,7 +28,7 @@
 
 - Migrations use **embedded goose**: SQL files live in `services/<svc>/internal/infrastructure/db/migrations/*.sql` (`embed` cannot reach parent dirs) and are applied automatically at service startup via `goose.UpContext` in each service's `internal/infrastructure/db` package. Version state sits in the `goose_db_version` table; restarts are idempotent.
 - To add a migration for `<svc>`: create `NNNNNN_name.sql` with `-- +goose Up` / `-- +goose Down` sections. Wrap plpgsql function bodies in `-- +goose StatementBegin` / `-- +goose StatementEnd`, otherwise goose splits them at inner semicolons.
-- `proto/*.pb.go` are generated from `proto/scraper.proto`; the exact command is in a comment at the top of that file. Regenerate rather than hand-editing.
+- `proto/*.pb.go` are generated from `proto/scraper.proto` by `task proto:gen` (pinned buf + protoc plugins auto-installed into `./bin`). Regenerate rather than hand-editing.
 
 ## Healthchecks & lifecycle
 
