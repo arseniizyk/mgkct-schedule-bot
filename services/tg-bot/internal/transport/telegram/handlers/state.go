@@ -9,11 +9,11 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/state"
-	"gopkg.in/telebot.v4"
+	tele "gopkg.in/telebot.v4"
 )
 
-func StatesHandler(log *slog.Logger, groupSetter UserGroupSetter, stateGetter StateGetter, stateClearer StateClearer) telebot.HandlerFunc {
-	return func(c telebot.Context) error {
+func StatesHandler(log *slog.Logger, groupSetter UserGroupSetter, stateGetter StateGetter, stateClearer StateClearer) tele.HandlerFunc {
+	return func(c tele.Context) error {
 		chatID := c.Chat().ID
 
 		log := log.With(

@@ -36,7 +36,7 @@ func formatScheduleDay(day *pb.Day) string {
 	var sb strings.Builder
 	sb.Grow(256)
 
-	fmt.Fprintf(&sb, "*%s\n*", day.Name)
+	fmt.Fprintf(&sb, "*%s\n*", escapeMD(day.Name))
 	sb.WriteString(formatSubjects(day.Subjects))
 	sb.WriteString("\n")
 
@@ -79,6 +79,31 @@ func FormatScheduleDay(group *pb.Group) string {
 	}
 
 	return formatScheduleDay(group.Days[dayIdx])
+}
+
+// FormatScheduleDayOffset возвращает расписание на день со смещением offset
+// от сегодняшнего дня (0 — сегодня, -1 — вчера, 1 — завтра).
+func FormatScheduleDayOffset(group *pb.Group, offset int) (string, error) {
+	dayIdx := dayIndexByOffset(offset)
+
+	if dayIdx >= len(group.Days) {
+		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(group.Days))
+	}
+
+	return formatScheduleDay(group.Days[dayIdx]), nil
+}
+
+func dayIndexByOffset(offset int) int {
+	today := (int(time.Now().Weekday()) + 6) % 7 // Пн=0 .. Вс=6
+
+	day := ((today+offset)%7 + 7) % 7
+
+	// воскресенья в расписании нет
+	if day >= 6 {
+		day = 0
+	}
+
+	return day
 }
 
 var weekdaysTimeEnd = map[int][2]int{ // map[subjectIndex][hours, min]
@@ -151,7 +176,7 @@ func formatSubjects(subjects []*pb.Subject) string {
 		pairs := subject.Pairs
 		if len(pairs) == 1 && !unicode.IsDigit(rune(pairs[0].Name[0])) { // If only 1 pair in subject and starts with digit
 			p := pairs[0]
-			fmt.Fprintf(&sb, "%d: %s | %s | %s", i+1, p.Name, p.Type, p.Teacher)
+			fmt.Fprintf(&sb, "%d: %s | %s | %s", i+1, escapeMD(p.Name), escapeMD(p.Type), escapeMD(p.Teacher))
 			sb.WriteString(formatClass(p.Class))
 			sb.WriteString("\n")
 			continue
@@ -164,7 +189,7 @@ func formatSubjects(subjects []*pb.Subject) string {
 			} else {
 				sb.WriteString("├─ ")
 			}
-			fmt.Fprintf(&sb, "%s | %s | %s", p.Name, p.Type, p.Teacher)
+			fmt.Fprintf(&sb, "%s | %s | %s", escapeMD(p.Name), escapeMD(p.Type), escapeMD(p.Teacher))
 			sb.WriteString(formatClass(p.Class))
 			sb.WriteString("\n")
 		}
@@ -175,9 +200,22 @@ func formatSubjects(subjects []*pb.Subject) string {
 
 func formatClass(class string) string {
 	if class != "-" {
-		return " | " + class
+		return " | " + escapeMD(class)
 	}
 	return ""
+}
+
+// escapeMD экранирует спецсимволы legacy Markdown в данных с сайта,
+// иначе Telegram отклоняет сообщение целиком (400 Bad Request).
+var mdEscaper = strings.NewReplacer(
+	"_", "\\_",
+	"*", "\\*",
+	"[", "\\[",
+	"`", "\\`",
+)
+
+func escapeMD(s string) string {
+	return mdEscaper.Replace(s)
 }
 
 func findLastSubject(subjects []*pb.Subject) int {

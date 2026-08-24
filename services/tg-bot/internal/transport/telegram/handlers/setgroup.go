@@ -9,11 +9,11 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/state"
-	"gopkg.in/telebot.v4"
+	tele "gopkg.in/telebot.v4"
 )
 
-func SetGroup(log *slog.Logger, groupSetter UserGroupSetter, stateSetter StateSetter) telebot.HandlerFunc {
-	return func(c telebot.Context) error {
+func SetGroup(log *slog.Logger, groupSetter UserGroupSetter, stateSetter StateSetter) tele.HandlerFunc {
+	return func(c tele.Context) error {
 		log := log.With(
 			"operation", "transport.telegram.handlers.SetGroup",
 			"chat_id", c.Chat().ID,

@@ -49,6 +49,6 @@ func Day(log *slog.Logger, scheduleProvider ScheduleProvider) tele.HandlerFunc {
 
 		msg := formatter.FormatScheduleDay(schedule)
 
-		return c.Send(msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard, keyboard.InlineScheduleKeyboard(int(schedule.Id)))
+		return c.Send(msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard, keyboard.InlineDayKeyboard(int(schedule.Id), 0))
 	}
 }

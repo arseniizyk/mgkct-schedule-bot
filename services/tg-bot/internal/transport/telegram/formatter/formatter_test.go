@@ -32,6 +32,48 @@ func TestFormatErrorMessage(t *testing.T) {
 	}
 }
 
+func TestEscapeMD(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "underscore in teacher name", in: "Иванов_И", want: "Иванов\\_И"},
+		{name: "asterisk in subject", in: "C* язык", want: "C\\* язык"},
+		{name: "bracket", in: "[каб 5]", want: "\\[каб 5]"},
+		{name: "clean text untouched", in: "Математика(Лек)Петрова", want: "Математика(Лек)Петрова"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeMD(tt.in); got != tt.want {
+				t.Errorf("escapeMD(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatSubjectsEscapesDynamicFields(t *testing.T) {
+	day := &pb.Day{
+		Name: "Пятница",
+		Subjects: []*pb.Subject{
+			{Pairs: []*pb.Pair{{Name: "Основы C* и C_", Type: "лб", Teacher: "Иванов_И. И.", Class: "3-205 (к)"}}},
+		},
+	}
+
+	got := formatScheduleDay(day)
+
+	if !strings.Contains(got, "Основы C\\* и C\\_") {
+		t.Errorf("subject name should be escaped, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Иванов\\_И. И.") {
+		t.Errorf("teacher name should be escaped, got:\n%s", got)
+	}
+	if strings.Contains(got, "*Пятница\n*") == false {
+		t.Errorf("day header should stay bold, got:\n%s", got)
+	}
+}
+
 func TestFindLastSubject(t *testing.T) {
 	tests := []struct {
 		name     string

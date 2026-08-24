@@ -41,6 +41,9 @@ func CallbacksHandler(log *slog.Logger, scheduleProvider ScheduleProvider, weekP
 		case strings.Contains(data, keyboard.PrevWeek), strings.Contains(data, keyboard.NextWeek):
 			return handlePrevNextWeek(ctx, logger, c, data, scheduleProvider, weekProvider)
 
+		case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay), strings.Contains(data, keyboard.CurrentDay):
+			return handleDayNavigation(ctx, logger, c, data, scheduleProvider)
+
 		default:
 			logger.Error("unexpected callback", "data", data)
 			return respondInternalError(c)
@@ -94,6 +97,28 @@ func handlePrevNextWeek(ctx context.Context, log *slog.Logger, c tele.Context, d
 	return c.Edit(msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks))
 }
 
+func handleDayNavigation(ctx context.Context, log *slog.Logger, c tele.Context, data string, scheduleProvider ScheduleProvider) error {
+	groupID, offset, err := parseCallbackDayNavigation(data)
+	if err != nil {
+		log.Error("failed parsing day navigation callback data", "error", err)
+		return respondInternalError(c)
+	}
+
+	schedule, err := scheduleProvider.GetGroupSchedule(ctx, groupID)
+	if err != nil {
+		log.Error("failed to get schedule for day navigation", "group_id", groupID, "offset", offset, "error", err)
+		return respondInternalError(c)
+	}
+
+	msg, err := formatter.FormatScheduleDayOffset(schedule, offset)
+	if err != nil {
+		log.Error("failed to format day", "offset", offset, "error", err)
+		return respondInternalError(c)
+	}
+
+	return c.Edit(msg, tele.ModeMarkdown, keyboard.InlineDayKeyboard(groupID, offset))
+}
+
 func respondInternalError(c tele.Context) error {
 	return c.Respond(&tele.CallbackResponse{
 		Text:      messages.Internal,
@@ -103,7 +128,7 @@ func respondInternalError(c tele.Context) error {
 
 func dataFromCallbackData(data string) string {
 	parts := strings.Split(data, "|")
-	if len(parts) > 0 {
+	if len(parts) > 1 {
 		return parts[1]
 	}
 
@@ -128,4 +153,23 @@ func parseCallbackWeekNavigation(data string) (int, time.Time, error) {
 	}
 
 	return groupID, date, nil
+}
+
+func parseCallbackDayNavigation(data string) (groupID int, offset int, err error) {
+	parsed := dataFromCallbackData(data)
+
+	parts := strings.Split(parsed, ":")
+	if len(parts) < 2 {
+		return 0, 0, fmt.Errorf("failed splitting data by parts")
+	}
+
+	if groupID, err = strconv.Atoi(parts[0]); err != nil {
+		return 0, 0, fmt.Errorf("failed parsing group_id to int: %w", err)
+	}
+
+	if offset, err = strconv.Atoi(parts[1]); err != nil {
+		return 0, 0, fmt.Errorf("failed parsing offset to int: %w", err)
+	}
+
+	return groupID, offset, nil
 }
