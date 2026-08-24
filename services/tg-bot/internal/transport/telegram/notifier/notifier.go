@@ -10,7 +10,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
-	"gopkg.in/telebot.v4"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -20,13 +19,14 @@ type UserGetter interface {
 }
 
 type Notifier struct {
-	bot        *telebot.Bot
+	bot        *tele.Bot
 	log        *slog.Logger
 	userGetter UserGetter
 }
 
-func New(log *slog.Logger, bot *telebot.Bot, userGetter UserGetter) *Notifier {
+func New(log *slog.Logger, bot *tele.Bot, userGetter UserGetter) *Notifier {
 	return &Notifier{
+		bot:        bot,
 		log:        log,
 		userGetter: userGetter,
 	}

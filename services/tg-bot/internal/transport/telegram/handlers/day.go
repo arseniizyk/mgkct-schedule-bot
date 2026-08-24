@@ -10,7 +10,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
-	"gopkg.in/telebot.v4"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -50,6 +49,6 @@ func Day(log *slog.Logger, scheduleProvider ScheduleProvider) tele.HandlerFunc {
 
 		msg := formatter.FormatScheduleDay(schedule)
 
-		return c.Send(msg, telebot.ModeMarkdown, keyboard.ReplyScheduleKeyboard, keyboard.InlineScheduleKeyboard(int(schedule.Id)))
+		return c.Send(msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard, keyboard.InlineScheduleKeyboard(int(schedule.Id)))
 	}
 }

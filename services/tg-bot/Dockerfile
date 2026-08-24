@@ -44,7 +44,7 @@ RUN chmod +x /app/migrate
 USER appuser
 
 FROM runtime AS tg-bot
-EXPOSE 8000 9001
+EXPOSE 8000 8081
 ENTRYPOINT ["/app/tg-bot"]
 
 FROM runtime AS migrate 

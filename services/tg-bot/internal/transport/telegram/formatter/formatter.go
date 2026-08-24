@@ -36,7 +36,7 @@ func formatScheduleDay(day *pb.Day) string {
 	var sb strings.Builder
 	sb.Grow(256)
 
-	sb.WriteString(fmt.Sprintf("*%s\n*", day.Name))
+	fmt.Fprintf(&sb, "*%s\n*", day.Name)
 	sb.WriteString(formatSubjects(day.Subjects))
 	sb.WriteString("\n")
 
@@ -46,7 +46,7 @@ func formatScheduleDay(day *pb.Day) string {
 func weekDay(add ...int) int {
 	weekDay := int(time.Now().Weekday())
 
-	day := int(weekDay+6) % 7
+	day := (weekDay + 6) % 7
 
 	if len(add) > 0 {
 		day += add[0]
@@ -144,27 +144,27 @@ func formatSubjects(subjects []*pb.Subject) string {
 			if i > lastSubject {
 				break
 			}
-			sb.WriteString(fmt.Sprintf("%d: ──\n", i+1))
+			fmt.Fprintf(&sb, "%d: ──\n", i+1)
 			continue
 		}
 
 		pairs := subject.Pairs
 		if len(pairs) == 1 && !unicode.IsDigit(rune(pairs[0].Name[0])) { // If only 1 pair in subject and starts with digit
 			p := pairs[0]
-			sb.WriteString(fmt.Sprintf("%d: %s | %s | %s", i+1, p.Name, p.Type, p.Teacher))
+			fmt.Fprintf(&sb, "%d: %s | %s | %s", i+1, p.Name, p.Type, p.Teacher)
 			sb.WriteString(formatClass(p.Class))
 			sb.WriteString("\n")
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("%d:\n", i+1))
+		fmt.Fprintf(&sb, "%d:\n", i+1)
 		for j, p := range pairs {
 			if j == len(pairs)-1 { // if last pair in subject
 				sb.WriteString("└─ ")
 			} else {
 				sb.WriteString("├─ ")
 			}
-			sb.WriteString(fmt.Sprintf("%s | %s | %s", p.Name, p.Type, p.Teacher))
+			fmt.Fprintf(&sb, "%s | %s | %s", p.Name, p.Type, p.Teacher)
 			sb.WriteString(formatClass(p.Class))
 			sb.WriteString("\n")
 		}

@@ -125,7 +125,10 @@ func (ss *ScheduleService) CheckScheduleUpdates(ctx context.Context, interval ti
 
 		if err != nil {
 			if errors.Is(err, repository.ErrScheduleNotFound) {
-				sch, updated, err := ss.parseSchedule(repoCtx)
+				parseCtx, parseCancel := context.WithTimeout(ctx, 5*time.Second)
+				var updated bool
+				sch, updated, err = ss.parseSchedule(parseCtx)
+				parseCancel()
 				if err != nil {
 					log.Error("failed to parse schedule after failed getting from repo", "error", err)
 				} else if updated {
@@ -141,7 +144,7 @@ func (ss *ScheduleService) CheckScheduleUpdates(ctx context.Context, interval ti
 			}
 		}
 
-		// If failed getting from repository and parse
+		// Если не удалось получить расписание из репозитория и распарсить
 		if sch == nil {
 			sch = &pb.Schedule{}
 		}
@@ -194,13 +197,13 @@ func (ss *ScheduleService) CheckScheduleUpdates(ctx context.Context, interval ti
 	return resCh
 }
 
-func (ss *ScheduleService) findUpdatedGroups(new *pb.Schedule) []*entities.UpdatedGroup {
+func (ss *ScheduleService) findUpdatedGroups(next *pb.Schedule) []*entities.UpdatedGroup {
 	const op = "services.schedule.ScheduleService.findUpdatedGroups"
 
 	log := ss.log.With("operation", op)
 
 	updated := make([]*entities.UpdatedGroup, 0, 1)
-	for groupID, group := range new.Groups {
+	for groupID, group := range next.Groups {
 		newGroupHash, err := hashJSON(group)
 		if err != nil {
 			log.Error("failed to hash group", "group", groupID, "err", err)
