@@ -22,8 +22,6 @@ services:
                 condition: service_started
             tg-bot-postgres:
                 condition: service_healthy
-            tg-bot-migrations:
-                condition: service_completed_successfully
         healthcheck:
             test: ['CMD', 'curl', '-f', 'http://localhost:8081/healthz']
             interval: 10s
@@ -47,8 +45,6 @@ services:
                 condition: service_started
             scraper-postgres:
                 condition: service_healthy
-            scraper-migrations:
-                condition: service_completed_successfully
         healthcheck:
             test: ['CMD', '/usr/local/bin/grpc_health_probe', '-addr=:9001']
             interval: 10s
@@ -104,46 +100,6 @@ services:
             POSTGRES_PASSWORD: ${BOT_DB_PASSWORD}
             POSTGRES_DB: ${BOT_DB_NAME}
 
-    tg-bot-migrations:
-        build:
-            context: .
-            dockerfile: services/tg-bot/Dockerfile
-            target: migrate
-        container_name: tg-bot-migrations
-        entrypoint:
-            [
-                '/app/migrate',
-                '-migrations_path',
-                './migrations/tg-bot',
-                '-command',
-                'up',
-            ]
-        env_file: ./configs/.env
-        depends_on:
-            tg-bot-postgres:
-                condition: service_healthy
-        networks:
-            - internal
-    scraper-migrations:
-        build:
-            context: .
-            dockerfile: services/scraper/Dockerfile
-            target: migrate
-        container_name: scraper-migrations
-        entrypoint:
-            [
-                '/app/migrate',
-                '-migrations_path',
-                './migrations/scraper',
-                '-command',
-                'up',
-            ]
-        env_file: ./configs/.env
-        depends_on:
-            scraper-postgres:
-                condition: service_healthy
-        networks:
-            - internal
     adminer:
         image: adminer
         restart: unless-stopped
