@@ -4,12 +4,9 @@
 // - protoc             (unknown)
 // source: scraper.proto
 
-// protoc \
-//   --go_out=. \
-//   --go-grpc_out=. \
-//   --go_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
-//   --go-grpc_opt=module=github.com/arseniizyk/mgkct-schedule-bot/libs/proto \
-//   scraper.proto
+// Генерация: из корня репозитория — `task proto:gen`
+// (вручную: buf + protoc-gen-go + protoc-gen-go-grpc в PATH,
+// затем `buf generate` из каталога proto/).
 
 package pb
 

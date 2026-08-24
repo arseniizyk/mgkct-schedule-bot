@@ -4,6 +4,17 @@ vars:
     BIN_EXT: '{{if eq OS "windows"}}.exe{{end}}' # shit for windows
 
 tasks:
+    gen:
+        desc: Генерирует *.pb.go из scraper.proto через buf
+        dir: '{{.TASKFILE_DIR}}'
+        deps:
+            - ':install-buf'
+            - ':install-protoc-plugins'
+        cmds:
+            # buf ищет плагины в PATH, поэтому подкладываем bin с protoc-gen-go
+            - |
+                PATH="{{.ROOT_DIR}}/bin:$PATH" "{{.ROOT_DIR}}/bin/buf{{.BIN_EXT}}" generate
+
     tidy:
         desc: go mod tidy
         cmds:
