@@ -15,12 +15,10 @@ const (
 	CurrentWeek = "currentweek"
 	PrevWeek    = "prevweek"
 	NextWeek    = "nextweek"
-	CurrentDay  = "currentday"
 	PrevDay     = "prevday"
 	NextDay     = "nextday"
 
 	btnCurrentWeek = "📆 Неделя"
-	btnCurrentDay  = "Сегодня"
 	btnPrev        = "◀️"
 	btnNext        = "▶️"
 )
@@ -48,25 +46,24 @@ func InlineScheduleKeyboard(groupID int) *tele.ReplyMarkup {
 	return markup
 }
 
-// InlineDayKeyboard — навигация по дням: ◀️ / Сегодня / ▶️ и раскрытие недели.
-func InlineDayKeyboard(groupID, offset int) *tele.ReplyMarkup {
+// InlineDayKeyboard — навигация по дням одной строкой:
+// ◀️ (слева), «Неделя» (в центре), ▶️ (справа). Стрелки несут индекс дня,
+// в который ведут, поэтому каждый шаг гарантированно меняет день.
+func InlineDayKeyboard(groupID, dayIdx int) *tele.ReplyMarkup {
 	if groupID == 0 {
 		return nil
 	}
 
 	markup := &tele.ReplyMarkup{}
-	data := strconv.Itoa(groupID) + ":" + strconv.Itoa(offset)
 
-	row := []tele.Btn{
-		markup.Data(btnPrev, PrevDay, data),
-	}
-	if offset != 0 {
-		row = append(row, markup.Data(btnCurrentDay, CurrentDay, groupIDString(groupID)))
-	}
-	row = append(row, markup.Data(btnNext, NextDay, data))
-	row = append(row, markup.Data(btnCurrentWeek, CurrentWeek, groupIDString(groupID)))
+	prev := (dayIdx + 5) % 6
+	next := (dayIdx + 1) % 6
 
-	markup.Inline(markup.Row(row...))
+	markup.Inline(markup.Row(
+		markup.Data(btnPrev, PrevDay, fmt.Sprintf("%d:%d", groupID, prev)),
+		markup.Data(btnCurrentWeek, CurrentWeek, strconv.Itoa(groupID)),
+		markup.Data(btnNext, NextDay, fmt.Sprintf("%d:%d", groupID, next)),
+	))
 
 	return markup
 }

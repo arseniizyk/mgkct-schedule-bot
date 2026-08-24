@@ -125,6 +125,34 @@ func TestFormatScheduleDayFirstShiftLeadingEmpty(t *testing.T) {
 	}
 }
 
+func TestFormatScheduleDayAt(t *testing.T) {
+	group := &pb.Group{
+		Days: []*pb.Day{
+			{Name: "Пн", Subjects: []*pb.Subject{{IsEmpty: true}}},
+			{Name: "Вт", Subjects: []*pb.Subject{{Pairs: []*pb.Pair{{Name: "Физика"}}}}},
+		},
+	}
+
+	t.Run("valid index", func(t *testing.T) {
+		got, err := FormatScheduleDayAt(group, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(got, "*Вт") || !strings.Contains(got, "1: Физика") {
+			t.Errorf("FormatScheduleDayAt(1) = %q", got)
+		}
+	})
+
+	t.Run("out of range", func(t *testing.T) {
+		if _, err := FormatScheduleDayAt(group, -1); err == nil {
+			t.Error("expected error for negative index")
+		}
+		if _, err := FormatScheduleDayAt(group, 2); err == nil {
+			t.Error("expected error for out-of-range index")
+		}
+	})
+}
+
 func TestFindLastSubject(t *testing.T) {
 	tests := []struct {
 		name     string
