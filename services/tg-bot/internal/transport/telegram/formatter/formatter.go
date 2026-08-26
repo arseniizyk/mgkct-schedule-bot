@@ -3,6 +3,7 @@ package formatter
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -31,53 +32,88 @@ func FormatErrorMessage(err error) string {
 	}
 }
 
+// secondShiftMinIndex — минимальный индекс непустой пары, начиная с которого
+// группа считается обучающейся во вторую смену (пары №4 и далее).
+const secondShiftMinIndex = 3
+
 func formatScheduleDay(day *pb.Day) string {
 	var sb strings.Builder
 	sb.Grow(256)
 
-	sb.WriteString(fmt.Sprintf("*%s\n*", day.Name))
-	sb.WriteString(formatSubjects(day.Subjects))
+	first := findFirstSubject(day.Subjects)
+
+	skip := 0
+	if first >= secondShiftMinIndex {
+		fmt.Fprintf(&sb, "*%s %s\n*", escapeMD(day.Name), messages.SecondShift)
+		skip = first // чужие слоты первой смены не показываем
+	} else {
+		fmt.Fprintf(&sb, "*%s\n*", escapeMD(day.Name))
+	}
+
+	sb.WriteString(formatSubjects(day.Subjects, skip))
 	sb.WriteString("\n")
 
 	return sb.String()
 }
 
-func weekDay(add ...int) int {
-	weekDay := int(time.Now().Weekday())
-
-	day := int(weekDay+6) % 7
-
-	if len(add) > 0 {
-		day += add[0]
-	}
-
-	// skip sunday
-	if day >= 6 {
-		day = 0
-	}
-
-	return day
-}
-
-func FormatScheduleDay(group *pb.Group) string {
-	dayIdx := weekDay()
-	day := group.Days[dayIdx]
-
-	lastSubject := findLastSubject(day.Subjects)
-	if lastSubject == -1 { // if no pairs in day
-		return formatScheduleDay(group.Days[weekDay(1)])
-	}
-
-	now := time.Now()
-
-	endTime, ok := getEndTime(dayIdx, lastSubject)
-	if ok {
-		if now.After(endTime) || now.Equal(endTime) {
-			return formatScheduleDay(group.Days[weekDay(1)])
+func findFirstSubject(subjects []*pb.Subject) int {
+	for i, subject := range subjects {
+		if !subject.IsEmpty {
+			return i
 		}
 	}
 
+	return -1
+}
+
+// EffectiveDayIndex возвращает индекс дня, который показываем по умолчанию:
+// сегодня, а если пары закончились или день пуст — следующий рабочий день.
+func EffectiveDayIndex(group *pb.Group) int {
+	today := (int(time.Now().Weekday()) + 6) % 7 // Пн=0 .. Вс=6
+
+	if today >= len(group.Days) {
+		return 0
+	}
+
+	lastSubject := findLastSubject(group.Days[today].Subjects)
+	if lastSubject == -1 {
+		return nextWorkDayIndex(today)
+	}
+
+	if endTime, ok := getEndTime(today, lastSubject); ok && !time.Now().Before(endTime) {
+		return nextWorkDayIndex(today)
+	}
+
+	return today
+}
+
+// воскресенья в расписании нет, за субботой идёт понедельник
+func nextWorkDayIndex(idx int) int {
+	next := idx + 1
+	if next >= 6 {
+		next = 0
+	}
+	return next
+}
+
+// FormatScheduleDay форматирует день по умолчанию (см. EffectiveDayIndex).
+func FormatScheduleDay(group *pb.Group) string {
+	dayIdx := EffectiveDayIndex(group)
+
+	if dayIdx >= len(group.Days) {
+		return formatScheduleDay(group.Days[0])
+	}
+
 	return formatScheduleDay(group.Days[dayIdx])
+}
+
+// FormatScheduleDayAt форматирует конкретный день недели (0 — понедельник).
+func FormatScheduleDayAt(group *pb.Group, dayIdx int) (string, error) {
+	if dayIdx < 0 || dayIdx >= len(group.Days) {
+		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(group.Days))
+	}
+
+	return formatScheduleDay(group.Days[dayIdx]), nil
 }
 
 var weekdaysTimeEnd = map[int][2]int{ // map[subjectIndex][hours, min]
@@ -129,7 +165,7 @@ func FormatScheduleWeek(group *pb.Group) string {
 	return sb.String()
 }
 
-func formatSubjects(subjects []*pb.Subject) string {
+func formatSubjects(subjects []*pb.Subject, start int) string {
 	var sb strings.Builder
 	sb.Grow(len(subjects) * 80)
 
@@ -138,32 +174,34 @@ func formatSubjects(subjects []*pb.Subject) string {
 		return "*Выходной*\n"
 	}
 
-	for i, subject := range subjects {
+	for i := start; i < len(subjects); i++ {
+		subject := subjects[i]
+
 		if subject.IsEmpty {
 			if i > lastSubject {
 				break
 			}
-			sb.WriteString(fmt.Sprintf("%d: ──\n", i+1))
+			fmt.Fprintf(&sb, "%d: ──\n", i+1)
 			continue
 		}
 
 		pairs := subject.Pairs
 		if len(pairs) == 1 && !unicode.IsDigit(rune(pairs[0].Name[0])) { // If only 1 pair in subject and starts with digit
 			p := pairs[0]
-			sb.WriteString(fmt.Sprintf("%d: %s | %s | %s", i+1, p.Name, p.Type, p.Teacher))
+			fmt.Fprintf(&sb, "%d: %s | %s | %s", i+1, escapeMD(p.Name), escapeMD(p.Type), escapeMD(p.Teacher))
 			sb.WriteString(formatClass(p.Class))
 			sb.WriteString("\n")
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("%d:\n", i+1))
+		fmt.Fprintf(&sb, "%d:\n", i+1)
 		for j, p := range pairs {
 			if j == len(pairs)-1 { // if last pair in subject
 				sb.WriteString("└─ ")
 			} else {
 				sb.WriteString("├─ ")
 			}
-			sb.WriteString(fmt.Sprintf("%s | %s | %s", p.Name, p.Type, p.Teacher))
+			fmt.Fprintf(&sb, "%s | %s | %s", escapeMD(p.Name), escapeMD(p.Type), escapeMD(p.Teacher))
 			sb.WriteString(formatClass(p.Class))
 			sb.WriteString("\n")
 		}
@@ -174,9 +212,22 @@ func formatSubjects(subjects []*pb.Subject) string {
 
 func formatClass(class string) string {
 	if class != "-" {
-		return " | " + class
+		return " | " + escapeMD(class)
 	}
 	return ""
+}
+
+// escapeMD экранирует спецсимволы legacy Markdown в данных с сайта,
+// иначе Telegram отклоняет сообщение целиком (400 Bad Request).
+var mdEscaper = strings.NewReplacer(
+	"_", "\\_",
+	"*", "\\*",
+	"[", "\\[",
+	"`", "\\`",
+)
+
+func escapeMD(s string) string {
+	return mdEscaper.Replace(s)
 }
 
 func findLastSubject(subjects []*pb.Subject) int {
@@ -184,8 +235,8 @@ func findLastSubject(subjects []*pb.Subject) int {
 		return -1
 	}
 
-	for i := len(subjects) - 1; i >= 0; i-- {
-		if !subjects[i].IsEmpty {
+	for i, subject := range slices.Backward(subjects) {
+		if !subject.IsEmpty {
 			return i
 		}
 	}

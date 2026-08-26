@@ -58,10 +58,9 @@ func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) 
 
 	rows, err := r.pool.Query(ctx, sqlQuery, args...)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
-		}
+		return nil, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}
+	defer rows.Close()
 
 	var users []entities.User
 
@@ -87,6 +86,10 @@ func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) 
 		})
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
+	}
+
 	return users, nil
 }
 
@@ -100,20 +103,20 @@ func (r *UserRepository) GroupByChatID(ctx context.Context, chatID int64) (int, 
 		return 0, fmt.Errorf("%s: failed to build sql query: %w", op, err)
 	}
 
-	var groupId sql.NullInt64
-	if err := r.pool.QueryRow(ctx, sqlQuery, args...).Scan(&groupId); err != nil {
+	var groupID sql.NullInt64
+	if err := r.pool.QueryRow(ctx, sqlQuery, args...).Scan(&groupID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, domainerr.ErrUserNoGroup
 		}
 
-		return 0, fmt.Errorf("%s: failed to execure sql query: %w", op, err)
+		return 0, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}
 
-	if !groupId.Valid {
+	if !groupID.Valid {
 		return 0, domainerr.ErrUserNoGroup
 	}
 
-	return int(groupId.Int64), nil
+	return int(groupID.Int64), nil
 }
 
 func (r *UserRepository) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {

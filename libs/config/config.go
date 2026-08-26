@@ -28,7 +28,8 @@ type ScraperConfig struct {
 }
 
 type BotConfig struct {
-	Token string `env:"TELEGRAM_TOKEN"`
+	Token      string `env:"TELEGRAM_TOKEN"`
+	HealthPort string `env:"BOT_HEALTH_PORT" env-default:"8081"`
 
 	DB PostgresConfig `env-prefix:"BOT_DB_"`
 }
