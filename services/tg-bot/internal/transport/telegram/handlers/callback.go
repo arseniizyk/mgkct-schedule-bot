@@ -41,6 +41,9 @@ func CallbacksHandler(log *slog.Logger, scheduleProvider ScheduleProvider, weekP
 		case strings.Contains(data, keyboard.PrevWeek), strings.Contains(data, keyboard.NextWeek):
 			return handlePrevNextWeek(ctx, logger, c, data, scheduleProvider, weekProvider)
 
+		case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay):
+			return handleDayNavigation(ctx, logger, c, data, scheduleProvider)
+
 		default:
 			logger.Error("unexpected callback", "data", data)
 			return respondInternalError(c)
@@ -94,6 +97,28 @@ func handlePrevNextWeek(ctx context.Context, log *slog.Logger, c tele.Context, d
 	return c.Edit(msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks))
 }
 
+func handleDayNavigation(ctx context.Context, log *slog.Logger, c tele.Context, data string, scheduleProvider ScheduleProvider) error {
+	groupID, dayIdx, err := parseCallbackDayNavigation(data)
+	if err != nil {
+		log.Error("failed parsing day navigation callback data", "error", err)
+		return respondInternalError(c)
+	}
+
+	schedule, err := scheduleProvider.GetGroupSchedule(ctx, groupID)
+	if err != nil {
+		log.Error("failed to get schedule for day navigation", "group_id", groupID, "day_idx", dayIdx, "error", err)
+		return respondInternalError(c)
+	}
+
+	msg, err := formatter.FormatScheduleDayAt(schedule, dayIdx)
+	if err != nil {
+		log.Error("failed to format day", "day_idx", dayIdx, "error", err)
+		return respondInternalError(c)
+	}
+
+	return c.Edit(msg, tele.ModeMarkdown, keyboard.InlineDayKeyboard(groupID, dayIdx))
+}
+
 func respondInternalError(c tele.Context) error {
 	return c.Respond(&tele.CallbackResponse{
 		Text:      messages.Internal,
@@ -103,7 +128,7 @@ func respondInternalError(c tele.Context) error {
 
 func dataFromCallbackData(data string) string {
 	parts := strings.Split(data, "|")
-	if len(parts) > 0 {
+	if len(parts) > 1 {
 		return parts[1]
 	}
 
@@ -128,4 +153,25 @@ func parseCallbackWeekNavigation(data string) (int, time.Time, error) {
 	}
 
 	return groupID, date, nil
+}
+
+// parseCallbackDayNavigation разбирает "<groupID>:<dayIdx>" из колбэка
+// навигации по дням; dayIdx — индекс дня, в который ведёт стрелка (0 = Пн).
+func parseCallbackDayNavigation(data string) (groupID int, dayIdx int, err error) {
+	parsed := dataFromCallbackData(data)
+
+	parts := strings.Split(parsed, ":")
+	if len(parts) < 2 {
+		return 0, 0, fmt.Errorf("failed splitting data by parts")
+	}
+
+	if groupID, err = strconv.Atoi(parts[0]); err != nil {
+		return 0, 0, fmt.Errorf("failed parsing group_id to int: %w", err)
+	}
+
+	if dayIdx, err = strconv.Atoi(parts[1]); err != nil {
+		return 0, 0, fmt.Errorf("failed parsing day index to int: %w", err)
+	}
+
+	return groupID, dayIdx, nil
 }

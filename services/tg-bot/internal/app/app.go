@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -48,6 +50,8 @@ type App struct {
 	userRepository   repository.User
 	telegramNotifier TelegramNotifier
 
+	healthSrv *http.Server
+
 	bot *tele.Bot
 }
 
@@ -76,14 +80,14 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	a.bot = bot
 
 	a.userRepository = userRepository.New(a.pool)
+	a.telegramNotifier = notifier.New(log, bot, a.userRepository)
 
 	return a, nil
 }
 
 func (a *App) Run() error {
-	defer a.pool.Close()
-
-	ctx := context.TODO()
+	log := a.log.With("operation", "app.App.Run")
+	ctx := context.Background()
 
 	if err := a.subscribeScheduleUpdates(ctx); err != nil {
 		slog.Error("subscribe to schedule updates failed", "err", err)
@@ -94,12 +98,21 @@ func (a *App) Run() error {
 		return err
 	}
 
+	defer a.natsConn.Close()
+	defer a.pool.Close()
+
+	a.healthSrv = newHealthServer(a.pool, a.cfg.Bot.HealthPort)
+
+	go func() {
+		if err := a.healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("health server failed", "err", err)
+		}
+	}()
+
 	return a.StartBot()
 }
 
 func (a *App) StartBot() error {
-	a.telegramNotifier = notifier.New(a.log, a.bot, a.userRepository)
-
 	scraperService := pb.NewScheduleServiceClient(a.grpcConn)
 
 	weekTransport := weekTransport.New(a.log, a.natsConn, scraperService)
@@ -131,9 +144,31 @@ func (a *App) StartBot() error {
 
 	log.Info("Bot started!", "username", a.bot.Me.Username)
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+
+	go func() {
+		<-sigChan
+		log.Info("shutting down")
+		a.bot.Stop()
+	}()
+	defer func() {
+		signal.Stop(sigChan)
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := a.healthSrv.Shutdown(shutdownCtx); err != nil {
+			log.Error("failed to shutdown health server", "err", err)
+		}
+	}()
+
 	a.bot.Start()
 
-	return a.shutdown()
+	if err := a.grpcConn.Close(); err != nil {
+		return fmt.Errorf("failed to close grpc connection: %w", err)
+	}
+	return nil
 }
 
 func (a *App) subscribeScheduleUpdates(ctx context.Context) error {
@@ -176,23 +211,6 @@ func (a *App) subscribeWeekUpdates(ctx context.Context) error {
 	return err
 }
 
-func (a *App) shutdown() error {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
-
-	defer signal.Stop(sigChan)
-
-	<-sigChan
-
-	a.pool.Close()
-	a.natsConn.Close()
-
-	if err := a.grpcConn.Close(); err != nil {
-		return fmt.Errorf("faield to close grpc connection: %w", err)
-	}
-	return nil
-}
-
 func (a *App) initDeps() error {
 	inits := []func() error{
 		a.initDB,
@@ -210,14 +228,15 @@ func (a *App) initDeps() error {
 }
 
 func (a *App) initDB() error {
-	var err error
+	ctx := context.Background()
 
-	a.pool, err = db.Connect(&a.cfg.Bot.DB)
+	pool, err := db.Connect(ctx, &a.cfg.Bot.DB)
 	if err != nil {
 		return fmt.Errorf("can't connect to database: %w", err)
 	}
+	a.pool = pool
 
-	if err := a.pool.Ping(context.Background()); err != nil {
+	if err := a.pool.Ping(ctx); err != nil {
 		return fmt.Errorf("ping database error: %w", err)
 	}
 
@@ -229,7 +248,7 @@ func (a *App) initNATS() error {
 
 	a.natsConn, err = nats.Connect(a.cfg.Nats.URL, nats.Name("tg-bot"))
 	if err != nil {
-		return fmt.Errorf("can't  connect NATS: %s : %w", a.cfg.Nats.URL, err)
+		return fmt.Errorf("can't connect NATS: %s : %w", a.cfg.Nats.URL, err)
 	}
 
 	return nil
