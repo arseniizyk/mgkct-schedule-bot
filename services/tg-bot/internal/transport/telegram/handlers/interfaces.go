@@ -5,6 +5,7 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/state"
 )
@@ -37,4 +38,27 @@ type UserGroupSetter interface {
 
 type StateSetter interface {
 	Set(chatID int64, state state.State) error
+}
+
+type TeacherValidator interface {
+	ValidateTeacher(ctx context.Context, name string) (matched string, candidates []string, ok bool)
+}
+
+type TeacherSaver interface {
+	SetTeacher(ctx context.Context, chatID int64, teacherName string) error
+}
+
+type TeacherNamesProvider interface {
+	GetAllTeacherNames(ctx context.Context) ([]string, error)
+}
+
+type TeacherScheduleProvider interface {
+	GetTeacherScheduleByChatID(ctx context.Context, chatID int64) (*pb.Teacher, error)
+	GetTeacherSchedule(ctx context.Context, name string) (*pb.Teacher, error)
+	GetTeacherScheduleByWeek(ctx context.Context, name string, week time.Time) (*pb.Teacher, error)
+	FindTeacherByName(ctx context.Context, name string) ([]string, error)
+}
+
+type TeacherWeekProvider interface {
+	GetAvailableTeacherWeeks(ctx context.Context, week *time.Time) (*pb.AvailableWeeksResponse, error)
 }

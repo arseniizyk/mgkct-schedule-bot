@@ -2,17 +2,19 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"time"
 
+	tele "gopkg.in/telebot.v4"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/state"
-	tele "gopkg.in/telebot.v4"
 )
 
-func StatesHandler(log *slog.Logger, groupSetter UserGroupSetter, stateGetter StateGetter, stateClearer StateClearer) tele.HandlerFunc {
+func StatesHandler(log *slog.Logger, groupSetter UserGroupSetter, stateGetter StateGetter, stateClearer StateClearer, teacherSaver TeacherSaver, teacherValidator TeacherValidator) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		chatID := c.Chat().ID
 
@@ -47,6 +49,28 @@ func StatesHandler(log *slog.Logger, groupSetter UserGroupSetter, stateGetter St
 			}
 
 			return c.Send(messages.GroupSaved, keyboard.ReplyScheduleKeyboard)
+
+		case state.WaitingTeacher:
+			teacherName := c.Text()
+
+			matchedName, candidates, ok := teacherValidator.ValidateTeacher(ctx, teacherName)
+			if !ok {
+				if len(candidates) > 0 {
+					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
+				}
+				return c.Send(messages.TeacherNotFound)
+			}
+
+			if err := teacherSaver.SetTeacher(ctx, chatID, matchedName); err != nil {
+				log.Error("failed to set user's teacher", "teacher_name", matchedName, "error", err)
+				return c.Send(messages.Internal)
+			}
+
+			if err := stateClearer.Clear(chatID); err != nil {
+				log.Error("failed to clear user's state", "error", err)
+			}
+
+			return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
 
 		default:
 			log.Warn("unxpected user state", "state", userState)

@@ -6,8 +6,9 @@ import (
 
 type State string
 
-var (
-	WaitingGroup State = "waiting group"
+const (
+	WaitingGroup   State = "waiting group"
+	WaitingTeacher State = "waiting teacher"
 )
 
 type StateManager struct {
@@ -29,11 +30,11 @@ func (s *StateManager) Clear(chatID int64) error {
 	return nil
 }
 
-func (s *StateManager) Get(chatID int64) (state State, exists bool) {
+func (s *StateManager) Get(chatID int64) (State, bool) {
 	s.mu.RLock()
-	state, exists = s.stateMap[chatID]
+	state, exists := s.stateMap[chatID]
 	s.mu.RUnlock()
-	return
+	return state, exists
 }
 
 func (s *StateManager) Set(chatID int64, state State) error {

@@ -3,8 +3,9 @@ package handlers
 import (
 	"log/slog"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 	tele "gopkg.in/telebot.v4"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 )
 
 func Cancel(log *slog.Logger, stateClearer StateClearer) tele.HandlerFunc {

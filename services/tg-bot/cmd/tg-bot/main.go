@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/app"
 )
 
