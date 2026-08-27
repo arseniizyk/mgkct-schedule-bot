@@ -241,7 +241,7 @@ func (a *App) initNetListener() error {
 	var err error
 
 	listenConfig := net.ListenConfig{}
-	a.lis, err = listenConfig.Listen(context.Background(), "tcp", net.JoinHostPort("localhost", a.cfg.Scraper.GRPCPort))
+	a.lis, err = listenConfig.Listen(context.Background(), "tcp", net.JoinHostPort("0.0.0.0", a.cfg.Scraper.GRPCPort))
 	if err != nil {
 		return fmt.Errorf("can't start net listener: Port: %s, error: %w", a.cfg.Scraper.GRPCPort, err)
 	}
