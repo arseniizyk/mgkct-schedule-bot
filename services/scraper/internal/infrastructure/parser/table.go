@@ -26,7 +26,10 @@ func parseRows(trs *goquery.Selection) []*pb.Day {
 
 		num, ok := parsePairNumber(tr)
 		if !ok {
-			num = len(res[0].Subjects) + 1
+			if len(res) == 0 {
+				continue
+			}
+			num = len(res[0].GetSubjects()) + 1
 		}
 
 		ensurePairIndex(res, num)
@@ -57,7 +60,7 @@ func parsePairNumber(tr *goquery.Selection) (int, bool) {
 // таблица начинается с пары №4 — без этого они сдвинулись бы на первую.
 func ensurePairIndex(days []*pb.Day, num int) {
 	for _, d := range days {
-		for len(d.Subjects) < num-1 {
+		for len(d.GetSubjects()) < num-1 {
 			d.Subjects = append(d.Subjects, &pb.Subject{IsEmpty: true})
 		}
 	}
@@ -78,9 +81,20 @@ func parseColumns(tds *goquery.Selection, days []*pb.Day) {
 		pairs := parsePairs(nameParts, classParts)
 		days[daysIdx].Subjects = append(days[daysIdx].Subjects, &pb.Subject{
 			Pairs:   pairs,
-			IsEmpty: false,
+			IsEmpty: pairsAreEmpty(pairs),
 		})
 	}
+}
+
+func pairsAreEmpty(pairs []*pb.Pair) bool {
+	for _, p := range pairs {
+		name := strings.TrimSpace(p.GetName())
+		hasContent := (name != "" && name != "-" && name != "—" && name != "–") || p.GetTeacher() != ""
+		if hasContent {
+			return false
+		}
+	}
+	return true
 }
 
 func parsePairs(nameParts, classParts []string) []*pb.Pair {
@@ -107,8 +121,9 @@ func parsePairs(nameParts, classParts []string) []*pb.Pair {
 			i++
 		}
 
-		class = classParts[len(pairs)]
-		class = strings.ReplaceAll(class, "(к)", "")
+		if len(pairs) < len(classParts) {
+			class = strings.ReplaceAll(classParts[len(pairs)], "(к)", "")
+		}
 
 		pairs = append(pairs, &pb.Pair{
 			Name:    cleanText(name),

@@ -123,17 +123,17 @@ func TestParseRowsStandardLayout(t *testing.T) {
 		t.Fatalf("got %d days, want 1", len(days))
 	}
 
-	subjects := days[0].Subjects
+	subjects := days[0].GetSubjects()
 	if len(subjects) != 3 {
 		t.Fatalf("got %d subjects, want 3", len(subjects))
 	}
 
 	for i, s := range subjects {
-		if s.IsEmpty {
+		if s.GetIsEmpty() {
 			t.Errorf("subject[%d] should not be empty", i)
 			continue
 		}
-		if got := subjects[i].Pairs[0].Name; got != "Математика" {
+		if got := subjects[i].GetPairs()[0].GetName(); got != "Математика" {
 			t.Errorf("subject[%d] name = %q", i, got)
 		}
 	}
@@ -142,23 +142,23 @@ func TestParseRowsStandardLayout(t *testing.T) {
 func TestParseRowsSecondShiftLayout(t *testing.T) {
 	days := parseTable(t, buildTable([]int{4, 5, 6, 7}, "Физика"))
 
-	subjects := days[0].Subjects
+	subjects := days[0].GetSubjects()
 	if len(subjects) != 7 {
 		t.Fatalf("got %d subjects, want 7 (с паддингом пустых слотов)", len(subjects))
 	}
 
-	for i := 0; i < 3; i++ {
-		if !subjects[i].IsEmpty {
+	for i := range 3 {
+		if !subjects[i].GetIsEmpty() {
 			t.Errorf("subject[%d] должен быть пустым слотом второй смены", i)
 		}
 	}
 
 	for i := 3; i < 7; i++ {
-		if subjects[i].IsEmpty {
+		if subjects[i].GetIsEmpty() {
 			t.Errorf("subject[%d] не должен быть пустым", i)
 			continue
 		}
-		if got := subjects[i].Pairs[0].Name; got != "Физика" {
+		if got := subjects[i].GetPairs()[0].GetName(); got != "Физика" {
 			t.Errorf("subject[%d] name = %q, want Физика (номер пары = индекс+1)", i, got)
 		}
 	}
@@ -169,12 +169,12 @@ func TestParseRowsNoStateBetweenCalls(t *testing.T) {
 	first := parseTable(t, buildTable([]int{1}, "Первый"))
 	second := parseTable(t, buildTable([]int{4}, "Второй"))
 
-	if len(first[0].Subjects) != 1 || len(second[0].Subjects) != 4 {
+	if len(first[0].GetSubjects()) != 1 || len(second[0].GetSubjects()) != 4 {
 		t.Fatalf("subjects lengths = %d и %d, want 1 и 4",
-			len(first[0].Subjects), len(second[0].Subjects))
+			len(first[0].GetSubjects()), len(second[0].GetSubjects()))
 	}
 
-	if got := second[0].Subjects[3].Pairs[0].Name; got != "Второй" {
+	if got := second[0].GetSubjects()[3].GetPairs()[0].GetName(); got != "Второй" {
 		t.Errorf("subject[3] name = %q, want Второй", got)
 	}
 }
