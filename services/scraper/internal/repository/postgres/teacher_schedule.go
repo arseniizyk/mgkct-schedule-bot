@@ -8,11 +8,12 @@ import (
 
 	"github.com/Masterminds/squirrel"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 )
 
 type TeacherScheduleRepository struct {
@@ -117,8 +118,6 @@ func (repo *TeacherScheduleRepository) GetLatest(ctx context.Context, name strin
 func (repo *TeacherScheduleRepository) GetWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error) {
 	const op = "repository.postgres.TeacherScheduleRepository.GetWeeks"
 
-	// Teacher weeks are global: every teacher shares the same timetable week,
-	// so the name filter is intentionally ignored here.
 	week = time.Date(week.Year(), week.Month(), week.Day(), 0, 0, 0, 0, time.UTC)
 
 	if week.IsZero() {
@@ -224,13 +223,16 @@ func (repo *TeacherScheduleRepository) GetAllTeacherNames(ctx context.Context) (
 func (repo *TeacherScheduleRepository) GetAllLatest(ctx context.Context) (map[string]*pb.Teacher, error) {
 	const op = "repository.postgres.TeacherScheduleRepository.GetAllLatest"
 
-	query := `
-		SELECT DISTINCT ON (ts.name) ts.name, ts.schedule
-		FROM teacher_schedules ts
-		ORDER BY ts.name, ts.updated_at DESC
-	`
+	query, args, err := repo.sb.
+		Select("DISTINCT ON (ts.name) ts.name", "ts.schedule").
+		From("teacher_schedules ts").
+		OrderBy("ts.name", "ts.updated_at DESC").
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("can't build query: %w", err)
+	}
 
-	rows, err := repo.pool.Query(ctx, query)
+	rows, err := repo.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: query all latest: %w", op, err)
 	}

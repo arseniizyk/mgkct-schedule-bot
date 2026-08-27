@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -33,6 +34,8 @@ type TeacherParser struct {
 	c   *colly.Collector
 }
 
+const defaultRequestTimeout = time.Second * 15
+
 func NewTeacherParser(log *slog.Logger) *TeacherParser {
 	c := colly.NewCollector(
 		colly.AllowURLRevisit(),
@@ -43,9 +46,11 @@ func NewTeacherParser(log *slog.Logger) *TeacherParser {
 		ForceAttemptHTTP2: false,
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
-			MaxVersion: tls.VersionTLS12,
+			MaxVersion: tls.VersionTLS13,
 		},
 	})
+
+	c.SetRequestTimeout(defaultRequestTimeout)
 
 	return &TeacherParser{
 		c:   c,
@@ -53,24 +58,26 @@ func NewTeacherParser(log *slog.Logger) *TeacherParser {
 	}
 }
 
-func (tp *TeacherParser) Parse() ([]TeacherSchedule, *time.Time, error) {
+func (tp *TeacherParser) Parse(ctx context.Context) ([]TeacherSchedule, *time.Time, error) {
 	log := tp.log.With("operation", "infrastructure.parser.TeacherParser.Parse")
+
+	col := tp.c.Clone()
 
 	var schedules []TeacherSchedule
 	var week time.Time
 
-	tp.c.OnError(func(r *colly.Response, err error) {
-		log.Error("visit error", "url", r.Request.URL, "error", err)
+	col.OnError(func(r *colly.Response, err error) {
+		log.ErrorContext(ctx, "visit error", "url", r.Request.URL, "error", err)
 	})
 
-	tp.c.OnHTML("h2", func(e *colly.HTMLElement) {
+	col.OnHTML("h2", func(e *colly.HTMLElement) {
 		teacherName, err := parseTeacherName(e.Text)
 		if err != nil {
 			if errors.Is(err, ErrBadTeacher) {
 				return
 			}
 
-			log.Error("can't get teacher from h2", "error", err)
+			log.ErrorContext(ctx, "can't get teacher from h2", "error", err)
 			return
 		}
 
@@ -79,7 +86,7 @@ func (tp *TeacherParser) Parse() ([]TeacherSchedule, *time.Time, error) {
 		if week.IsZero() {
 			week, err = parseWeek(e.DOM.Next())
 			if err != nil {
-				log.Error("can't parse week", "error", err)
+				log.ErrorContext(ctx, "can't parse week", "error", err)
 				week = time.Now()
 			}
 		}
@@ -93,9 +100,11 @@ func (tp *TeacherParser) Parse() ([]TeacherSchedule, *time.Time, error) {
 		})
 	})
 
-	if err := tp.c.Visit(teacherURL); err != nil {
+	if err := col.Visit(teacherURL); err != nil {
 		return nil, nil, fmt.Errorf("visit failed: %w", err)
 	}
+
+	col.Wait()
 
 	return schedules, &week, nil
 }
@@ -187,10 +196,10 @@ func parseTeacherPairs(nameParts, classParts []string) []*pb.Pair {
 		}
 
 		pairs = append(pairs, &pb.Pair{
-			Name:    cleanText(subjectName),
-			Type:    cleanText(subjectType),
-			Teacher: cleanText(group),
-			Class:   cleanText(class),
+			Name:  cleanText(subjectName),
+			Type:  cleanText(subjectType),
+			Group: cleanText(group),
+			Class: cleanText(class),
 		})
 	}
 
@@ -208,7 +217,6 @@ func splitTeacherCellSubject(raw string) (group, subject string) {
 		return "", raw
 	}
 
-	// Both " - " and " – " are 3 bytes long.
 	group = strings.TrimSpace(raw[:idx])
 	subject = strings.TrimSpace(raw[idx+3:])
 

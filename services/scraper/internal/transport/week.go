@@ -7,12 +7,13 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 )
 
 type WeekService interface {
@@ -35,8 +36,8 @@ func NewWeekTransport(log *slog.Logger, weekService WeekService, natsConn *nats.
 
 func (t *WeekTransport) GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error) {
 	var week time.Time
-	if req.Week != nil {
-		week = req.Week.AsTime()
+	if req.GetWeek() != nil {
+		week = req.GetWeek().AsTime()
 	}
 
 	weeks, err := t.weekService.GetAvailableWeeks(ctx, week)

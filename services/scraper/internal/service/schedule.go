@@ -11,6 +11,7 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 )
@@ -32,8 +33,8 @@ type ScheduleService struct {
 	scheduleRepo ScheduleRepository
 	parser       Parser
 
-	mu          sync.RWMutex
-	cache       *pb.Schedule
+	mu           sync.RWMutex
+	cache        *pb.Schedule
 	scheduleHash [32]byte
 	groupHashes  map[int32][32]byte
 }
@@ -122,7 +123,7 @@ func (ss *ScheduleService) CheckScheduleUpdates(ctx context.Context, interval ti
 
 		var sch *pb.Schedule
 
-		repoCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		repoCtx, cancel := context.WithTimeout(ctx, defaultCtxTimeout)
 		sch, _ = ss.scheduleRepo.GetLatest(repoCtx)
 		cancel()
 
@@ -132,8 +133,7 @@ func (ss *ScheduleService) CheckScheduleUpdates(ctx context.Context, interval ti
 
 		ss.storeCache(sch)
 
-		// Первый запуск парсинга сразу при старте
-		parseCtx, parseCancel := context.WithTimeout(ctx, 5*time.Second)
+		parseCtx, parseCancel := context.WithTimeout(ctx, defaultCtxTimeout)
 		sch, updated, err := ss.parseSchedule(parseCtx)
 		parseCancel()
 
@@ -151,7 +151,7 @@ func (ss *ScheduleService) CheckScheduleUpdates(ctx context.Context, interval ti
 		for {
 			select {
 			case <-tick.C:
-				parseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				parseCtx, cancel := context.WithTimeout(ctx, defaultCtxTimeout)
 				sch, updated, err := ss.parseSchedule(parseCtx)
 				cancel()
 
@@ -252,7 +252,6 @@ func (ss *ScheduleService) parseSchedule(ctx context.Context) (*pb.Schedule, boo
 		return nil, false, fmt.Errorf("%s: can't hash schedule: %w", op, err)
 	}
 
-	// if previous hash schedule == parsed hash schedule
 	if h == ss.scheduleHash {
 		return nil, false, nil
 	}
