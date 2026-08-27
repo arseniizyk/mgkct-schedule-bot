@@ -8,10 +8,11 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/infrastructure/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type TeacherScheduleRepository interface {
@@ -26,6 +27,8 @@ type TeacherScheduleRepository interface {
 type TeacherParser interface {
 	Parse(ctx context.Context) ([]parser.TeacherSchedule, *time.Time, error)
 }
+
+const defaultCtxTimeout = time.Second * 5
 
 type TeacherScheduleService struct {
 	log          *slog.Logger
@@ -101,7 +104,7 @@ func (ss *TeacherScheduleService) CheckTeacherScheduleUpdates(ctx context.Contex
 		defer tick.Stop()
 		defer close(resCh)
 
-		repoCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		repoCtx, cancel := context.WithTimeout(ctx, defaultCtxTimeout)
 		allLatest, err := ss.scheduleRepo.GetAllLatest(repoCtx)
 		cancel()
 
@@ -116,7 +119,6 @@ func (ss *TeacherScheduleService) CheckTeacherScheduleUpdates(ctx context.Contex
 			}
 		}
 
-		// Первый запуск парсинга сразу при старте
 		schedules, _, err := ss.parser.Parse(ctx)
 		if err != nil {
 			log.ErrorContext(ctx, "failed on parsing teacher schedules on startup", "error", err)
@@ -128,7 +130,6 @@ func (ss *TeacherScheduleService) CheckTeacherScheduleUpdates(ctx context.Contex
 			select {
 			case <-tick.C:
 				schedules, _, err := ss.parser.Parse(ctx)
-
 				if err != nil {
 					log.ErrorContext(ctx, "failed on parsing teacher schedules", "error", err)
 					continue
@@ -166,7 +167,7 @@ func (ss *TeacherScheduleService) processTeacherSchedules(ctx context.Context, s
 			continue
 		}
 
-		saveCtx, saveCancel := context.WithTimeout(ctx, 5*time.Second)
+		saveCtx, saveCancel := context.WithTimeout(ctx, defaultCtxTimeout)
 		if err := ss.scheduleRepo.Save(saveCtx, ts.Name, ts.Week, pbTeacher); err != nil {
 			saveCancel()
 			log.ErrorContext(ctx, "failed to save teacher schedule", "name", ts.Name, "err", err)

@@ -8,11 +8,12 @@ import (
 
 	"github.com/Masterminds/squirrel"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 )
 
 type ScheduleRepository struct {
@@ -168,7 +169,6 @@ func (repo *ScheduleRepository) GetWeeks(ctx context.Context, week time.Time) (e
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return entities.WeekNavigation{}, fmt.Errorf("%s: get prev week: %w", op, err)
 		}
-		// if user has reached the edge, so we return nil as prev
 		prev = time.Time{}
 	}
 
@@ -176,7 +176,6 @@ func (repo *ScheduleRepository) GetWeeks(ctx context.Context, week time.Time) (e
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return entities.WeekNavigation{}, fmt.Errorf("%s: get next week: %w", op, err)
 		}
-		// if user has reached the edge, so we return nil as next
 		next = time.Time{}
 	}
 

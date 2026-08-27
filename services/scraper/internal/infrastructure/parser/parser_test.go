@@ -20,6 +20,8 @@ func newSelectionText(text string) *goquery.Selection {
 }
 
 func TestParseGroup(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		text    string
@@ -36,6 +38,8 @@ func TestParseGroup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, err := parseGroup(tt.text)
 
 			if tt.wantErr != nil {
@@ -63,7 +67,11 @@ func TestParseGroup(t *testing.T) {
 }
 
 func TestParseWeek(t *testing.T) {
+	t.Parallel()
+
 	t.Run("valid week header", func(t *testing.T) {
+		t.Parallel()
+
 		sel := newSelectionText("24.08.2026 - 30.08.2026")
 
 		got, err := parseWeek(sel)
@@ -78,6 +86,8 @@ func TestParseWeek(t *testing.T) {
 	})
 
 	t.Run("invalid date", func(t *testing.T) {
+		t.Parallel()
+
 		sel := newSelectionText("не дата - 30.08.2026")
 
 		if _, err := parseWeek(sel); err == nil {
@@ -117,6 +127,8 @@ func parseTable(t *testing.T, html string) []*pb.Day {
 }
 
 func TestParseRowsStandardLayout(t *testing.T) {
+	t.Parallel()
+
 	days := parseTable(t, buildTable([]int{1, 2, 3}, "Математика"))
 
 	if len(days) != 1 {
@@ -140,6 +152,8 @@ func TestParseRowsStandardLayout(t *testing.T) {
 }
 
 func TestParseRowsSecondShiftLayout(t *testing.T) {
+	t.Parallel()
+
 	days := parseTable(t, buildTable([]int{4, 5, 6, 7}, "Физика"))
 
 	subjects := days[0].GetSubjects()
@@ -165,7 +179,8 @@ func TestParseRowsSecondShiftLayout(t *testing.T) {
 }
 
 func TestParseRowsNoStateBetweenCalls(t *testing.T) {
-	// регрессия глобального кэша имён дней: разные таблицы не должны влиять друг на друга
+	t.Parallel()
+
 	first := parseTable(t, buildTable([]int{1}, "Первый"))
 	second := parseTable(t, buildTable([]int{4}, "Второй"))
 

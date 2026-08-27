@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -17,11 +18,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const url = `https://mgkct.minskedu.gov.by/personnel/for-students/weekly-timetable`
-
-var (
-	ErrBadGroup = errors.New("кол группа")
+const (
+	url            = `https://mgkct.minskedu.gov.by/personnel/for-students/weekly-timetable`
+	requestTimeout = 15 * time.Second
 )
+
+var ErrBadGroup = errors.New("кол группа")
 
 type Parser struct {
 	log *slog.Logger
@@ -38,9 +40,11 @@ func New(log *slog.Logger) *Parser {
 		ForceAttemptHTTP2: false,
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
-			MaxVersion: tls.VersionTLS12,
+			MaxVersion: tls.VersionTLS13,
 		},
 	})
+
+	c.SetRequestTimeout(requestTimeout)
 
 	return &Parser{
 		c:   c,
@@ -48,27 +52,29 @@ func New(log *slog.Logger) *Parser {
 	}
 }
 
-func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
+func (c *Parser) Parse(ctx context.Context) (*pb.Schedule, *time.Time, error) {
 	log := c.log.With("operation", "infrastructure.parser.Parser.Parse")
+
+	col := c.c.Clone()
 
 	schedule := pb.Schedule{
 		Groups: make(map[int32]*pb.Group),
 	}
 
-	c.c.OnError(func(r *colly.Response, err error) {
-		log.Error("visit error", "url", r.Request.URL, "error", err)
+	col.OnError(func(r *colly.Response, err error) {
+		log.ErrorContext(ctx, "visit error", "url", r.Request.URL, "error", err)
 	})
 
 	var week time.Time
 
-	c.c.OnHTML("h2", func(e *colly.HTMLElement) {
+	col.OnHTML("h2", func(e *colly.HTMLElement) {
 		groupNum, err := parseGroup(e.Text)
 		if err != nil {
 			if errors.Is(err, ErrBadGroup) {
 				return
 			}
 
-			log.Error("can't get group from h2", "error", err)
+			log.ErrorContext(ctx, "can't get group from h2", "error", err)
 			return
 		}
 
@@ -76,7 +82,7 @@ func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
 
 		week, err = parseWeek(e.DOM.Next()) // <h3>
 		if err != nil {
-			log.Error("can't parse week", "error", err)
+			log.ErrorContext(ctx, "can't parse week", "error", err)
 			week = time.Now()
 		}
 
@@ -89,9 +95,11 @@ func (c *Parser) Parse() (*pb.Schedule, *time.Time, error) {
 		schedule.Groups[groupNum] = &group
 	})
 
-	if err := c.c.Visit(url); err != nil {
+	if err := col.Visit(url); err != nil {
 		return nil, nil, fmt.Errorf("visit failed: %w", err)
 	}
+
+	col.Wait()
 
 	return &schedule, &week, nil
 }
@@ -112,6 +120,7 @@ func parseGroup(text string) (int32, error) {
 		return 0, fmt.Errorf("can't parse group(%s) to int: %w", text, err)
 	}
 
+	//nolint:gosec//impossible to get overflow
 	return int32(group), nil
 }
 
