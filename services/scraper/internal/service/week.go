@@ -34,7 +34,7 @@ func (ws *WeekService) GetAvailableWeeks(ctx context.Context, week time.Time) (e
 	weeks, err := ws.weekRepo.GetWeeks(ctx, week)
 	if err != nil {
 		if !errors.Is(err, repository.ErrNoAvailableWeeks) {
-			log.Error("failed get available weeks", "err", err)
+			log.ErrorContext(ctx, "failed get available weeks", "err", err)
 			return entities.WeekNavigation{}, err
 		}
 		return entities.WeekNavigation{}, nil
