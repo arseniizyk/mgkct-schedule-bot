@@ -23,6 +23,11 @@ includes:
   proto: ./proto
 
 tasks:
+  tidy:
+    deps:
+      - scraper:tidy
+      - tg-bot:tidy
+
   up:
     desc: Поднимает весь стек (docker compose up --build)
     cmd: docker compose --env-file=./configs/.env up --build -d

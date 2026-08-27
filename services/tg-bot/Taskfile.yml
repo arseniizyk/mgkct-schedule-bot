@@ -6,6 +6,7 @@ vars:
 tasks:
   tidy:
     desc: go mod tidy
+    dir: '{{.TASKFILE_DIR}}'
     cmds:
       - go mod tidy
 
