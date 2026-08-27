@@ -7,9 +7,11 @@ import (
 )
 
 type grpcAdapter struct {
-	scheduleTransport ScheduleTransport
-	weekTransport     WeekTransport
 	pb.UnimplementedScheduleServiceServer
+
+	scheduleTransport        ScheduleTransport
+	weekTransport            WeekTransport
+	teacherScheduleTransport TeacherScheduleTransport
 }
 
 func (g *grpcAdapter) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
@@ -22,4 +24,20 @@ func (g *grpcAdapter) GetGroupScheduleByWeek(ctx context.Context, req *pb.GroupS
 
 func (g *grpcAdapter) GetAvailableWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error) {
 	return g.weekTransport.GetAvailableWeeks(ctx, req)
+}
+
+func (g *grpcAdapter) GetTeacherSchedule(ctx context.Context, req *pb.TeacherScheduleRequest) (*pb.TeacherScheduleResponse, error) {
+	return g.teacherScheduleTransport.GetTeacherSchedule(ctx, req)
+}
+
+func (g *grpcAdapter) GetTeacherScheduleByWeek(ctx context.Context, req *pb.TeacherScheduleRequest) (*pb.TeacherScheduleResponse, error) {
+	return g.teacherScheduleTransport.GetTeacherScheduleByWeek(ctx, req)
+}
+
+func (g *grpcAdapter) GetAvailableTeacherWeeks(ctx context.Context, req *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error) {
+	return g.teacherScheduleTransport.GetAvailableTeacherWeeks(ctx, req)
+}
+
+func (g *grpcAdapter) GetTeacherNames(ctx context.Context, req *pb.Empty) (*pb.TeacherNamesResponse, error) {
+	return g.teacherScheduleTransport.GetTeacherNames(ctx, req)
 }
