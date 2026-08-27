@@ -1,60 +1,15 @@
 version: '3'
 
 vars:
-    BIN_EXT: '{{if eq OS "windows"}}.exe{{end}}' # shit for windows
+  BIN_EXT: '{{if eq OS "windows"}}.exe{{end}}' # shit for windows
 
 tasks:
-    gen:
-        desc: Генерирует *.pb.go из scraper.proto через buf
-        dir: '{{.TASKFILE_DIR}}'
-        deps:
-            - ':install-buf'
-            - ':install-protoc-plugins'
-        cmds:
-            # buf ищет плагины в PATH, поэтому подкладываем bin с protoc-gen-go
-            - |
-                PATH="{{.ROOT_DIR}}/bin:$PATH" "{{.ROOT_DIR}}/bin/buf{{.BIN_EXT}}" generate
-
-    tidy:
-        desc: go mod tidy
-        cmds:
-            - go mod tidy
-
-    build:
-        desc: Собирает proto
-        dir: '{{.TASKFILE_DIR}}'
-        cmds:
-            - go build ./...
-
-    vet:
-        desc: go vet proto
-        dir: '{{.TASKFILE_DIR}}'
-        cmds:
-            - go vet ./...
-
-    test:
-        desc: Unit-тесты proto
-        dir: '{{.TASKFILE_DIR}}'
-        cmds:
-            - go test ./...
-
-    format:
-        desc: Форматирует proto (сгенерированные файлы не трогает)
-        dir: '{{.TASKFILE_DIR}}'
-        deps: [':install-golangci-lint']
-        cmds:
-            - '"{{.ROOT_DIR}}/bin/golangci-lint{{.BIN_EXT}}" fmt --config={{.ROOT_DIR}}/.golangci.yml'
-
-    lint:
-        desc: Линтим proto
-        dir: '{{.TASKFILE_DIR}}'
-        deps: [':install-golangci-lint']
-        cmds:
-            - '"{{.ROOT_DIR}}/bin/golangci-lint{{.BIN_EXT}}" run ./... --config={{.ROOT_DIR}}/.golangci.yml'
-
-    lint:fix:
-        desc: Фиксит golangci-lint в proto
-        dir: '{{.TASKFILE_DIR}}'
-        deps: [':install-golangci-lint']
-        cmds:
-            - '"{{.ROOT_DIR}}/bin/golangci-lint{{.BIN_EXT}}" run ./... --fix --config={{.ROOT_DIR}}/.golangci.yml'
+  gen:
+    desc: Генерирует *.pb.go из scraper.proto через buf
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - ':install-buf'
+      - ':install-protoc-plugins'
+    cmds:
+      - |
+        PATH="{{.ROOT_DIR}}/bin:$PATH" "{{.ROOT_DIR}}/bin/buf{{.BIN_EXT}}" generate
