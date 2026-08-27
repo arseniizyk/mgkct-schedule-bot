@@ -3,12 +3,12 @@ package schedule
 import (
 	"context"
 	"errors"
-	"testing"
-
 	"log/slog"
+	"testing"
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/errors"
 )
@@ -36,6 +36,29 @@ func (m *mockUserRepository) UserIDsByGroupID(_ context.Context, _ int) ([]int64
 
 func (m *mockUserRepository) SetUserGroup(_ context.Context, chatID int64, groupID int) error {
 	_, _ = chatID, groupID
+	return nil
+}
+
+func (m *mockUserRepository) SetTeacher(_ context.Context, chatID int64, teacherName string) error {
+	_, _ = chatID, teacherName
+	return nil
+}
+
+func (m *mockUserRepository) GetTeacher(_ context.Context, chatID int64) (string, error) {
+	_ = chatID
+	return "", nil
+}
+
+func (m *mockUserRepository) UserIDsByTeacherName(_ context.Context, teacherName string) ([]int64, error) {
+	_ = teacherName
+	return nil, nil
+}
+
+func (m *mockUserRepository) GetState(_ context.Context, _ int64) (string, error) {
+	return "", nil
+}
+
+func (m *mockUserRepository) SetState(_ context.Context, _ int64, _ string) error {
 	return nil
 }
 
@@ -75,6 +98,7 @@ var (
 	errScheduleNoGroup = errors.New("not found")
 )
 
+//nolint:gochecknoglobals // общий фикстур для всех подтестов
 var testGroup = &pb.Group{Id: 99}
 
 func TestScheduleUsecase_GetGroupScheduleByChatID(t *testing.T) {

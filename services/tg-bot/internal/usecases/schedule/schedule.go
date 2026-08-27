@@ -6,6 +6,7 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/repository"
 )
 
@@ -33,13 +34,13 @@ func (s *ScheduleUsecase) GetGroupScheduleByChatID(ctx context.Context, chatID i
 
 	groupID, err := s.userRepository.GroupByChatID(ctx, chatID)
 	if err != nil {
-		log.Error("error getting user group from repository", "error", err)
+		log.ErrorContext(ctx, "error getting user group from repository", "error", err)
 		return nil, err
 	}
 
 	resp, err := s.scheduleTransport.GetGroupSchedule(ctx, groupID)
 	if err != nil {
-		log.Error("failed get group schedule:", "group_id", groupID, "error", err)
+		log.ErrorContext(ctx, "failed get group schedule:", "group_id", groupID, "error", err)
 		return nil, err
 	}
 
@@ -54,7 +55,7 @@ func (s *ScheduleUsecase) GetGroupSchedule(ctx context.Context, groupID int) (*p
 
 	resp, err := s.scheduleTransport.GetGroupSchedule(ctx, groupID)
 	if err != nil {
-		log.Error("failed get group schedule:", "error", err)
+		log.ErrorContext(ctx, "failed get group schedule:", "error", err)
 		return nil, err
 	}
 
@@ -70,7 +71,7 @@ func (s *ScheduleUsecase) GetGroupScheduleByWeek(ctx context.Context, groupID in
 
 	resp, err := s.scheduleTransport.GetGroupScheduleByWeek(ctx, groupID, week)
 	if err != nil {
-		log.Error("failed group schedule by week", "error", err)
+		log.ErrorContext(ctx, "failed group schedule by week", "error", err)
 		return nil, err
 	}
 

@@ -6,13 +6,14 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/entities"
-	domainerr "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/errors"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/entities"
+	domainerr "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/errors"
 )
 
 type WeekTransport struct {
@@ -49,28 +50,28 @@ func (t *WeekTransport) GetAvailableWeeks(ctx context.Context, week *time.Time) 
 	if err != nil {
 		s, ok := status.FromError(err)
 		if !ok {
-			log.Error("failed getting status from error", "error", err)
+			log.ErrorContext(ctx, "failed getting status from error", "error", err)
 			return entities.Weeks{}, domainerr.ErrServiceInternal
 		}
 
 		switch s.Code() {
 		case codes.NotFound:
-			log.Warn("weeks not found")
+			log.WarnContext(ctx, "weeks not found")
 			return entities.Weeks{}, domainerr.ErrWeekNotFound
 		default:
-			log.Error("unexpected status code from service", "status_code", s.Code())
+			log.ErrorContext(ctx, "unexpected status code from service", "status_code", s.Code())
 			return entities.Weeks{}, domainerr.ErrServiceInternal
 		}
 	}
 
-	res := entities.Weeks{Current: resp.Current.AsTime()}
+	res := entities.Weeks{Current: resp.GetCurrent().AsTime()}
 
-	if resp.Prev.IsValid() && !resp.Prev.AsTime().IsZero() {
-		res.Prev = resp.Prev.AsTime()
+	if resp.GetPrev().IsValid() && !resp.GetPrev().AsTime().IsZero() {
+		res.Prev = resp.GetPrev().AsTime()
 	}
 
-	if resp.Next.IsValid() && !resp.Next.AsTime().IsZero() {
-		res.Next = resp.Next.AsTime()
+	if resp.GetNext().IsValid() && !resp.GetNext().AsTime().IsZero() {
+		res.Next = resp.GetNext().AsTime()
 	}
 
 	return res, nil

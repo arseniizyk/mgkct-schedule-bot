@@ -7,10 +7,11 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	tele "gopkg.in/telebot.v4"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
-	tele "gopkg.in/telebot.v4"
 )
 
 func Day(log *slog.Logger, scheduleProvider ScheduleProvider) tele.HandlerFunc {
@@ -50,6 +51,6 @@ func Day(log *slog.Logger, scheduleProvider ScheduleProvider) tele.HandlerFunc {
 		msg := formatter.FormatScheduleDay(schedule)
 
 		return c.Send(msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineDayKeyboard(int(schedule.Id), formatter.EffectiveDayIndex(schedule)))
+			keyboard.InlineDayKeyboard(int(schedule.GetId()), formatter.EffectiveDayIndex(schedule), len(schedule.GetDays())))
 	}
 }

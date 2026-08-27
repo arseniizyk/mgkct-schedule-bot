@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/errors"
 	infradb "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/infrastructure/db"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 func newTestRepo(t *testing.T) (*UserRepository, func()) {
@@ -20,7 +21,8 @@ func newTestRepo(t *testing.T) (*UserRepository, func()) {
 
 	ctx := context.Background()
 
-	pgContainer, err := postgres.Run(ctx,
+	pgContainer, err := postgres.Run(
+		ctx,
 		"postgres:18-alpine",
 		postgres.WithDatabase("users"),
 		postgres.WithUsername("postgres"),

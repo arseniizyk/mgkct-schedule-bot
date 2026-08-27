@@ -40,7 +40,7 @@ func (w *WeekUsecase) GetAvailableWeeks(ctx context.Context, week *time.Time) (e
 
 	resp, err := w.weekTransport.GetAvailableWeeks(ctx, week)
 	if err != nil {
-		log.Error("failed get available weeks:", "err", err)
+		log.ErrorContext(ctx, "failed get available weeks:", "err", err)
 		return entities.Weeks{}, err
 	}
 
