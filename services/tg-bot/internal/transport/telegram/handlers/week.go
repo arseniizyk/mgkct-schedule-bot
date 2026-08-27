@@ -7,10 +7,11 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	tele "gopkg.in/telebot.v4"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
-	tele "gopkg.in/telebot.v4"
 )
 
 func Week(log *slog.Logger, scheduleProvider ScheduleProvider, weekProvider WeekProvider) tele.HandlerFunc {
@@ -53,9 +54,9 @@ func Week(log *slog.Logger, scheduleProvider ScheduleProvider, weekProvider Week
 		weeks, err := weekProvider.GetAvailableWeeks(ctx, nil)
 		if err != nil {
 			log.Error("failed to get available weeks")
-			return c.Send(msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+			return sendLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
 
-		return c.Send(msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(int(schedule.Id), weeks))
+		return sendLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(int(schedule.GetId()), weeks))
 	}
 }

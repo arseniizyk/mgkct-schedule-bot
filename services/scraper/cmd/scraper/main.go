@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/app"
 )
 

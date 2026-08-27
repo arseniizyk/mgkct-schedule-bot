@@ -15,7 +15,8 @@ func LoggingUnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 		resp, err = handler(ctx, req)
 		st := status.Convert(err)
 
-		log.Info("gRPC request",
+		log.InfoContext(
+			ctx, "gRPC request",
 			"method", info.FullMethod,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"error", st.Message(),

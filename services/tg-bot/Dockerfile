@@ -29,7 +29,7 @@ WORKDIR /app
 
 COPY --from=builder /app/tg-bot .
 
-COPY configs /app/configs
+COPY configs/.env.example /app/configs/.env.example
 
 RUN chown -R appuser:appuser /app
 

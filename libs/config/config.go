@@ -52,13 +52,13 @@ func New(configPath string) (*Config, error) {
 
 	if configPath == "" {
 		if err := cleanenv.ReadEnv(&cfg); err != nil {
-			return nil, fmt.Errorf("%s: failed to load from env: %s", op, err)
+			return nil, fmt.Errorf("%s: failed to load from env: %w", op, err)
 		}
 		return &cfg, nil
 	}
 
 	if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
-		return nil, fmt.Errorf("%s: failed to load from file: %s", op, err)
+		return nil, fmt.Errorf("%s: failed to load from file: %w", op, err)
 	}
 
 	return &cfg, nil

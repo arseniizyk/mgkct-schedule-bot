@@ -1,55 +1,45 @@
 version: '3'
 
 vars:
-    BIN_EXT: '{{if eq OS "windows"}}.exe{{end}}' # shit for windows
+  BIN_EXT: '{{if eq OS "windows"}}.exe{{end}}' # shit for windows
 
 tasks:
-    tidy:
-        desc: go mod tidy
-        cmds:
-            - go mod tidy
+  tidy:
+    desc: go mod tidy
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - go mod tidy
 
-    build:
-        desc: Собирает scraper
-        dir: '{{.TASKFILE_DIR}}'
-        cmds:
-            - go build ./...
+  test:
+    desc: Unit-тесты scraper
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - go test ./...
 
-    vet:
-        desc: go vet scraper
-        dir: '{{.TASKFILE_DIR}}'
-        cmds:
-            - go vet ./...
+  test:integration:
+    desc: Интеграционные тесты scraper (нужен запущенный Docker)
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - go test -tags=integration ./...
 
-    test:
-        desc: Unit-тесты scraper
-        dir: '{{.TASKFILE_DIR}}'
-        cmds:
-            - go test ./...
+  format:
+    desc: Форматирует server (gofumpt + gci)
+    dir: '{{.TASKFILE_DIR}}'
+    deps: [":install-formatters"]
+    cmds:
+      - '"{{.ROOT_DIR}}/bin/gofumpt{{.BIN_EXT}}" -extra -w .'
+      - '"{{.ROOT_DIR}}/bin/gci{{.BIN_EXT}}" write -s standard -s default -s "prefix(github.com/arseniizyk/mgkct-schedule-bot/services/scraper)" .'
 
-    test:integration:
-        desc: Интеграционные тесты scraper (нужен запущенный Docker)
-        dir: '{{.TASKFILE_DIR}}'
-        cmds:
-            - go test -tags=integration ./...
+  lint:
+    desc: Линтим scraper
+    dir: '{{.TASKFILE_DIR}}'
+    deps: [':install-golangci-lint']
+    cmds:
+      - '"{{.ROOT_DIR}}/bin/golangci-lint{{.BIN_EXT}}" run ./... --config={{.ROOT_DIR}}/.golangci.yml'
 
-    format:
-        desc: Форматирует scraper
-        dir: '{{.TASKFILE_DIR}}'
-        deps: [':install-golangci-lint']
-        cmds:
-            - '"{{.ROOT_DIR}}/bin/golangci-lint{{.BIN_EXT}}" fmt --config={{.ROOT_DIR}}/.golangci.yml'
-
-    lint:
-        desc: Линтим scraper
-        dir: '{{.TASKFILE_DIR}}'
-        deps: [':install-golangci-lint']
-        cmds:
-            - '"{{.ROOT_DIR}}/bin/golangci-lint{{.BIN_EXT}}" run ./... --config={{.ROOT_DIR}}/.golangci.yml'
-
-    lint:fix:
-        desc: Фиксит golangci-lint в scraper
-        dir: '{{.TASKFILE_DIR}}'
-        deps: [':install-golangci-lint']
-        cmds:
-            - '"{{.ROOT_DIR}}/bin/golangci-lint{{.BIN_EXT}}" run ./... --fix --config={{.ROOT_DIR}}/.golangci.yml'
+  lint:fix:
+    desc: Фиксит golangci-lint в scraper
+    dir: '{{.TASKFILE_DIR}}'
+    deps: [':install-golangci-lint']
+    cmds:
+      - '"{{.ROOT_DIR}}/bin/golangci-lint{{.BIN_EXT}}" run ./... --fix --config={{.ROOT_DIR}}/.golangci.yml'

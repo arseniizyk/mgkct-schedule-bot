@@ -1,8 +1,9 @@
 package handlers
 
 import (
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 	tele "gopkg.in/telebot.v4"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 )
 
 func Calls() tele.HandlerFunc {

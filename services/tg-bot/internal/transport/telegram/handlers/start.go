@@ -5,9 +5,10 @@ import (
 	"log/slog"
 	"time"
 
+	tele "gopkg.in/telebot.v4"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
-	tele "gopkg.in/telebot.v4"
 )
 
 func Start(log *slog.Logger, userSaver UserSaver) tele.HandlerFunc {

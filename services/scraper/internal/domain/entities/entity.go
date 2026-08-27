@@ -11,6 +11,11 @@ type UpdatedGroup struct {
 	IsWeekUpdated bool
 }
 
+type UpdatedTeacher struct {
+	Teacher       *pb.Teacher
+	IsWeekUpdated bool
+}
+
 type WeekNavigation struct {
 	Prev    time.Time
 	Current time.Time

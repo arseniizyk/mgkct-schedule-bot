@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"net"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
 	"github.com/jackc/pgx/v5/pgxpool"
-
 	_ "github.com/jackc/pgx/v5/stdlib" // драйвер database/sql для goose
 	"github.com/pressly/goose/v3"
 )
@@ -18,11 +18,10 @@ var migrationsFS embed.FS
 
 func Connect(ctx context.Context, cfg *config.PostgresConfig) (*pgxpool.Pool, error) {
 	dsn := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		"postgres://%s:%s@%s/%s?sslmode=disable",
 		cfg.User,
 		cfg.Password,
-		cfg.Host,
-		cfg.Port,
+		net.JoinHostPort(cfg.Host, cfg.Port),
 		cfg.DBName,
 	)
 
