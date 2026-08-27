@@ -435,11 +435,13 @@ func (x *Subject) GetIsEmpty() bool {
 }
 
 type Pair struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
-	Teacher       string                 `protobuf:"bytes,3,opt,name=teacher,proto3" json:"teacher,omitempty"`
-	Class         string                 `protobuf:"bytes,4,opt,name=class,proto3" json:"class,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Type  string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	// group — номер группы, к которой относится пара. Раньше поле называлось
+	// teacher, хотя хранило номер группы (перегрузка смысла).
+	Group         string `protobuf:"bytes,3,opt,name=group,proto3" json:"group,omitempty"`
+	Class         string `protobuf:"bytes,4,opt,name=class,proto3" json:"class,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -488,9 +490,9 @@ func (x *Pair) GetType() string {
 	return ""
 }
 
-func (x *Pair) GetTeacher() string {
+func (x *Pair) GetGroup() string {
 	if x != nil {
-		return x.Teacher
+		return x.Group
 	}
 	return ""
 }
@@ -500,6 +502,242 @@ func (x *Pair) GetClass() string {
 		return x.Class
 	}
 	return ""
+}
+
+type Empty struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Empty) Reset() {
+	*x = Empty{}
+	mi := &file_scraper_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Empty) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Empty) ProtoMessage() {}
+
+func (x *Empty) ProtoReflect() protoreflect.Message {
+	mi := &file_scraper_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Empty.ProtoReflect.Descriptor instead.
+func (*Empty) Descriptor() ([]byte, []int) {
+	return file_scraper_proto_rawDescGZIP(), []int{9}
+}
+
+type TeacherScheduleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Week          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=week,proto3,oneof" json:"week,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TeacherScheduleRequest) Reset() {
+	*x = TeacherScheduleRequest{}
+	mi := &file_scraper_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TeacherScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TeacherScheduleRequest) ProtoMessage() {}
+
+func (x *TeacherScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_scraper_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TeacherScheduleRequest.ProtoReflect.Descriptor instead.
+func (*TeacherScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_scraper_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *TeacherScheduleRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *TeacherScheduleRequest) GetWeek() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Week
+	}
+	return nil
+}
+
+type TeacherScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Teacher       *Teacher               `protobuf:"bytes,1,opt,name=teacher,proto3" json:"teacher,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TeacherScheduleResponse) Reset() {
+	*x = TeacherScheduleResponse{}
+	mi := &file_scraper_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TeacherScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TeacherScheduleResponse) ProtoMessage() {}
+
+func (x *TeacherScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_scraper_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TeacherScheduleResponse.ProtoReflect.Descriptor instead.
+func (*TeacherScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_scraper_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *TeacherScheduleResponse) GetTeacher() *Teacher {
+	if x != nil {
+		return x.Teacher
+	}
+	return nil
+}
+
+type Teacher struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Week          *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=week,proto3" json:"week,omitempty"`
+	Days          []*Day                 `protobuf:"bytes,3,rep,name=days,proto3" json:"days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Teacher) Reset() {
+	*x = Teacher{}
+	mi := &file_scraper_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Teacher) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Teacher) ProtoMessage() {}
+
+func (x *Teacher) ProtoReflect() protoreflect.Message {
+	mi := &file_scraper_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Teacher.ProtoReflect.Descriptor instead.
+func (*Teacher) Descriptor() ([]byte, []int) {
+	return file_scraper_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *Teacher) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Teacher) GetWeek() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Week
+	}
+	return nil
+}
+
+func (x *Teacher) GetDays() []*Day {
+	if x != nil {
+		return x.Days
+	}
+	return nil
+}
+
+type TeacherNamesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Names         []string               `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TeacherNamesResponse) Reset() {
+	*x = TeacherNamesResponse{}
+	mi := &file_scraper_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TeacherNamesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TeacherNamesResponse) ProtoMessage() {}
+
+func (x *TeacherNamesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_scraper_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TeacherNamesResponse.ProtoReflect.Descriptor instead.
+func (*TeacherNamesResponse) Descriptor() ([]byte, []int) {
+	return file_scraper_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *TeacherNamesResponse) GetNames() []string {
+	if x != nil {
+		return x.Names
+	}
+	return nil
 }
 
 var File_scraper_proto protoreflect.FileDescriptor
@@ -535,16 +773,33 @@ const file_scraper_proto_rawDesc = "" +
 	"\bsubjects\x18\x02 \x03(\v2\x10.scraper.SubjectR\bsubjects\"I\n" +
 	"\aSubject\x12#\n" +
 	"\x05pairs\x18\x01 \x03(\v2\r.scraper.PairR\x05pairs\x12\x19\n" +
-	"\bis_empty\x18\x02 \x01(\bR\aisEmpty\"^\n" +
+	"\bis_empty\x18\x02 \x01(\bR\aisEmpty\"Z\n" +
 	"\x04Pair\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04type\x18\x02 \x01(\tR\x04type\x12\x18\n" +
-	"\ateacher\x18\x03 \x01(\tR\ateacher\x12\x14\n" +
-	"\x05class\x18\x04 \x01(\tR\x05class2\x93\x02\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
+	"\x05group\x18\x03 \x01(\tR\x05group\x12\x14\n" +
+	"\x05class\x18\x04 \x01(\tR\x05class\"\a\n" +
+	"\x05Empty\"j\n" +
+	"\x16TeacherScheduleRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x123\n" +
+	"\x04week\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x04week\x88\x01\x01B\a\n" +
+	"\x05_week\"E\n" +
+	"\x17TeacherScheduleResponse\x12*\n" +
+	"\ateacher\x18\x01 \x01(\v2\x10.scraper.TeacherR\ateacher\"o\n" +
+	"\aTeacher\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
+	"\x04week\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x04week\x12 \n" +
+	"\x04days\x18\x03 \x03(\v2\f.scraper.DayR\x04days\",\n" +
+	"\x14TeacherNamesResponse\x12\x14\n" +
+	"\x05names\x18\x01 \x03(\tR\x05names2\xea\x04\n" +
 	"\x0fScheduleService\x12Q\n" +
 	"\x10GetGroupSchedule\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponse\x12W\n" +
 	"\x16GetGroupScheduleByWeek\x12\x1d.scraper.GroupScheduleRequest\x1a\x1e.scraper.GroupScheduleResponse\x12T\n" +
-	"\x11GetAvailableWeeks\x12\x1e.scraper.AvailableWeeksRequest\x1a\x1f.scraper.AvailableWeeksResponseB8Z6github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pbb\x06proto3"
+	"\x11GetAvailableWeeks\x12\x1e.scraper.AvailableWeeksRequest\x1a\x1f.scraper.AvailableWeeksResponse\x12W\n" +
+	"\x12GetTeacherSchedule\x12\x1f.scraper.TeacherScheduleRequest\x1a .scraper.TeacherScheduleResponse\x12]\n" +
+	"\x18GetTeacherScheduleByWeek\x12\x1f.scraper.TeacherScheduleRequest\x1a .scraper.TeacherScheduleResponse\x12[\n" +
+	"\x18GetAvailableTeacherWeeks\x12\x1e.scraper.AvailableWeeksRequest\x1a\x1f.scraper.AvailableWeeksResponse\x12@\n" +
+	"\x0fGetTeacherNames\x12\x0e.scraper.Empty\x1a\x1d.scraper.TeacherNamesResponseB8Z6github.com/arseniizyk/mgkct-schedule-bot/libs/proto;pbb\x06proto3"
 
 var (
 	file_scraper_proto_rawDescOnce sync.Once
@@ -558,44 +813,61 @@ func file_scraper_proto_rawDescGZIP() []byte {
 	return file_scraper_proto_rawDescData
 }
 
-var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_scraper_proto_goTypes = []any{
-	(*AvailableWeeksRequest)(nil),  // 0: scraper.AvailableWeeksRequest
-	(*AvailableWeeksResponse)(nil), // 1: scraper.AvailableWeeksResponse
-	(*GroupScheduleRequest)(nil),   // 2: scraper.GroupScheduleRequest
-	(*GroupScheduleResponse)(nil),  // 3: scraper.GroupScheduleResponse
-	(*Schedule)(nil),               // 4: scraper.Schedule
-	(*Group)(nil),                  // 5: scraper.Group
-	(*Day)(nil),                    // 6: scraper.Day
-	(*Subject)(nil),                // 7: scraper.Subject
-	(*Pair)(nil),                   // 8: scraper.Pair
-	nil,                            // 9: scraper.Schedule.GroupsEntry
-	(*timestamppb.Timestamp)(nil),  // 10: google.protobuf.Timestamp
+	(*AvailableWeeksRequest)(nil),   // 0: scraper.AvailableWeeksRequest
+	(*AvailableWeeksResponse)(nil),  // 1: scraper.AvailableWeeksResponse
+	(*GroupScheduleRequest)(nil),    // 2: scraper.GroupScheduleRequest
+	(*GroupScheduleResponse)(nil),   // 3: scraper.GroupScheduleResponse
+	(*Schedule)(nil),                // 4: scraper.Schedule
+	(*Group)(nil),                   // 5: scraper.Group
+	(*Day)(nil),                     // 6: scraper.Day
+	(*Subject)(nil),                 // 7: scraper.Subject
+	(*Pair)(nil),                    // 8: scraper.Pair
+	(*Empty)(nil),                   // 9: scraper.Empty
+	(*TeacherScheduleRequest)(nil),  // 10: scraper.TeacherScheduleRequest
+	(*TeacherScheduleResponse)(nil), // 11: scraper.TeacherScheduleResponse
+	(*Teacher)(nil),                 // 12: scraper.Teacher
+	(*TeacherNamesResponse)(nil),    // 13: scraper.TeacherNamesResponse
+	nil,                             // 14: scraper.Schedule.GroupsEntry
+	(*timestamppb.Timestamp)(nil),   // 15: google.protobuf.Timestamp
 }
 var file_scraper_proto_depIdxs = []int32{
-	10, // 0: scraper.AvailableWeeksRequest.week:type_name -> google.protobuf.Timestamp
-	10, // 1: scraper.AvailableWeeksResponse.next:type_name -> google.protobuf.Timestamp
-	10, // 2: scraper.AvailableWeeksResponse.current:type_name -> google.protobuf.Timestamp
-	10, // 3: scraper.AvailableWeeksResponse.prev:type_name -> google.protobuf.Timestamp
-	10, // 4: scraper.GroupScheduleRequest.week:type_name -> google.protobuf.Timestamp
+	15, // 0: scraper.AvailableWeeksRequest.week:type_name -> google.protobuf.Timestamp
+	15, // 1: scraper.AvailableWeeksResponse.next:type_name -> google.protobuf.Timestamp
+	15, // 2: scraper.AvailableWeeksResponse.current:type_name -> google.protobuf.Timestamp
+	15, // 3: scraper.AvailableWeeksResponse.prev:type_name -> google.protobuf.Timestamp
+	15, // 4: scraper.GroupScheduleRequest.week:type_name -> google.protobuf.Timestamp
 	5,  // 5: scraper.GroupScheduleResponse.group:type_name -> scraper.Group
-	9,  // 6: scraper.Schedule.groups:type_name -> scraper.Schedule.GroupsEntry
-	10, // 7: scraper.Group.week:type_name -> google.protobuf.Timestamp
+	14, // 6: scraper.Schedule.groups:type_name -> scraper.Schedule.GroupsEntry
+	15, // 7: scraper.Group.week:type_name -> google.protobuf.Timestamp
 	6,  // 8: scraper.Group.days:type_name -> scraper.Day
 	7,  // 9: scraper.Day.subjects:type_name -> scraper.Subject
 	8,  // 10: scraper.Subject.pairs:type_name -> scraper.Pair
-	5,  // 11: scraper.Schedule.GroupsEntry.value:type_name -> scraper.Group
-	2,  // 12: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
-	2,  // 13: scraper.ScheduleService.GetGroupScheduleByWeek:input_type -> scraper.GroupScheduleRequest
-	0,  // 14: scraper.ScheduleService.GetAvailableWeeks:input_type -> scraper.AvailableWeeksRequest
-	3,  // 15: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
-	3,  // 16: scraper.ScheduleService.GetGroupScheduleByWeek:output_type -> scraper.GroupScheduleResponse
-	1,  // 17: scraper.ScheduleService.GetAvailableWeeks:output_type -> scraper.AvailableWeeksResponse
-	15, // [15:18] is the sub-list for method output_type
-	12, // [12:15] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	15, // 11: scraper.TeacherScheduleRequest.week:type_name -> google.protobuf.Timestamp
+	12, // 12: scraper.TeacherScheduleResponse.teacher:type_name -> scraper.Teacher
+	15, // 13: scraper.Teacher.week:type_name -> google.protobuf.Timestamp
+	6,  // 14: scraper.Teacher.days:type_name -> scraper.Day
+	5,  // 15: scraper.Schedule.GroupsEntry.value:type_name -> scraper.Group
+	2,  // 16: scraper.ScheduleService.GetGroupSchedule:input_type -> scraper.GroupScheduleRequest
+	2,  // 17: scraper.ScheduleService.GetGroupScheduleByWeek:input_type -> scraper.GroupScheduleRequest
+	0,  // 18: scraper.ScheduleService.GetAvailableWeeks:input_type -> scraper.AvailableWeeksRequest
+	10, // 19: scraper.ScheduleService.GetTeacherSchedule:input_type -> scraper.TeacherScheduleRequest
+	10, // 20: scraper.ScheduleService.GetTeacherScheduleByWeek:input_type -> scraper.TeacherScheduleRequest
+	0,  // 21: scraper.ScheduleService.GetAvailableTeacherWeeks:input_type -> scraper.AvailableWeeksRequest
+	9,  // 22: scraper.ScheduleService.GetTeacherNames:input_type -> scraper.Empty
+	3,  // 23: scraper.ScheduleService.GetGroupSchedule:output_type -> scraper.GroupScheduleResponse
+	3,  // 24: scraper.ScheduleService.GetGroupScheduleByWeek:output_type -> scraper.GroupScheduleResponse
+	1,  // 25: scraper.ScheduleService.GetAvailableWeeks:output_type -> scraper.AvailableWeeksResponse
+	11, // 26: scraper.ScheduleService.GetTeacherSchedule:output_type -> scraper.TeacherScheduleResponse
+	11, // 27: scraper.ScheduleService.GetTeacherScheduleByWeek:output_type -> scraper.TeacherScheduleResponse
+	1,  // 28: scraper.ScheduleService.GetAvailableTeacherWeeks:output_type -> scraper.AvailableWeeksResponse
+	13, // 29: scraper.ScheduleService.GetTeacherNames:output_type -> scraper.TeacherNamesResponse
+	23, // [23:30] is the sub-list for method output_type
+	16, // [16:23] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_scraper_proto_init() }
@@ -606,13 +878,14 @@ func file_scraper_proto_init() {
 	file_scraper_proto_msgTypes[0].OneofWrappers = []any{}
 	file_scraper_proto_msgTypes[1].OneofWrappers = []any{}
 	file_scraper_proto_msgTypes[2].OneofWrappers = []any{}
+	file_scraper_proto_msgTypes[10].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scraper_proto_rawDesc), len(file_scraper_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

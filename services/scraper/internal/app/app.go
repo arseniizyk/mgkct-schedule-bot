@@ -7,11 +7,18 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/libs/config"
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
 	database "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/infrastructure/db"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/infrastructure/logger"
@@ -19,11 +26,6 @@ import (
 	repository "github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository/postgres"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/service"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/transport"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/nats-io/nats.go"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 type WeekService interface {
@@ -47,6 +49,25 @@ type WeekTransport interface {
 	PublishWeekUpdates(date time.Time) error
 }
 
+type TeacherScheduleService interface {
+	GetTeacherLatestSchedule(ctx context.Context, name string) (*pb.Teacher, error)
+	GetTeacherScheduleByWeek(ctx context.Context, name string, week time.Time) (*pb.Teacher, error)
+	GetAllTeacherNames(ctx context.Context) ([]string, error)
+	GetAvailableWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error)
+	CheckTeacherScheduleUpdates(ctx context.Context, interval time.Duration) <-chan *entities.UpdatedTeacher
+}
+
+type TeacherScheduleTransport interface {
+	GetTeacherSchedule(context.Context, *pb.TeacherScheduleRequest) (*pb.TeacherScheduleResponse, error)
+	GetTeacherScheduleByWeek(context.Context, *pb.TeacherScheduleRequest) (*pb.TeacherScheduleResponse, error)
+	GetAvailableTeacherWeeks(context.Context, *pb.AvailableWeeksRequest) (*pb.AvailableWeeksResponse, error)
+	GetTeacherNames(context.Context, *pb.Empty) (*pb.TeacherNamesResponse, error)
+	PublishTeacherScheduleUpdate(*pb.Teacher) error
+	PublishTeacherWeekUpdates(date time.Time) error
+}
+
+const checkScheduleInterval = 1 * time.Minute
+
 type App struct {
 	log *slog.Logger
 	cfg *config.Config
@@ -58,11 +79,16 @@ type App struct {
 	health     *health.Server
 	nc         *nats.Conn
 
+	wg sync.WaitGroup
+
 	scheduleService   ScheduleService
 	scheduleTransport ScheduleTransport
 
 	weekService   WeekService
 	weekTransport WeekTransport
+
+	teacherScheduleService   TeacherScheduleService
+	teacherScheduleTransport TeacherScheduleTransport
 }
 
 func New(log *slog.Logger, cfg *config.Config) (*App, error) {
@@ -79,14 +105,18 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	}
 
 	scheduleRepo := repository.NewScheduleRepository(a.pool)
+	teacherScheduleRepo := repository.NewTeacherScheduleRepository(a.pool)
 
-	parser := parser.New(a.log)
+	studentParser := parser.New(a.log)
+	teacherParser := parser.NewTeacherParser(a.log)
 
-	a.scheduleService = service.NewScheduleService(a.log, scheduleRepo, parser)
+	a.scheduleService = service.NewScheduleService(a.log, scheduleRepo, studentParser)
 	a.weekService = service.NewWeekService(a.log, scheduleRepo)
+	a.teacherScheduleService = service.NewTeacherScheduleService(a.log, teacherScheduleRepo, teacherParser)
 
 	a.scheduleTransport = transport.NewScheduleTransport(a.log, a.scheduleService, a.nc)
 	a.weekTransport = transport.NewWeekTransport(a.log, a.weekService, a.nc)
+	a.teacherScheduleTransport = transport.NewTeacherScheduleTransport(a.log, a.teacherScheduleService, a.nc)
 
 	return a, nil
 }
@@ -97,12 +127,12 @@ func (a *App) Run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go func() {
-		updatesCh := a.scheduleService.CheckScheduleUpdates(ctx, time.Minute)
+	a.wg.Go(func() {
+		updatesCh := a.scheduleService.CheckScheduleUpdates(ctx, checkScheduleInterval)
 		for update := range updatesCh {
 			if update.IsWeekUpdated {
-				log.Info("week updated, publishing to NATS", "week", update.Group.Week.AsTime())
-				if err := a.weekTransport.PublishWeekUpdates(update.Group.Week.AsTime()); err != nil {
+				log.Info("week updated, publishing to NATS", "week", update.Group.GetWeek().AsTime())
+				if err := a.weekTransport.PublishWeekUpdates(update.Group.GetWeek().AsTime()); err != nil {
 					log.Error("failed publishing new week to NATS", "err", err)
 				} else {
 					log.Info("updated Week Successfully published")
@@ -116,12 +146,34 @@ func (a *App) Run() error {
 				log.Info("updated schedule successfully published")
 			}
 		}
-	}()
+	})
+
+	a.wg.Go(func() {
+		teacherUpdatesCh := a.teacherScheduleService.CheckTeacherScheduleUpdates(ctx, checkScheduleInterval)
+		for update := range teacherUpdatesCh {
+			if update.IsWeekUpdated {
+				log.Info("teacher week updated, publishing to NATS", "week", update.Teacher.GetWeek().AsTime())
+				if err := a.teacherScheduleTransport.PublishTeacherWeekUpdates(update.Teacher.GetWeek().AsTime()); err != nil {
+					log.Error("failed publishing new teacher week to NATS", "err", err)
+				} else {
+					log.Info("updated teacher week successfully published")
+				}
+				continue
+			}
+
+			if err := a.teacherScheduleTransport.PublishTeacherScheduleUpdate(update.Teacher); err != nil {
+				log.Error("failed publishing updated teacher schedule to NATS", "err", err)
+			} else {
+				log.Info("updated teacher schedule successfully published")
+			}
+		}
+	})
 
 	go func() {
 		pb.RegisterScheduleServiceServer(a.grpcServer, &grpcAdapter{
-			scheduleTransport: a.scheduleTransport,
-			weekTransport:     a.weekTransport,
+			scheduleTransport:        a.scheduleTransport,
+			weekTransport:            a.weekTransport,
+			teacherScheduleTransport: a.teacherScheduleTransport,
 		})
 		healthpb.RegisterHealthServer(a.grpcServer, a.health)
 		a.health.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -147,6 +199,8 @@ func (a *App) shutdown(stopUpdates context.CancelFunc) error {
 	a.grpcServer.GracefulStop()
 
 	stopUpdates()
+
+	a.wg.Wait()
 
 	if err := a.nc.Drain(); err != nil {
 		return fmt.Errorf("failed to drain from NATS: %w", err)
@@ -186,7 +240,8 @@ func (a *App) initNATS() error {
 func (a *App) initNetListener() error {
 	var err error
 
-	a.lis, err = net.Listen("tcp", fmt.Sprintf(":%s", a.cfg.Scraper.GRPCPort))
+	listenConfig := net.ListenConfig{}
+	a.lis, err = listenConfig.Listen(context.Background(), "tcp", net.JoinHostPort("0.0.0.0", a.cfg.Scraper.GRPCPort))
 	if err != nil {
 		return fmt.Errorf("can't start net listener: Port: %s, error: %w", a.cfg.Scraper.GRPCPort, err)
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
+
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 )
@@ -57,7 +58,7 @@ func TestFormatSubjectsEscapesDynamicFields(t *testing.T) {
 	day := &pb.Day{
 		Name: "Пятница",
 		Subjects: []*pb.Subject{
-			{Pairs: []*pb.Pair{{Name: "Основы C* и C_", Type: "лб", Teacher: "Иванов_И. И.", Class: "3-205 (к)"}}},
+			{Pairs: []*pb.Pair{{Name: "Основы C* и C_", Type: "лб", Group: "Иванов_И. И.", Class: "3-205 (к)"}}},
 		},
 	}
 
@@ -82,10 +83,10 @@ func TestFormatScheduleDaySecondShift(t *testing.T) {
 			{IsEmpty: true},
 			{IsEmpty: true},
 			{IsEmpty: true},
-			{Pairs: []*pb.Pair{{Name: "Математика", Type: "лк", Teacher: "Костян Д. Р.", Class: "1-322"}}},
+			{Pairs: []*pb.Pair{{Name: "Математика", Type: "лк", Group: "Костян Д. Р.", Class: "1-322"}}},
 			{IsEmpty: true},
 			{IsEmpty: true},
-			{Pairs: []*pb.Pair{{Name: "Физика", Type: "лк", Teacher: "Лебедкина Н. В.", Class: "2-314"}}},
+			{Pairs: []*pb.Pair{{Name: "Физика", Type: "лк", Group: "Лебедкина Н. В.", Class: "2-314"}}},
 		},
 	}
 
@@ -111,7 +112,7 @@ func TestFormatScheduleDayFirstShiftLeadingEmpty(t *testing.T) {
 		Name: "Вторник",
 		Subjects: []*pb.Subject{
 			{IsEmpty: true},
-			{Pairs: []*pb.Pair{{Name: "История", Type: "лк", Teacher: "Галенко Е. Л."}}},
+			{Pairs: []*pb.Pair{{Name: "История", Type: "лк", Group: "Галенко Е. Л."}}},
 		},
 	}
 
@@ -202,7 +203,7 @@ func TestFormatScheduleDay(t *testing.T) {
 		day := &pb.Day{
 			Name: "Вторник",
 			Subjects: []*pb.Subject{
-				{Pairs: []*pb.Pair{{Name: "Физика", Type: "лк", Teacher: "Иванов"}}},
+				{Pairs: []*pb.Pair{{Name: "Физика", Type: "лк", Group: "Иванов"}}},
 			},
 		}
 
@@ -218,7 +219,7 @@ func TestFormatScheduleDay(t *testing.T) {
 		day := &pb.Day{
 			Name: "Вторник",
 			Subjects: []*pb.Subject{
-				{Pairs: []*pb.Pair{{Name: "Физика", Type: "пр", Teacher: "Иванов", Class: "301"}}},
+				{Pairs: []*pb.Pair{{Name: "Физика", Type: "пр", Group: "Иванов", Class: "301"}}},
 			},
 		}
 
@@ -236,8 +237,8 @@ func TestFormatScheduleDay(t *testing.T) {
 			Subjects: []*pb.Subject{
 				{IsEmpty: true},
 				{Pairs: []*pb.Pair{
-					{Name: "Химия 1", Type: "лк", Teacher: "Петрова"},
-					{Name: "Химия 2", Type: "пр", Teacher: "Петрова"},
+					{Name: "Химия 1", Type: "лк", Group: "Петрова"},
+					{Name: "Химия 2", Type: "пр", Group: "Петрова"},
 				}},
 			},
 		}

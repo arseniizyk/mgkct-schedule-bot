@@ -23,9 +23,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ScheduleService_GetGroupSchedule_FullMethodName       = "/scraper.ScheduleService/GetGroupSchedule"
-	ScheduleService_GetGroupScheduleByWeek_FullMethodName = "/scraper.ScheduleService/GetGroupScheduleByWeek"
-	ScheduleService_GetAvailableWeeks_FullMethodName      = "/scraper.ScheduleService/GetAvailableWeeks"
+	ScheduleService_GetGroupSchedule_FullMethodName         = "/scraper.ScheduleService/GetGroupSchedule"
+	ScheduleService_GetGroupScheduleByWeek_FullMethodName   = "/scraper.ScheduleService/GetGroupScheduleByWeek"
+	ScheduleService_GetAvailableWeeks_FullMethodName        = "/scraper.ScheduleService/GetAvailableWeeks"
+	ScheduleService_GetTeacherSchedule_FullMethodName       = "/scraper.ScheduleService/GetTeacherSchedule"
+	ScheduleService_GetTeacherScheduleByWeek_FullMethodName = "/scraper.ScheduleService/GetTeacherScheduleByWeek"
+	ScheduleService_GetAvailableTeacherWeeks_FullMethodName = "/scraper.ScheduleService/GetAvailableTeacherWeeks"
+	ScheduleService_GetTeacherNames_FullMethodName          = "/scraper.ScheduleService/GetTeacherNames"
 )
 
 // ScheduleServiceClient is the client API for ScheduleService service.
@@ -35,6 +39,10 @@ type ScheduleServiceClient interface {
 	GetGroupSchedule(ctx context.Context, in *GroupScheduleRequest, opts ...grpc.CallOption) (*GroupScheduleResponse, error)
 	GetGroupScheduleByWeek(ctx context.Context, in *GroupScheduleRequest, opts ...grpc.CallOption) (*GroupScheduleResponse, error)
 	GetAvailableWeeks(ctx context.Context, in *AvailableWeeksRequest, opts ...grpc.CallOption) (*AvailableWeeksResponse, error)
+	GetTeacherSchedule(ctx context.Context, in *TeacherScheduleRequest, opts ...grpc.CallOption) (*TeacherScheduleResponse, error)
+	GetTeacherScheduleByWeek(ctx context.Context, in *TeacherScheduleRequest, opts ...grpc.CallOption) (*TeacherScheduleResponse, error)
+	GetAvailableTeacherWeeks(ctx context.Context, in *AvailableWeeksRequest, opts ...grpc.CallOption) (*AvailableWeeksResponse, error)
+	GetTeacherNames(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*TeacherNamesResponse, error)
 }
 
 type scheduleServiceClient struct {
@@ -75,6 +83,46 @@ func (c *scheduleServiceClient) GetAvailableWeeks(ctx context.Context, in *Avail
 	return out, nil
 }
 
+func (c *scheduleServiceClient) GetTeacherSchedule(ctx context.Context, in *TeacherScheduleRequest, opts ...grpc.CallOption) (*TeacherScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TeacherScheduleResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_GetTeacherSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scheduleServiceClient) GetTeacherScheduleByWeek(ctx context.Context, in *TeacherScheduleRequest, opts ...grpc.CallOption) (*TeacherScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TeacherScheduleResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_GetTeacherScheduleByWeek_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scheduleServiceClient) GetAvailableTeacherWeeks(ctx context.Context, in *AvailableWeeksRequest, opts ...grpc.CallOption) (*AvailableWeeksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AvailableWeeksResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_GetAvailableTeacherWeeks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scheduleServiceClient) GetTeacherNames(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*TeacherNamesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TeacherNamesResponse)
+	err := c.cc.Invoke(ctx, ScheduleService_GetTeacherNames_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ScheduleServiceServer is the server API for ScheduleService service.
 // All implementations must embed UnimplementedScheduleServiceServer
 // for forward compatibility.
@@ -82,6 +130,10 @@ type ScheduleServiceServer interface {
 	GetGroupSchedule(context.Context, *GroupScheduleRequest) (*GroupScheduleResponse, error)
 	GetGroupScheduleByWeek(context.Context, *GroupScheduleRequest) (*GroupScheduleResponse, error)
 	GetAvailableWeeks(context.Context, *AvailableWeeksRequest) (*AvailableWeeksResponse, error)
+	GetTeacherSchedule(context.Context, *TeacherScheduleRequest) (*TeacherScheduleResponse, error)
+	GetTeacherScheduleByWeek(context.Context, *TeacherScheduleRequest) (*TeacherScheduleResponse, error)
+	GetAvailableTeacherWeeks(context.Context, *AvailableWeeksRequest) (*AvailableWeeksResponse, error)
+	GetTeacherNames(context.Context, *Empty) (*TeacherNamesResponse, error)
 	mustEmbedUnimplementedScheduleServiceServer()
 }
 
@@ -100,6 +152,18 @@ func (UnimplementedScheduleServiceServer) GetGroupScheduleByWeek(context.Context
 }
 func (UnimplementedScheduleServiceServer) GetAvailableWeeks(context.Context, *AvailableWeeksRequest) (*AvailableWeeksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetAvailableWeeks not implemented")
+}
+func (UnimplementedScheduleServiceServer) GetTeacherSchedule(context.Context, *TeacherScheduleRequest) (*TeacherScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTeacherSchedule not implemented")
+}
+func (UnimplementedScheduleServiceServer) GetTeacherScheduleByWeek(context.Context, *TeacherScheduleRequest) (*TeacherScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTeacherScheduleByWeek not implemented")
+}
+func (UnimplementedScheduleServiceServer) GetAvailableTeacherWeeks(context.Context, *AvailableWeeksRequest) (*AvailableWeeksResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAvailableTeacherWeeks not implemented")
+}
+func (UnimplementedScheduleServiceServer) GetTeacherNames(context.Context, *Empty) (*TeacherNamesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTeacherNames not implemented")
 }
 func (UnimplementedScheduleServiceServer) mustEmbedUnimplementedScheduleServiceServer() {}
 func (UnimplementedScheduleServiceServer) testEmbeddedByValue()                         {}
@@ -176,6 +240,78 @@ func _ScheduleService_GetAvailableWeeks_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ScheduleService_GetTeacherSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TeacherScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).GetTeacherSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_GetTeacherSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).GetTeacherSchedule(ctx, req.(*TeacherScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScheduleService_GetTeacherScheduleByWeek_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TeacherScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).GetTeacherScheduleByWeek(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_GetTeacherScheduleByWeek_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).GetTeacherScheduleByWeek(ctx, req.(*TeacherScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScheduleService_GetAvailableTeacherWeeks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AvailableWeeksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).GetAvailableTeacherWeeks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_GetAvailableTeacherWeeks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).GetAvailableTeacherWeeks(ctx, req.(*AvailableWeeksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScheduleService_GetTeacherNames_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScheduleServiceServer).GetTeacherNames(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ScheduleService_GetTeacherNames_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScheduleServiceServer).GetTeacherNames(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ScheduleService_ServiceDesc is the grpc.ServiceDesc for ScheduleService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -194,6 +330,22 @@ var ScheduleService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAvailableWeeks",
 			Handler:    _ScheduleService_GetAvailableWeeks_Handler,
+		},
+		{
+			MethodName: "GetTeacherSchedule",
+			Handler:    _ScheduleService_GetTeacherSchedule_Handler,
+		},
+		{
+			MethodName: "GetTeacherScheduleByWeek",
+			Handler:    _ScheduleService_GetTeacherScheduleByWeek_Handler,
+		},
+		{
+			MethodName: "GetAvailableTeacherWeeks",
+			Handler:    _ScheduleService_GetAvailableTeacherWeeks_Handler,
+		},
+		{
+			MethodName: "GetTeacherNames",
+			Handler:    _ScheduleService_GetTeacherNames_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

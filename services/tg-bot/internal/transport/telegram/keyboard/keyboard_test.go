@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/entities"
 	tele "gopkg.in/telebot.v4"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/domain/entities"
 )
 
 // btnFull возвращает данные в том виде, в котором их получит бот: "<unique>|<args>".
@@ -39,12 +40,12 @@ func TestInlineScheduleKeyboard(t *testing.T) {
 }
 
 func TestInlineDayKeyboard(t *testing.T) {
-	if got := InlineDayKeyboard(0, 2); got != nil {
+	if got := InlineDayKeyboard(0, 2, 6); got != nil {
 		t.Errorf("InlineDayKeyboard(0, ...) = %v, want nil", got)
 	}
 
 	t.Run("monday", func(t *testing.T) {
-		m := InlineDayKeyboard(88, 0)
+		m := InlineDayKeyboard(88, 0, 6)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
 		want := []string{"prevday|88:5", "currentweek|88", "nextday|88:1"}
@@ -54,10 +55,20 @@ func TestInlineDayKeyboard(t *testing.T) {
 	})
 
 	t.Run("saturday wraps to monday", func(t *testing.T) {
-		m := InlineDayKeyboard(88, 5)
+		m := InlineDayKeyboard(88, 5, 6)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
 		want := []string{"prevday|88:4", "currentweek|88", "nextday|88:0"}
+		if strings.Join(datas, ",") != strings.Join(want, ",") {
+			t.Errorf("buttons = %v, want %v", datas, want)
+		}
+	})
+
+	t.Run("fewer days wraps within count", func(t *testing.T) {
+		m := InlineDayKeyboard(88, 2, 3)
+		datas := btnFull(t, m.InlineKeyboard[0])
+
+		want := []string{"prevday|88:1", "currentweek|88", "nextday|88:0"}
 		if strings.Join(datas, ",") != strings.Join(want, ",") {
 			t.Errorf("buttons = %v, want %v", datas, want)
 		}

@@ -14,6 +14,11 @@ service ScheduleService {
     rpc GetGroupSchedule(GroupScheduleRequest) returns (GroupScheduleResponse);
     rpc GetGroupScheduleByWeek(GroupScheduleRequest) returns (GroupScheduleResponse);
     rpc GetAvailableWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);
+
+    rpc GetTeacherSchedule(TeacherScheduleRequest) returns (TeacherScheduleResponse);
+    rpc GetTeacherScheduleByWeek(TeacherScheduleRequest) returns (TeacherScheduleResponse);
+    rpc GetAvailableTeacherWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);
+    rpc GetTeacherNames(Empty) returns (TeacherNamesResponse);
 }
 
 message AvailableWeeksRequest{
@@ -58,6 +63,29 @@ message Subject {
 message Pair {
     string name = 1;
     string type = 2;
-    string teacher = 3;
+    // group — номер группы, к которой относится пара. Раньше поле называлось
+    // teacher, хотя хранило номер группы (перегрузка смысла).
+    string group = 3;
     string class = 4;
+}
+
+message Empty {}
+
+message TeacherScheduleRequest {
+    string name = 1;
+    optional google.protobuf.Timestamp week = 2;
+}
+
+message TeacherScheduleResponse {
+    Teacher teacher = 1;
+}
+
+message Teacher {
+    string name = 1;
+    google.protobuf.Timestamp week = 2;
+    repeated Day days = 3;
+}
+
+message TeacherNamesResponse {
+    repeated string names = 1;
 }

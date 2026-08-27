@@ -7,12 +7,13 @@ import (
 	"time"
 
 	pb "github.com/arseniizyk/mgkct-schedule-bot/libs/proto"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
-	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 	"github.com/nats-io/nats.go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/services/scraper/internal/repository"
 )
 
 type ScheduleService interface {
@@ -36,7 +37,7 @@ func NewScheduleTransport(log *slog.Logger, scheduleService ScheduleService, nat
 }
 
 func (t *ScheduleTransport) GetGroupSchedule(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
-	sch, err := t.scheduleService.GetGroupLatestSchedule(ctx, req.Id)
+	sch, err := t.scheduleService.GetGroupLatestSchedule(ctx, req.GetId())
 	if err != nil {
 		if errors.Is(err, repository.ErrGroupNotFound) {
 			return nil, status.Errorf(codes.NotFound, "group not found")
@@ -55,7 +56,7 @@ func (t *ScheduleTransport) GetGroupSchedule(ctx context.Context, req *pb.GroupS
 }
 
 func (t *ScheduleTransport) GetGroupScheduleByWeek(ctx context.Context, req *pb.GroupScheduleRequest) (*pb.GroupScheduleResponse, error) {
-	group, err := t.scheduleService.GetGroupScheduleByWeek(ctx, req.Id, req.Week.AsTime())
+	group, err := t.scheduleService.GetGroupScheduleByWeek(ctx, req.GetId(), req.GetWeek().AsTime())
 	if err != nil {
 		if errors.Is(err, repository.ErrGroupNotFound) {
 			return nil, status.Errorf(codes.NotFound, "group not found")
@@ -75,8 +76,8 @@ func (t *ScheduleTransport) GetGroupScheduleByWeek(ctx context.Context, req *pb.
 func (t *ScheduleTransport) PublishScheduleUpdate(group *pb.Group) error {
 	log := t.log.With(
 		"operation", "transport.schedule.ScheduleTransport.PublishScheduleUpdate",
-		"group_id", group.Id,
-		"week", group.Week.String(),
+		"group_id", group.GetId(),
+		"week", group.GetWeek().String(),
 	)
 
 	log.Info("Publishing schedule update")

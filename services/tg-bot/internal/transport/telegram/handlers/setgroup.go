@@ -6,10 +6,11 @@ import (
 	"strconv"
 	"time"
 
+	tele "gopkg.in/telebot.v4"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/services/tg-bot/internal/transport/telegram/state"
-	tele "gopkg.in/telebot.v4"
 )
 
 func SetGroup(log *slog.Logger, groupSetter UserGroupSetter, stateSetter StateSetter) tele.HandlerFunc {
