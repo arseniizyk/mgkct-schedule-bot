@@ -16,7 +16,7 @@ require (
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
-	google.golang.org/grpc v1.83.1
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/telebot.v4 v4.0.0-beta.10
 )
