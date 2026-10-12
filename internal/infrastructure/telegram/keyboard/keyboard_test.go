@@ -118,3 +118,24 @@ func TestReplyScheduleKeyboard(t *testing.T) {
 		t.Errorf("expected 3 rows with webApp, got %d", len(markupWithApp.ReplyKeyboard))
 	}
 }
+
+func TestInlineArchiveWeeksKeyboard(t *testing.T) {
+	if got := InlineArchiveWeeksKeyboard("g", "101", nil); got != nil {
+		t.Errorf("expected nil for empty weeks, got %v", got)
+	}
+
+	w1, _ := time.Parse("2006-01-02", "2026-10-12")
+	w2, _ := time.Parse("2006-01-02", "2026-10-05")
+	m := InlineArchiveWeeksKeyboard("g", "101", []time.Time{w1, w2})
+	if m == nil || len(m.InlineKeyboard) != 2 {
+		t.Fatalf("expected 2 rows, got %v", m)
+	}
+
+	btn := m.InlineKeyboard[0][0]
+	if btn.Unique+"|"+btn.Data != "arch_sel|g:101:12.10.2026" {
+		t.Errorf("unexpected callback data: %s|%s", btn.Unique, btn.Data)
+	}
+	if !strings.Contains(btn.Text, "12.10 — 17.10.2026") {
+		t.Errorf("unexpected button label: %s", btn.Text)
+	}
+}

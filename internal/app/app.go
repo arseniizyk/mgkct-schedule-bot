@@ -125,6 +125,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/cabinets", handlers.Cabinets(log, analyticsSvc))
 	bot.Handle("/endings", handlers.Endings(log, analyticsSvc))
 	bot.Handle("/stats", handlers.Stats(log, analyticsSvc, userRepo, teacherSvc))
+	bot.Handle("/archive", handlers.Archive(log, scheduleSvc, teacherSvc, userRepo))
 
 	// Кнопки Reply-клавиатуры
 	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, teacherSvc, userRepo))

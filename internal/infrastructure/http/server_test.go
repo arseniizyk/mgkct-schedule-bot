@@ -56,6 +56,9 @@ func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, e
 func (m *mockScheduleRepo) GetAll(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
 	return nil, nil
 }
+func (m *mockScheduleRepo) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
+	return []time.Time{time.Now(), time.Now().AddDate(0, 0, -7)}, nil
+}
 func (m *mockScheduleRepo) GetWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error) {
 	return entities.WeekNavigation{}, nil
 }
@@ -101,6 +104,9 @@ func (m *mockTeacherRepo) GetAll(ctx context.Context) ([]*entities.Teacher, erro
 }
 func (m *mockTeacherRepo) GetAllTeacherNames(ctx context.Context) ([]string, error) {
 	return []string{"Иванов И.И.", "Петрова Е.А."}, nil
+}
+func (m *mockTeacherRepo) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
+	return []time.Time{time.Now(), time.Now().AddDate(0, 0, -7)}, nil
 }
 func (m *mockTeacherRepo) GetWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error) {
 	return entities.WeekNavigation{}, nil
@@ -381,6 +387,37 @@ func TestHandleStats(t *testing.T) {
 
 	// Teacher stats
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/analytics/stats?teacher=Иванов+И.И.", nil)
+	rec = httptest.NewRecorder()
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
+func TestHandleArchiveWeeks(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	// Default / group weeks
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/archive/weeks", nil)
+	rec := httptest.NewRecorder()
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var res struct {
+		Weeks []string `json:"weeks"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed unmarshaling json: %v", err)
+	}
+	if len(res.Weeks) != 2 {
+		t.Fatalf("expected 2 archive weeks, got %d", len(res.Weeks))
+	}
+
+	// Teacher archive weeks
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/archive/weeks?teacher=Иванов+И.И.", nil)
 	rec = httptest.NewRecorder()
 	srv.httpSrv.Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

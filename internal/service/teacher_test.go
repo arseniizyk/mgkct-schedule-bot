@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/service"
@@ -88,4 +89,31 @@ func TestTeacherService_ValidateTeacher_WithFaculty(t *testing.T) {
 	assert.False(t, ok)
 	assert.Empty(t, matched)
 	assert.Empty(t, candidates)
+}
+
+func TestTeacherService_Archive(t *testing.T) {
+	ctx := context.Background()
+
+	week, _ := time.Parse("2006-01-02", "2026-10-12")
+	tRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+	_ = tRepo.Save(ctx, "Иванов И. И.", week, &entities.Teacher{Name: "Иванов И. И.", Week: week})
+
+	svc := service.NewTeacherService(slog.Default(), tRepo, nil, nil)
+
+	// GetAllWeeks
+	weeks, err := svc.GetAllWeeks(ctx, "Иванов И. И.")
+	require.NoError(t, err)
+	assert.Len(t, weeks, 1)
+
+	// GetTeacherArchiveSchedule by exact monday
+	targetMonday, _ := time.Parse("2006-01-02", "2026-10-12")
+	teach, err := svc.GetTeacherArchiveSchedule(ctx, "Иванов И. И.", targetMonday)
+	require.NoError(t, err)
+	assert.Equal(t, "Иванов И. И.", teach.Name)
+
+	// GetTeacherArchiveSchedule by midweek date (Wednesday 14.10)
+	midweek, _ := time.Parse("2006-01-02", "2026-10-14")
+	teach, err = svc.GetTeacherArchiveSchedule(ctx, "Иванов И. И.", midweek)
+	require.NoError(t, err)
+	assert.Equal(t, "Иванов И. И.", teach.Name)
 }
