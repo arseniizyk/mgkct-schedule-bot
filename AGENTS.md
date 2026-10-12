@@ -1,42 +1,51 @@
 # AGENTS.md
 
-## Repo layout
+## Архитектура репозитория
 
-- Multi-module Go monorepo (Go 1.27), **no root go.mod**. Each module is separate:
-  - `services/scraper`, `services/tg-bot` — the two apps
-  - `libs/config` — shared config loader (cleanenv)
-  - `proto` — directory, but its module path is `github.com/arseniizyk/mgkct-schedule-bot/libs/proto` (path ≠ module name)
-- Services reference `libs/config` and `proto` via `replace` directives pointing at `../../libs/config` and `../../proto`. Run all go commands from inside the module dir (`services/scraper`, `services/tg-bot`).
-- Entrypoints: `services/<svc>/cmd/<svc>/main.go` (no more `cmd/migrate`).
-- Service internals follow the same layering in both: `internal/{app,domain,infrastructure,repository,service,transport}` (tg-bot also has `usecases`).
+- Единый Go-модуль (`github.com/arseniizyk/mgkct-schedule-bot`, Go 1.27), корневой `go.mod`.
+- Монолитное приложение, объединяющее функции парсера расписания (Scraper) и Telegram-бота:
+  - Точка входа: `cmd/bot/main.go`.
+  - Слой инициализации и graceful shutdown: `internal/app`.
+  - Конфигурация: `internal/config` (cleanenv + godotenv).
+  - Доменные сущности: `internal/domain/entities` (чистые структуры Go без protobuf).
+  - Хранилище данных: `internal/repository` (SQLite через `modernc.org/sqlite` в WAL-режиме).
+  - База данных и миграции: `internal/infrastructure/db` (embedded goose миграции в `internal/infrastructure/db/migrations/000001_init.sql`).
+  - Парсинг: `internal/infrastructure/parser` (Colly + goquery, раздельный парсинг нескольких недель).
+  - Бизнес-логика: `internal/service` (`ScheduleService`, `TeacherService`, `ScraperService` со Smart Polling).
+  - Telegram: `internal/infrastructure/telegram` (обработчики telebot, клавиатуры, форматирование, рассылка с троттлингом).
 
-## Commands
+## Команды
 
-- Full stack: `task run` (= `docker compose --env-file=./configs/.env up --build -d`), stop+purge: `task down`. Requires `configs/.env` copied from `configs/.env.example` with a real `TELEGRAM_TOKEN`.
-- Root orchestration over all modules (`scraper`, `tg-bot`, `config`, `proto` includes): `task test` (unit), `task test-integration` (needs Docker; build tag `integration`), `task lint` / `task lint:fix` / `task format`, `task deps:tidy`.
-- Per-module tasks live in each module's own Taskfile (`services/<svc>/Taskfile.yml`, `libs/config/Taskfile.yml`, `proto/Taskfile.yml`): `task <mod>:build|vet|test|test:integration|format|lint|lint:fix|tidy`.
-- Lint/format use a pinned golangci-lint auto-installed into `./bin` on first use (root task `install-golangci-lint`; config at repo root `.golangci.yml`). `bin/` is gitignored. Integration-tagged code needs `-tags=integration`.
+- Сборка бинарника: `task build` (`go build -o bin/bot ./cmd/bot`).
+- Локальный запуск: `task run` (`go run ./cmd/bot`).
+- Запуск тестов: `task test` (`go test -v ./internal/...`).
+- Линтер и форматирование: `task lint`, `task lint:fix`, `task format`.
+- Очистка модулей: `task tidy` (`go mod tidy`).
+- Контейнеризация: `task up` (`docker compose --env-file=./configs/.env up --build -d`), `task down`.
 
-## Config & environment
+## Конфигурация и переменные окружения
 
-- Config is env-var based (cleanenv), loaded either from process env or a file passed via `-config_path` flag (Docker uses `env_file: ./configs/.env`). There is no default config file locally — set vars or pass a path when running outside Docker.
-- DB env vars use prefixes: scraper DB = `SCRAPER_DB_*`, bot DB = `BOT_DB_*` (see `libs/config/config.go` `env-prefix` tags). `HOST` and `NAME` are required.
-- `ENV` must be `dev` or `prod`; anything else panics at startup. `NATS_URL` defaults to `nats://nats:4222` (container hostname — won't work outside compose). Bot health HTTP port = `BOT_HEALTH_PORT` (default 8081).
-- Host-side NATS port is **4223** (`4223:4222` mapping); scraper gRPC is on 9001, Adminer on 8080.
+- Конфигурация загружается автоматически из `configs/.env` или переменных окружения процесса.
+- `ENV`: `dev` или `prod`.
+- `BOT_TOKEN` (или legacy `TELEGRAM_TOKEN`): токен Telegram-бота.
+- `BOT_HEALTH_PORT`: порт HTTP healthcheck-сервера (по умолчанию 8081).
+- `DB_PATH`: путь к файлу SQLite (по умолчанию `bot.db`).
+- `SCRAPER_INTERVAL`: стандартный дневной интервал опроса (по умолчанию `1m`).
+- `SCRAPER_PEAK_INTERVAL`: пиковый турбо-интервал (по умолчанию `25s`, активен в Пт 12:00 — Сб утро до нахождения новой недели).
+- `SCRAPER_NIGHT_INTERVAL`: ночной интервал (по умолчанию `20m`, с 22:00 до 08:00 и по воскресеньям).
 
-## Migrations & codegen
+## Миграции
 
-- Migrations use **embedded goose**: SQL files live in `services/<svc>/internal/infrastructure/db/migrations/*.sql` (`embed` cannot reach parent dirs) and are applied automatically at service startup via `goose.UpContext` in each service's `internal/infrastructure/db` package. Version state sits in the `goose_db_version` table; restarts are idempotent.
-- To add a migration for `<svc>`: create `NNNNNN_name.sql` with `-- +goose Up` / `-- +goose Down` sections. Wrap plpgsql function bodies in `-- +goose StatementBegin` / `-- +goose StatementEnd`, otherwise goose splits them at inner semicolons.
-- `proto/*.pb.go` are generated from `proto/scraper.proto` by `task proto:gen` (pinned buf + protoc plugins auto-installed into `./bin`). Regenerate rather than hand-editing.
+- Миграции встроены в бинарник через `embed` и применяются автоматически при старте приложения через `goose.UpContext`.
+- Таблицы: `schedules`, `teacher_schedules`, `users`, `goose_db_version`.
+- Все SQL-триггеры для SQLite должны оборачиваться в `-- +goose StatementBegin` / `-- +goose StatementEnd`.
 
-## Healthchecks & lifecycle
+## Healthcheck и Graceful Shutdown
 
-- compose healthchecks: scraper — gRPC health protocol (`grpc_health_probe` baked into the image); tg-bot — HTTP GET `/healthz` (pings the DB pool, defined in `services/tg-bot/internal/app/health.go`).
-- Graceful shutdown: both apps stop on SIGINT/SIGTERM; tg-bot calls `bot.Stop()` on first signal (telebot does not trap signals itself), then closes gRPC/NATS/pool via defers. Scraper marks gRPC NOT_SERVING, drains NATS last.
+- HTTP GET `/healthz` (порт 8081) проверяет пинг базы данных SQLite.
+- При получении SIGINT/SIGTERM: бот останавливает LongPoller (`bot.Stop()`), отменяет контекст скрапера, закрывает HTTP health-сервер и закрывает подключение к SQLite.
 
-## Conventions
+## Конвенции
 
-- Docs, comments, and commit-facing text are in Russian; keep new user-facing strings and docs consistent.
-- Logging is `slog` JSON (debug level in dev, info in prod); errors use the `op` prefix pattern (`const op = "pkg.Func"` + `fmt.Errorf("%s: ...")`) — see `libs/config/config.go`.
-- Tests are table-driven with testify; integration tests use testcontainers (`-tags=integration`) and reuse the embedded goose migrations through `db.Connect`.
+- Документация, комментарии и сообщения коммитов — на русском языке.
+- Логирование — `slog` JSON. Ошибки содержат префикс операции (`const op = "pkg.Func"`).
