@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"strings"
+
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
@@ -35,13 +37,21 @@ func editLongMessage(c tele.Context, text string, opt ...any) error {
 	}
 
 	if len(chunks) == 1 {
-		return c.Edit(chunks[0], opt...)
+		return safeEdit(c, chunks[0], opt...)
 	}
 
 	if err := c.Delete(); err != nil {
 		// Если не удалось удалить старое сообщение, просто редактируем первое
-		return c.Edit(chunks[0], opt...)
+		return safeEdit(c, chunks[0], opt...)
 	}
 
 	return sendLongMessage(c, text, opt...)
+}
+
+func safeEdit(c tele.Context, what any, opt ...any) error {
+	err := c.Edit(what, opt...)
+	if err != nil && strings.Contains(err.Error(), "message is not modified") {
+		return nil
+	}
+	return err
 }

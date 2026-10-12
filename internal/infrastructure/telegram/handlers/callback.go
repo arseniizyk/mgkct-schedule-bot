@@ -25,15 +25,7 @@ func CallbacksHandler(log *slog.Logger, schedSvc ScheduleService, teacherSvc Tea
 
 		var err error
 		switch {
-		// Группы
-		case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay):
-			err = handleDayNav(ctx, log, c, data, schedSvc)
-		case strings.Contains(data, keyboard.CurrentWeek):
-			err = handleCurrentWeek(ctx, log, c, data, schedSvc)
-		case strings.Contains(data, keyboard.PrevWeek), strings.Contains(data, keyboard.NextWeek):
-			err = handleWeekNav(ctx, log, c, data, schedSvc)
-
-		// Преподаватели
+		// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
 		case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
 			err = handleTeacherDayNav(ctx, log, c, data, teacherSvc)
 		case strings.Contains(data, keyboard.TeacherCurrentWeek):
@@ -41,13 +33,27 @@ func CallbacksHandler(log *slog.Logger, schedSvc ScheduleService, teacherSvc Tea
 		case strings.Contains(data, keyboard.TeacherPrevWeek), strings.Contains(data, keyboard.TeacherNextWeek):
 			err = handleTeacherWeekNav(ctx, log, c, data, teacherSvc)
 
+		// Группы
+		case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay),
+			strings.Contains(data, "prevday"), strings.Contains(data, "nextday"):
+			err = handleDayNav(ctx, log, c, data, schedSvc)
+		case strings.Contains(data, keyboard.CurrentWeek), strings.Contains(data, "currentweek"):
+			err = handleCurrentWeek(ctx, log, c, data, schedSvc)
+		case strings.Contains(data, keyboard.PrevWeek), strings.Contains(data, keyboard.NextWeek),
+			strings.Contains(data, "prevweek"), strings.Contains(data, "nextweek"):
+			err = handleWeekNav(ctx, log, c, data, schedSvc)
+
 		default:
 			log.Warn("unexpected callback", "data", data)
-			err = c.Respond(&tele.CallbackResponse{Text: messages.Internal, ShowAlert: true})
+			return c.Respond(&tele.CallbackResponse{Text: messages.Internal, ShowAlert: true})
 		}
 
 		if err != nil {
-			return err
+			if strings.Contains(err.Error(), "message is not modified") {
+				return c.Respond()
+			}
+			log.Error("callback execution error", "error", err, "data", data)
+			return c.Respond(&tele.CallbackResponse{Text: messages.Internal, ShowAlert: true})
 		}
 
 		return c.Respond()
@@ -80,7 +86,7 @@ func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data st
 		return err
 	}
 
-	return c.Edit(msg, tele.ModeMarkdown, keyboard.InlineDayKeyboard(groupID, dayIdx, len(group.Days)))
+	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineDayKeyboard(groupID, dayIdx, len(group.Days)))
 }
 
 func handleCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService) error {
@@ -158,7 +164,7 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 		return err
 	}
 
-	return c.Edit(msg, tele.ModeMarkdown, keyboard.InlineTeacherDayKeyboard(teacherName, dayIdx, len(teacher.Days)))
+	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherDayKeyboard(teacherName, dayIdx, len(teacher.Days)))
 }
 
 func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {

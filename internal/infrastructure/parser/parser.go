@@ -20,7 +20,7 @@ import (
 
 const (
 	studentURL     = `https://mgkct.minskedu.gov.by/personnel/for-students/weekly-timetable`
-	requestTimeout = 15 * time.Second
+	requestTimeout = 30 * time.Second
 )
 
 var (
