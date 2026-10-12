@@ -48,8 +48,9 @@ const (
 
 	TeacherSaved       = "Преподаватель успешно сохранён, попробуйте /teacher"
 	TeacherNotFound    = "Преподаватель не найден"
-	WaitingTeacher     = "Введите фамилию преподавателя или /cancel для отмены"
-	TeacherListHeader  = "*Список преподавателей:*"
+	WaitingTeacher         = "Введите фамилию преподавателя или /cancel для отмены"
+	WaitingTeacherSchedule = "Введите фамилию преподавателя для просмотра расписания или /cancel для отмены"
+	TeacherListHeader      = "*Список преподавателей:*"
 	NoTeacherSet       = "У вас не установлен преподаватель, установите через /setteacher"
 	TeacherWeekUpdated = "Доступно расписание преподавателя на следующую неделю"
 	TeacherAmbiguous   = "Найдено несколько преподавателей, уточните:\n%s"
