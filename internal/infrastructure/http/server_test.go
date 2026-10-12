@@ -94,7 +94,7 @@ func setupTestServer(t *testing.T) (*Server, *sql.DB) {
 
 	log := testLogger()
 	schedSvc := service.NewScheduleService(log, &mockScheduleRepo{})
-	teacherSvc := service.NewTeacherService(log, &mockTeacherRepo{})
+	teacherSvc := service.NewTeacherService(log, &mockTeacherRepo{}, nil, nil)
 	userRepo := repository.NewUserRepository(db)
 
 	srv := New(log, cfg, db, schedSvc, teacherSvc, userRepo)
@@ -208,5 +208,26 @@ func TestStaticSPARoot(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
+func TestHandleSubjectsList(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/subjects", nil)
+	rec := httptest.NewRecorder()
+
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var res struct {
+		Subjects map[string]string `json:"subjects"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed unmarshaling json: %v", err)
 	}
 }

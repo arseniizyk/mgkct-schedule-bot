@@ -50,7 +50,8 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) 
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		msg := formatter.FormatTeacherScheduleDay(teacher)
+		member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
+		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleDay(teacher)
 		dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
 
 		return c.Send(
@@ -96,7 +97,8 @@ func TeacherWeek(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo)
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		msg := formatter.FormatTeacherScheduleWeek(teacher)
+		member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
+		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
 		weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
 		if err != nil {
 			weeks = entities.WeekNavigation{}
@@ -141,7 +143,8 @@ func Teachers(log *slog.Logger, teacherSvc TeacherService, sm StateManager) tele
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		msg := formatter.FormatTeacherScheduleWeek(teacher)
+		member, _ := teacherSvc.GetFacultyMember(ctx, matched)
+		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
 		weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
 		if err != nil {
 			weeks = entities.WeekNavigation{}

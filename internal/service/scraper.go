@@ -21,6 +21,10 @@ type TeacherParser interface {
 	Parse(ctx context.Context) ([]*entities.Teacher, error)
 }
 
+type FacultyParser interface {
+	Parse(ctx context.Context) ([]*entities.FacultyMember, error)
+}
+
 type ScraperService struct {
 	log           *slog.Logger
 	cfg           config.ScraperConfig
@@ -29,9 +33,12 @@ type ScraperService struct {
 	scheduleRepo  ScheduleRepository
 	teacherRepo   TeacherScheduleRepository
 	scheduleSvc   *ScheduleService
+	facultyParser FacultyParser
+	facultyRepo   FacultyRepository
 
 	mu                  sync.RWMutex
 	latestWeek          time.Time
+	lastFacultyScrape   time.Time
 	groupHashes         map[string][32]byte // key: "<group_id>:<YYYY-MM-DD>"
 	teacherHashes       map[string][32]byte // key: "<teacher_name>:<YYYY-MM-DD>"
 	newWeekFoundInTurbo bool
@@ -56,6 +63,41 @@ func NewScraperService(
 		scheduleSvc:   scheduleSvc,
 		groupHashes:   make(map[string][32]byte),
 		teacherHashes: make(map[string][32]byte),
+	}
+}
+
+func (s *ScraperService) SetFaculty(facultyParser FacultyParser, facultyRepo FacultyRepository) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.facultyParser = facultyParser
+	s.facultyRepo = facultyRepo
+}
+
+func (s *ScraperService) scrapeFaculty(ctx context.Context) {
+	s.mu.RLock()
+	parser := s.facultyParser
+	repo := s.facultyRepo
+	s.mu.RUnlock()
+
+	if parser == nil || repo == nil {
+		return
+	}
+
+	members, err := parser.Parse(ctx)
+	if err != nil {
+		s.log.ErrorContext(ctx, "failed parsing faculty members", "error", err)
+		return
+	}
+
+	if len(members) > 0 {
+		if err := repo.SaveBatch(ctx, members); err != nil {
+			s.log.ErrorContext(ctx, "failed saving faculty members batch", "error", err)
+			return
+		}
+		s.log.InfoContext(ctx, "faculty members updated successfully", "count", len(members))
+		s.mu.Lock()
+		s.lastFacultyScrape = time.Now()
+		s.mu.Unlock()
 	}
 }
 
@@ -179,6 +221,15 @@ func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 		log.ErrorContext(ctx, "failed parsing teacher schedules", "error", err)
 	} else {
 		s.processTeacherSchedules(ctx, teachers, eventCh)
+	}
+
+	// 3. Скрапинг педсостава (раз в сутки или при первом старте)
+	s.mu.RLock()
+	needFaculty := s.facultyParser != nil && (s.lastFacultyScrape.IsZero() || time.Since(s.lastFacultyScrape) > 24*time.Hour)
+	s.mu.RUnlock()
+
+	if needFaculty {
+		go s.scrapeFaculty(ctx)
 	}
 }
 

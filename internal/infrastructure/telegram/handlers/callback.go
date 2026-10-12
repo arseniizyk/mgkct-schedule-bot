@@ -163,6 +163,9 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 		return err
 	}
 
+	member, _ := svc.GetFacultyMember(ctx, teacherName)
+	msg = formatter.FormatTeacherProfile(member) + msg
+
 	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherDayKeyboard(teacherName, dayIdx, len(teacher.Days)))
 }
 
@@ -174,7 +177,8 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 		return err
 	}
 
-	msg := formatter.FormatTeacherScheduleWeek(teacher)
+	member, _ := svc.GetFacultyMember(ctx, teacherName)
+	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := svc.GetAvailableWeeks(ctx, teacherName, teacher.Week)
 	if err != nil {
 		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
@@ -200,7 +204,8 @@ func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context,
 		return err
 	}
 
-	msg := formatter.FormatTeacherScheduleWeek(teacher)
+	member, _ := svc.GetFacultyMember(ctx, teacherName)
+	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := svc.GetAvailableWeeks(ctx, teacherName, date)
 	if err != nil {
 		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)

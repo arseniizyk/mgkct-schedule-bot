@@ -60,6 +60,7 @@ func New(
 	mux.HandleFunc("GET /api/v1/schedule/teacher", s.handleTeacherSchedule)
 	mux.HandleFunc("GET /api/v1/groups", s.handleGroupsList)
 	mux.HandleFunc("GET /api/v1/teachers", s.handleTeachersList)
+	mux.HandleFunc("GET /api/v1/subjects", s.handleSubjectsList)
 	mux.HandleFunc("GET /api/v1/calls", s.handleCalls)
 	mux.HandleFunc("GET /api/v1/user/profile", s.handleGetUserProfile)
 	mux.HandleFunc("POST /api/v1/user/profile", s.handleSetUserProfile)
@@ -254,8 +255,27 @@ func (s *Server) handleTeachersList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]any{
+	faculty, _ := s.teacherSvc.GetAllFaculty(ctx)
+
+	resp := map[string]any{
 		"teachers": names,
+	}
+	if len(faculty) > 0 {
+		resp["directory"] = faculty
+	}
+
+	s.writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleSubjectsList(w http.ResponseWriter, _ *http.Request) {
+	dict := s.teacherSvc.GetSubjectDictionary()
+	if dict == nil {
+		s.writeJSON(w, http.StatusOK, map[string]any{"subjects": map[string]string{}})
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"subjects": dict.All(),
 	})
 }
 

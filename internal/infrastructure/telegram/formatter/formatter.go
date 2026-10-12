@@ -287,6 +287,30 @@ func subjectHasNoClasses(subject *entities.Subject) bool {
 	return true
 }
 
+func FormatTeacherProfile(member *entities.FacultyMember) string {
+	if member == nil {
+		return ""
+	}
+	var sb strings.Builder
+	if member.FullName != "" && member.FullName != member.ShortName {
+		fmt.Fprintf(&sb, "👨‍🏫 *%s* (%s)\n", escapeMD(member.FullName), escapeMD(member.ShortName))
+	}
+	var meta []string
+	if member.Position != "" {
+		meta = append(meta, member.Position)
+	}
+	if member.Qualification != "" {
+		meta = append(meta, member.Qualification)
+	}
+	if len(meta) > 0 {
+		fmt.Fprintf(&sb, "_%s_\n", escapeMD(strings.Join(meta, " • ")))
+	}
+	if sb.Len() > 0 {
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
 func FormatTeacherScheduleDay(teacher *entities.Teacher) string {
 	dayIdx := EffectiveTeacherDayIndex(teacher)
 	if dayIdx >= len(teacher.Days) {

@@ -125,3 +125,24 @@ func TestFormatScheduleDayAt(t *testing.T) {
 		}
 	})
 }
+
+func TestFormatTeacherProfile(t *testing.T) {
+	if got := FormatTeacherProfile(nil); got != "" {
+		t.Errorf("expected empty string for nil member, got %q", got)
+	}
+
+	member := &entities.FacultyMember{
+		FullName:      "Смирнов Сергей Сергеевич",
+		ShortName:     "Смирнов С. С.",
+		Position:      "Преподаватель",
+		Qualification: "Второй категории",
+	}
+
+	got := FormatTeacherProfile(member)
+	if !strings.Contains(got, "Смирнов Сергей Сергеевич") || !strings.Contains(got, "Смирнов С. С.") {
+		t.Errorf("expected names in profile, got: %s", got)
+	}
+	if !strings.Contains(got, "Преподаватель • Второй категории") {
+		t.Errorf("expected position and qualification, got: %s", got)
+	}
+}
