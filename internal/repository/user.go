@@ -7,22 +7,20 @@ import (
 	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 )
 
 type UserRepository struct {
-	pool *pgxpool.Pool
-	sb   sq.StatementBuilderType
+	db *sql.DB
+	sb sq.StatementBuilderType
 }
 
-func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
+func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{
-		pool: pool,
-		sb:   sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+		db: db,
+		sb: sq.StatementBuilder.PlaceholderFormat(sq.Question),
 	}
 }
 
@@ -32,14 +30,14 @@ func (r *UserRepository) SaveUser(ctx context.Context, u entities.User) error {
 	query := r.sb.Insert("users").
 		Columns("chat_id", "username").
 		Values(u.ChatID, u.Username).
-		Suffix("ON CONFLICT (chat_id) DO UPDATE SET username = EXCLUDED.username")
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET username = excluded.username")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return fmt.Errorf("%s: failed to build sql query: %w", op, err)
 	}
 
-	if _, err = r.pool.Exec(ctx, sqlQuery, args...); err != nil {
+	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
 		return fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}
 
@@ -56,7 +54,7 @@ func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) 
 		return nil, fmt.Errorf("%s: failed to build sql query: %w", op, err)
 	}
 
-	rows, err := r.pool.Query(ctx, sqlQuery, args...)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}
@@ -110,8 +108,8 @@ func (r *UserRepository) GroupByChatID(ctx context.Context, chatID int64) (int, 
 	}
 
 	var groupID sql.NullInt64
-	if err := r.pool.QueryRow(ctx, sqlQuery, args...).Scan(&groupID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&groupID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return 0, domainerr.ErrUserNoGroup
 		}
 		return 0, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
@@ -134,7 +132,7 @@ func (r *UserRepository) UserIDsByGroupID(ctx context.Context, groupID int) ([]i
 		return nil, fmt.Errorf("%s: failed to build sql query: %w", op, err)
 	}
 
-	rows, err := r.pool.Query(ctx, sqlQuery, args...)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}
@@ -162,14 +160,14 @@ func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID
 	query := r.sb.Insert("users").
 		Columns("chat_id", "group_id").
 		Values(chatID, groupID).
-		Suffix("ON CONFLICT (chat_id) DO UPDATE SET group_id = EXCLUDED.group_id")
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET group_id = excluded.group_id")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return fmt.Errorf("%s: failed to build sql query: %w", op, err)
 	}
 
-	if _, err = r.pool.Exec(ctx, sqlQuery, args...); err != nil {
+	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
 		return fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}
 
@@ -182,14 +180,14 @@ func (r *UserRepository) SetTeacher(ctx context.Context, chatID int64, teacherNa
 	query := r.sb.Insert("users").
 		Columns("chat_id", "teacher_name").
 		Values(chatID, teacherName).
-		Suffix("ON CONFLICT (chat_id) DO UPDATE SET teacher_name = EXCLUDED.teacher_name")
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET teacher_name = excluded.teacher_name")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return fmt.Errorf("%s: failed to build sql query: %w", op, err)
 	}
 
-	if _, err = r.pool.Exec(ctx, sqlQuery, args...); err != nil {
+	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
 		return fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}
 
@@ -207,8 +205,8 @@ func (r *UserRepository) GetTeacher(ctx context.Context, chatID int64) (string, 
 	}
 
 	var teacherName sql.NullString
-	if err := r.pool.QueryRow(ctx, sqlQuery, args...).Scan(&teacherName); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&teacherName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", domainerr.ErrUserNoTeacher
 		}
 		return "", fmt.Errorf("%s: failed to execute sql query: %w", op, err)
@@ -232,8 +230,8 @@ func (r *UserRepository) GetState(ctx context.Context, chatID int64) (string, er
 	}
 
 	var state sql.NullString
-	if err := r.pool.QueryRow(ctx, sqlQuery, args...).Scan(&state); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&state); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
 		return "", fmt.Errorf("%s: failed to execute sql query: %w", op, err)
@@ -252,14 +250,14 @@ func (r *UserRepository) SetState(ctx context.Context, chatID int64, state strin
 	query := r.sb.Insert("users").
 		Columns("chat_id", "state").
 		Values(chatID, state).
-		Suffix("ON CONFLICT (chat_id) DO UPDATE SET state = EXCLUDED.state")
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET state = excluded.state")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return fmt.Errorf("%s: failed to build sql query: %w", op, err)
 	}
 
-	if _, err = r.pool.Exec(ctx, sqlQuery, args...); err != nil {
+	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
 		return fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}
 
@@ -276,7 +274,7 @@ func (r *UserRepository) UserIDsByTeacherName(ctx context.Context, teacherName s
 		return nil, fmt.Errorf("%s: failed to build sql query: %w", op, err)
 	}
 
-	rows, err := r.pool.Query(ctx, sqlQuery, args...)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
 	}

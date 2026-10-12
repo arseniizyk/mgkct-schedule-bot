@@ -2,28 +2,27 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 )
 
 type ScheduleRepository struct {
-	pool *pgxpool.Pool
-	sb   squirrel.StatementBuilderType
+	db *sql.DB
+	sb squirrel.StatementBuilderType
 }
 
-func NewScheduleRepository(pool *pgxpool.Pool) *ScheduleRepository {
+func NewScheduleRepository(db *sql.DB) *ScheduleRepository {
 	return &ScheduleRepository{
-		pool: pool,
-		sb:   squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
+		db: db,
+		sb: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Question),
 	}
 }
 
@@ -35,17 +34,18 @@ func (r *ScheduleRepository) Save(ctx context.Context, week time.Time, schedule 
 		return fmt.Errorf("%s: marshal schedule: %w", op, err)
 	}
 
+	weekStr := week.Format("2006-01-02")
 	query := r.sb.Insert("schedules").
 		Columns("week", "schedule").
-		Values(week, data).
-		Suffix("ON CONFLICT (week) DO UPDATE SET schedule = EXCLUDED.schedule")
+		Values(weekStr, string(data)).
+		Suffix("ON CONFLICT(week) DO UPDATE SET schedule = excluded.schedule, updated_at = CURRENT_TIMESTAMP")
 
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return fmt.Errorf("%s: build query to sql: %w", op, err)
 	}
 
-	if _, err := r.pool.Exec(ctx, sql, args...); err != nil {
+	if _, err := r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
 		return fmt.Errorf("%s: exec sql query: %w", op, err)
 	}
 
@@ -55,27 +55,28 @@ func (r *ScheduleRepository) Save(ctx context.Context, week time.Time, schedule 
 func (r *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (*entities.Schedule, error) {
 	const op = "repository.ScheduleRepository.GetByWeek"
 
+	weekStr := week.Format("2006-01-02")
 	query := r.sb.Select("schedule").
 		From("schedules").
-		Where(squirrel.LtOrEq{"week": week}).
+		Where(squirrel.LtOrEq{"week": weekStr}).
 		OrderBy("week DESC").
 		Limit(1)
 
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: build query to sql: %w", op, err)
 	}
 
-	var raw []byte
-	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&raw); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	var raw string
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domainerr.ErrWeekNotFound
 		}
 		return nil, fmt.Errorf("%s: get schedule: %w", op, err)
 	}
 
 	var s entities.Schedule
-	if err := json.Unmarshal(raw, &s); err != nil {
+	if err := json.Unmarshal([]byte(raw), &s); err != nil {
 		return nil, fmt.Errorf("%s: unmarshal schedule: %w", op, err)
 	}
 
@@ -87,24 +88,25 @@ func (r *ScheduleRepository) GetLatest(ctx context.Context) (*entities.Schedule,
 
 	query := r.sb.Select("schedule").
 		From("schedules").
-		OrderBy("updated_at DESC").
+		OrderBy("week DESC").
 		Limit(1)
 
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: build query to sql: %w", op, err)
 	}
 
-	var raw []byte
-	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&raw); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	var raw string
+	err = r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domainerr.ErrScheduleNotFound
 		}
 		return nil, fmt.Errorf("%s: get latest schedule: %w", op, err)
 	}
 
 	var s entities.Schedule
-	if err := json.Unmarshal(raw, &s); err != nil {
+	if err := json.Unmarshal([]byte(raw), &s); err != nil {
 		return nil, fmt.Errorf("%s: unmarshal schedule: %w", op, err)
 	}
 
@@ -122,12 +124,12 @@ func (r *ScheduleRepository) GetWeeks(ctx context.Context, week time.Time) (enti
 			OrderBy("week DESC").
 			Limit(2)
 
-		sql, args, err := query.ToSql()
+		sqlQuery, args, err := query.ToSql()
 		if err != nil {
 			return entities.WeekNavigation{}, fmt.Errorf("%s: failed to create query: %w", op, err)
 		}
 
-		rows, err := r.pool.Query(ctx, sql, args...)
+		rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 		if err != nil {
 			return entities.WeekNavigation{}, fmt.Errorf("%s: repository sql query: %w", op, err)
 		}
@@ -135,9 +137,13 @@ func (r *ScheduleRepository) GetWeeks(ctx context.Context, week time.Time) (enti
 
 		var weeks []time.Time
 		for rows.Next() {
-			var w time.Time
-			if err := rows.Scan(&w); err != nil {
-				return entities.WeekNavigation{}, fmt.Errorf("%s: repository scan rows: %w", op, err)
+			var wStr string
+			if err := rows.Scan(&wStr); err != nil {
+				return entities.WeekNavigation{}, fmt.Errorf("%s: scan row: %w", op, err)
+			}
+			w, err := time.Parse("2006-01-02", wStr)
+			if err != nil {
+				return entities.WeekNavigation{}, fmt.Errorf("%s: parse date %s: %w", op, wStr, err)
 			}
 			weeks = append(weeks, w)
 		}
@@ -155,24 +161,21 @@ func (r *ScheduleRepository) GetWeeks(ctx context.Context, week time.Time) (enti
 		}, nil
 	}
 
-	var current, prev, next time.Time
+	weekStr := week.Format("2006-01-02")
+	var currentStr, prevStr, nextStr string
 
-	if err := r.getWeek(ctx, "DESC", squirrel.Eq{"week": week}, &current); err != nil {
+	if err := r.getWeekStr(ctx, "DESC", squirrel.Eq{"week": weekStr}, &currentStr); err != nil {
 		return entities.WeekNavigation{}, fmt.Errorf("%s: get current week: %w", op, err)
 	}
+	current, _ := time.Parse("2006-01-02", currentStr)
 
-	if err := r.getWeek(ctx, "DESC", squirrel.Lt{"week": week}, &prev); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return entities.WeekNavigation{}, fmt.Errorf("%s: get prev week: %w", op, err)
-		}
-		prev = time.Time{}
+	var prev, next time.Time
+	if err := r.getWeekStr(ctx, "DESC", squirrel.Lt{"week": weekStr}, &prevStr); err == nil {
+		prev, _ = time.Parse("2006-01-02", prevStr)
 	}
 
-	if err := r.getWeek(ctx, "ASC", squirrel.Gt{"week": week}, &next); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return entities.WeekNavigation{}, fmt.Errorf("%s: get next week: %w", op, err)
-		}
-		next = time.Time{}
+	if err := r.getWeekStr(ctx, "ASC", squirrel.Gt{"week": weekStr}, &nextStr); err == nil {
+		next, _ = time.Parse("2006-01-02", nextStr)
 	}
 
 	return entities.WeekNavigation{
@@ -182,21 +185,16 @@ func (r *ScheduleRepository) GetWeeks(ctx context.Context, week time.Time) (enti
 	}, nil
 }
 
-func (r *ScheduleRepository) getWeek(ctx context.Context, orderBy string, pred, dest any) error {
+func (r *ScheduleRepository) getWeekStr(ctx context.Context, orderBy string, pred, dest any) error {
 	query := r.sb.Select("week").
 		From("schedules").
 		Where(pred).
 		OrderBy("week " + orderBy).
 		Limit(1)
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return err
 	}
 
-	row := r.pool.QueryRow(ctx, sql, args...)
-	if err := row.Scan(dest); err != nil {
-		return err
-	}
-
-	return nil
+	return r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(dest)
 }

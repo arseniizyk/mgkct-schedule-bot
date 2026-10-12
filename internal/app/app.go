@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
@@ -30,7 +30,7 @@ import (
 type App struct {
 	log       *slog.Logger
 	cfg       *config.Config
-	pool      *pgxpool.Pool
+	database  *sql.DB
 	bot       *tele.Bot
 	scraper   *service.ScraperService
 	notifier  *notifier.Notifier
@@ -42,16 +42,16 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// 1. Единая база данных
-	pool, err := db.Connect(ctx, &cfg.DB)
+	// 1. Подключение к SQLite с автоматическими миграциями
+	database, err := db.Connect(ctx, &cfg.DB)
 	if err != nil {
 		return nil, fmt.Errorf("app: database connect: %w", err)
 	}
 
 	// 2. Репозитории
-	scheduleRepo := repository.NewScheduleRepository(pool)
-	teacherRepo := repository.NewTeacherScheduleRepository(pool)
-	userRepo := repository.NewUserRepository(pool)
+	scheduleRepo := repository.NewScheduleRepository(database)
+	teacherRepo := repository.NewTeacherScheduleRepository(database)
+	userRepo := repository.NewUserRepository(database)
 
 	// 3. Сервисы
 	scheduleSvc := service.NewScheduleService(log, scheduleRepo)
@@ -78,7 +78,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 
 	bot, err := tele.NewBot(botPref)
 	if err != nil {
-		pool.Close()
+		_ = database.Close()
 		return nil, fmt.Errorf("app: create bot: %w", err)
 	}
 
@@ -123,7 +123,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	return &App{
 		log:      log,
 		cfg:      cfg,
-		pool:     pool,
+		database: database,
 		bot:      bot,
 		scraper:  scraperSvc,
 		notifier: notif,
@@ -161,7 +161,7 @@ func (a *App) Run() error {
 			_ = a.healthSrv.Shutdown(shutdownCtx)
 		}
 
-		a.pool.Close()
+		_ = a.database.Close()
 	}()
 
 	log.Info("Bot started!", "username", a.bot.Me.Username)
@@ -205,7 +205,7 @@ func (a *App) startHealthServer() {
 		pingCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 
-		if err := a.pool.Ping(pingCtx); err != nil {
+		if err := a.database.PingContext(pingCtx); err != nil {
 			http.Error(w, "database unhealthy: "+err.Error(), http.StatusServiceUnavailable)
 			return
 		}
