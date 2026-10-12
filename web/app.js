@@ -38,7 +38,6 @@
   const weekLabel = document.getElementById('weekLabel');
   const dayTabs = document.getElementById('dayTabs');
   const currentDayTitle = document.getElementById('currentDayTitle');
-  const shiftBadge = document.getElementById('shiftBadge');
   const pairsCountLabel = document.getElementById('pairsCountLabel');
   const saveDefaultBtn = document.getElementById('saveDefaultBtn');
   const pairsList = document.getElementById('pairsList');
@@ -75,15 +74,72 @@
     return res.json();
   }
 
-  // Check if Telegram theme matches
-  function syncTheme() {
-    if (tg?.colorScheme === 'dark') {
+  // Theme Sync & Management
+  const darkThemeVars = {
+    '--tg-theme-bg-color': '#18181b',
+    '--tg-theme-secondary-bg-color': '#27272a',
+    '--tg-theme-text-color': '#fafafa',
+    '--tg-theme-hint-color': '#a1a1aa',
+    '--tg-theme-link-color': '#3b82f6',
+    '--tg-theme-button-color': '#2563eb',
+    '--tg-theme-button-text-color': '#ffffff',
+    '--tg-theme-header-bg-color': '#18181b',
+    '--tg-theme-section-bg-color': '#27272a',
+    '--tg-theme-section-separator-color': '#3f3f46',
+  };
+
+  const lightThemeVars = {
+    '--tg-theme-bg-color': '#ffffff',
+    '--tg-theme-secondary-bg-color': '#f4f4f5',
+    '--tg-theme-text-color': '#000000',
+    '--tg-theme-hint-color': '#71717a',
+    '--tg-theme-link-color': '#2481cc',
+    '--tg-theme-button-color': '#2481cc',
+    '--tg-theme-button-text-color': '#ffffff',
+    '--tg-theme-header-bg-color': '#ffffff',
+    '--tg-theme-section-bg-color': '#ffffff',
+    '--tg-theme-section-separator-color': '#e4e4e7',
+  };
+
+  function applyTheme(isDark) {
+    const vars = isDark ? darkThemeVars : lightThemeVars;
+    if (isDark) {
       document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    for (const [key, val] of Object.entries(vars)) {
+      document.documentElement.style.setProperty(key, val);
     }
   }
 
+  function syncTheme() {
+    const saved = localStorage.getItem('mgkct_theme');
+    if (saved === 'dark') {
+      applyTheme(true);
+      return;
+    }
+    if (saved === 'light') {
+      applyTheme(false);
+      return;
+    }
+    const isDark = tg?.colorScheme === 'dark' || window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(isDark);
+  }
+
+  if (tg) {
+    tg.onEvent('themeChanged', () => {
+      if (!localStorage.getItem('mgkct_theme')) {
+        syncTheme();
+      }
+    });
+  }
+
   themeToggle.addEventListener('click', () => {
-    document.documentElement.classList.toggle('dark');
+    const isDark = document.documentElement.classList.contains('dark');
+    const newDark = !isDark;
+    localStorage.setItem('mgkct_theme', newDark ? 'dark' : 'light');
+    applyTheme(newDark);
     haptic('light');
   });
 
@@ -234,8 +290,12 @@
       const payload = {};
       if (state.mode === 'group') {
         payload.group_id = state.selectedGroup;
+        localStorage.setItem('mgkct_saved_mode', 'group');
+        localStorage.setItem('mgkct_saved_group', String(state.selectedGroup));
       } else {
         payload.teacher_name = state.selectedTeacher;
+        localStorage.setItem('mgkct_saved_mode', 'teacher');
+        localStorage.setItem('mgkct_saved_teacher', state.selectedTeacher);
       }
 
       await apiFetch('/api/v1/user/profile', {
@@ -394,6 +454,12 @@
     }
   }
 
+  function resolveSubjectName(rawName) {
+    if (!rawName) return '';
+    const cleaned = rawName.replace(/^[123]\.\s*/, '').replace(/^\d+\*?\s*[-–]\s*/, '').trim();
+    return state.subjects?.[cleaned] || '';
+  }
+
   // Render Selected Day Schedule
   function renderDaySchedule() {
     const days = state.schedule?.days || [];
@@ -402,7 +468,6 @@
     currentDayTitle.firstElementChild.textContent = dayNames[state.currentDayIdx];
 
     if (!day || !day.subjects || day.subjects.length === 0) {
-      shiftBadge.classList.add('hidden');
       pairsCountLabel.textContent = '0 пар запланировано';
       pairsList.innerHTML = `
         <div class="py-12 text-center text-xs text-[var(--tg-theme-hint-color)]">
@@ -412,141 +477,125 @@
       return;
     }
 
-    // Detect second shift & count valid pairs
-    let firstNonEmpty = -1;
-    let validPairsCount = 0;
-    day.subjects.forEach((sub, idx) => {
-      if (!sub.isEmpty && sub.pairs && sub.pairs.length > 0) {
-        if (firstNonEmpty === -1) firstNonEmpty = idx;
-        validPairsCount++;
+    // Собираем непустые слоты пар
+    const validSlots = [];
+    day.subjects.forEach((subject, idx) => {
+      if (!subject.isEmpty && subject.pairs && subject.pairs.length > 0) {
+        validSlots.push({ subject, pairNum: idx + 1 });
       }
     });
 
-    if (firstNonEmpty >= 3) {
-      shiftBadge.textContent = '2 смена';
-      shiftBadge.classList.remove('hidden');
-    } else {
-      shiftBadge.textContent = '1 смена';
-      shiftBadge.classList.remove('hidden');
+    pairsCountLabel.textContent = `${validSlots.length} пар запланировано`;
+
+    if (validSlots.length === 0) {
+      pairsList.innerHTML = `
+        <div class="py-12 text-center text-xs text-[var(--tg-theme-hint-color)]">
+          Занятий нет. Свободный день! 🎉
+        </div>
+      `;
+      return;
     }
 
-    pairsCountLabel.textContent = `${validPairsCount} пар запланировано`;
-
     const isToday = isDayToday(day);
-
-    // Render pairs (one card per subject slot)
     pairsList.innerHTML = '';
-    day.subjects.forEach((subject, idx) => {
-      if (subject.isEmpty || !subject.pairs || subject.pairs.length === 0) return;
+    const totalCount = validSlots.length;
 
-      const pairNum = idx + 1;
+    validSlots.forEach(({ subject, pairNum }, slotIdx) => {
       const call = state.calls.find(c => c.number === pairNum);
       const timeStr = call ? call.time : '';
       const isCurrent = isToday && isPairNow(pairNum);
 
-      const isSingle = subject.pairs.length === 1;
-      const singlePair = isSingle ? subject.pairs[0] : null;
+      // Скругления Pixel Connected Stack
+      let radiusClass = 'rounded-[6px]';
+      if (totalCount === 1) {
+        radiusClass = 'rounded-2xl';
+      } else if (slotIdx === 0) {
+        radiusClass = 'rounded-t-2xl rounded-b-[6px]';
+      } else if (slotIdx === totalCount - 1) {
+        radiusClass = 'rounded-b-2xl rounded-t-[6px]';
+      }
+
+      const activeClass = isCurrent
+        ? 'border-2 border-[var(--tg-theme-button-color)] ring-2 ring-[var(--tg-theme-button-color)]/25'
+        : 'border border-[var(--tg-theme-section-separator-color)] hover:border-[var(--tg-theme-button-color)]/30';
 
       const card = document.createElement('div');
-      const activeClass = isCurrent
-        ? 'border-2 border-[var(--tg-theme-button-color)] shadow-xs'
-        : 'border border-[var(--tg-theme-section-separator-color)] hover:border-[var(--tg-theme-button-color)]/40';
+      card.className = `p-2.5 px-3.5 bg-[var(--tg-theme-section-bg-color)] ${radiusClass} ${activeClass} transition shadow-2xs`;
 
-      card.className = `bg-[var(--tg-theme-section-bg-color)] ${activeClass} rounded-2xl p-3.5 shadow-xs transition`;
-
-      // Header: number, time, and "Идет сейчас" badge (ONCE per card)
-      const currentBadgeHtml = isCurrent
-        ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)] uppercase tracking-wider">Идет сейчас</span>`
-        : '';
-
-  function resolveSubjectName(rawName) {
-    if (!rawName) return '';
-    const cleaned = rawName.replace(/^[123]\.\s*/, '').replace(/^\d+\*?\s*[-–]\s*/, '').trim();
-    return state.subjects?.[cleaned] || '';
-  }
-
-      const singleClassBadgeHtml = (singlePair && singlePair.class && singlePair.class !== '-')
-        ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">каб. ${escapeHtml(singlePair.class)}</span>`
-        : '';
-
-      let bodyHtml = '';
+      const isSingle = subject.pairs.length === 1;
+      const singlePair = isSingle ? subject.pairs[0] : null;
 
       if (isSingle) {
         const teacherOrGroup = state.mode === 'group'
           ? (singlePair.group || '')
           : (singlePair.group ? `Группа ${singlePair.group}` : '');
 
-        const typeBadgeHtml = singlePair.type
-          ? `<span class="px-1.5 py-0.5 rounded-md bg-[var(--tg-theme-secondary-bg-color)] text-[11px] font-medium">${escapeHtml(singlePair.type)}</span>`
+        const cleanRoom = (singlePair.class && singlePair.class !== '-') ? singlePair.class : '';
+        const roomBadgeHtml = cleanRoom
+          ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">${escapeHtml(cleanRoom)}</span>`
           : '';
 
+        const typeStr = singlePair.type ? ` (${escapeHtml(singlePair.type)})` : '';
         const fullSubj = resolveSubjectName(singlePair.name);
         const fullSubjHtml = fullSubj
-          ? `<p class="text-[11px] text-[var(--tg-theme-hint-color)] mt-0.5">${escapeHtml(fullSubj)}</p>`
+          ? `<p class="text-[11px] text-[var(--tg-theme-hint-color)] mt-0.5 truncate">${escapeHtml(fullSubj)}</p>`
           : '';
 
-        bodyHtml = `
-          <h3 class="font-semibold text-sm leading-snug">${escapeHtml(singlePair.name)}</h3>
+        card.innerHTML = `
+          <!-- Верхняя строка: Номер + Предмет (слева) и Кабинет (справа) -->
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="text-xs font-black ${isCurrent ? 'text-[var(--tg-theme-button-color)]' : 'text-[var(--tg-theme-hint-color)]'}">${pairNum}.</span>
+              <span class="text-xs font-bold ${isCurrent ? 'text-[var(--tg-theme-button-color)]' : 'text-[var(--tg-theme-text-color)]'} truncate">${escapeHtml(singlePair.name)}</span>
+            </div>
+            ${roomBadgeHtml}
+          </div>
           ${fullSubjHtml}
-          <div class="mt-2 flex items-center justify-between text-xs text-[var(--tg-theme-hint-color)]">
-            <span>${escapeHtml(teacherOrGroup)}</span>
-            ${typeBadgeHtml}
+          <!-- Нижняя строка: Преподаватель (слева) и Время (справа) -->
+          <div class="flex items-center justify-between text-[11px] text-[var(--tg-theme-hint-color)] mt-0.5">
+            <span class="truncate pr-2">${escapeHtml(teacherOrGroup)}<span class="text-[10px] opacity-80">${typeStr}</span></span>
+            <span class="text-[10px] font-medium shrink-0 tracking-tight">${timeStr}</span>
           </div>
         `;
       } else {
-        // Multiple subgroups unified in a single block
-        bodyHtml = `
-          <div class="divide-y divide-[var(--tg-theme-section-separator-color)] space-y-2.5 pt-0.5">
+        // Подгруппы
+        card.innerHTML = `
+          <!-- Верхняя строка: Номер + Заголовок (слева) и Время (справа) -->
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="text-xs font-black ${isCurrent ? 'text-[var(--tg-theme-button-color)]' : 'text-[var(--tg-theme-hint-color)]'}">${pairNum}.</span>
+              <span class="text-xs font-bold ${isCurrent ? 'text-[var(--tg-theme-button-color)]' : 'text-[var(--tg-theme-text-color)]'} truncate">Пара по подгруппам</span>
+            </div>
+            <span class="text-[10px] font-medium text-[var(--tg-theme-hint-color)] shrink-0 tracking-tight">${timeStr}</span>
+          </div>
+
+          <div class="space-y-1">
             ${subject.pairs.map((p, pIdx) => {
               const teacherOrGroup = state.mode === 'group'
                 ? (p.group || '')
                 : (p.group ? `Группа ${p.group}` : '');
-              const classBadge = (p.class && p.class !== '-')
-                ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">каб. ${escapeHtml(p.class)}</span>`
+              const cleanRoom = (p.class && p.class !== '-') ? p.class : '';
+              const roomHtml = cleanRoom
+                ? `<span class="font-bold text-[11px] text-emerald-600 dark:text-emerald-400 shrink-0 pl-2">${escapeHtml(cleanRoom)}</span>`
                 : '';
-              const typeBadge = p.type
-                ? `<span class="px-1.5 py-0.5 rounded-md bg-[var(--tg-theme-secondary-bg-color)] text-[11px] font-medium">${escapeHtml(p.type)}</span>`
-                : '';
-
+              const typeStr = p.type ? ` (${escapeHtml(p.type)})` : '';
               const fullSubj = resolveSubjectName(p.name);
-              const fullSubjHtml = fullSubj
-                ? `<p class="text-[11px] text-[var(--tg-theme-hint-color)] mt-0.5">${escapeHtml(fullSubj)}</p>`
-                : '';
+              const fullSubjTitle = fullSubj ? ` title="${escapeHtml(fullSubj)}"` : '';
 
               return `
-                <div class="${pIdx > 0 ? 'pt-2.5' : ''}">
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="flex items-start gap-1.5 flex-1 min-w-0">
-                      <span class="text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-500/10 text-[var(--tg-theme-button-color)] shrink-0 mt-0.5">${pIdx + 1} п/г</span>
-                      <div>
-                        <h4 class="font-semibold text-sm leading-snug text-[var(--tg-theme-text-color)]">${escapeHtml(p.name)}</h4>
-                        ${fullSubjHtml}
-                      </div>
-                    </div>
-                    ${classBadge}
+                <div class="flex items-center justify-between text-[11px] p-1 px-2 rounded-lg bg-[var(--tg-theme-secondary-bg-color)] border border-[var(--tg-theme-section-separator-color)]/40">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="font-extrabold text-[10px] text-[var(--tg-theme-button-color)] bg-blue-500/10 px-1 rounded shrink-0">${pIdx + 1} п/г</span>
+                    <span class="font-bold text-xs truncate" ${fullSubjTitle}>${escapeHtml(p.name)}</span>
+                    <span class="text-[10px] text-[var(--tg-theme-hint-color)] truncate block">· ${escapeHtml(teacherOrGroup)}${typeStr}</span>
                   </div>
-                  <div class="mt-1 flex items-center justify-between text-xs text-[var(--tg-theme-hint-color)] pl-8">
-                    <span>${escapeHtml(teacherOrGroup)}</span>
-                    ${typeBadge}
-                  </div>
+                  ${roomHtml}
                 </div>
               `;
             }).join('')}
           </div>
         `;
       }
-
-      card.innerHTML = `
-        <div class="flex items-start justify-between mb-2 gap-2">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="w-6 h-6 rounded-lg ${isCurrent ? 'bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)]' : 'bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-hint-color)]'} text-xs font-bold flex items-center justify-center">${pairNum}</span>
-            <span class="text-xs font-semibold ${isCurrent ? 'text-[var(--tg-theme-button-color)]' : 'text-[var(--tg-theme-hint-color)]'}">${timeStr}</span>
-            ${currentBadgeHtml}
-          </div>
-          ${singleClassBadgeHtml}
-        </div>
-        ${bodyHtml}
-      `;
 
       pairsList.appendChild(card);
     });
@@ -595,6 +644,18 @@
     syncTheme();
     state.currentDayIdx = getInitialDayIndex();
 
+    // 0. Восстановление сохраненного выбора из localStorage
+    const savedMode = localStorage.getItem('mgkct_saved_mode');
+    const savedGroup = localStorage.getItem('mgkct_saved_group');
+    const savedTeacher = localStorage.getItem('mgkct_saved_teacher');
+    if (savedMode === 'teacher' && savedTeacher) {
+      state.mode = 'teacher';
+      state.selectedTeacher = savedTeacher;
+    } else if (savedMode === 'group' && savedGroup) {
+      state.mode = 'group';
+      state.selectedGroup = parseInt(savedGroup, 10);
+    }
+
     try {
       // 1. Fetch Calls
       const callsRes = await apiFetch('/api/v1/calls');
@@ -612,22 +673,26 @@
       state.facultyDirectory = teachersRes.directory || [];
       state.subjects = subjectsRes.subjects || {};
 
-      // 3. Fetch User Profile
+      // 3. Fetch User Profile с сервера (синхронизация с ботом)
       try {
         const profile = await apiFetch('/api/v1/user/profile');
         state.userProfile = profile;
         if (profile.teacher_name) {
           state.mode = 'teacher';
           state.selectedTeacher = profile.teacher_name;
-        } else if (profile.group_id) {
+          localStorage.setItem('mgkct_saved_mode', 'teacher');
+          localStorage.setItem('mgkct_saved_teacher', profile.teacher_name);
+        } else if (profile.group_id && profile.group_id > 0) {
           state.mode = 'group';
           state.selectedGroup = profile.group_id;
+          localStorage.setItem('mgkct_saved_mode', 'group');
+          localStorage.setItem('mgkct_saved_group', String(profile.group_id));
         }
       } catch (e) {
         console.warn('User profile not authorized or empty:', e);
       }
 
-      // Default selection if not set by profile
+      // Default selection if not set by profile or localStorage
       if (!state.selectedGroup && state.groups.length > 0) {
         state.selectedGroup = state.groups[0];
       }
@@ -635,6 +700,7 @@
         state.selectedTeacher = state.teachers[0];
       }
 
+      // Переключаем на нужную вкладку и загружаем расписание
       setMode(state.mode);
     } catch (err) {
       console.error('Initialization error:', err);
