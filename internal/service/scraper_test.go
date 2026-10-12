@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -38,6 +39,23 @@ func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, e
 
 func (m *mockScheduleRepo) GetAll(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
 	return m.schedules, nil
+}
+
+func (m *mockScheduleRepo) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
+	var weeks []time.Time
+	for w := range m.schedules {
+		weeks = append(weeks, w)
+	}
+	slices.SortFunc(weeks, func(a, b time.Time) int {
+		if a.After(b) {
+			return -1
+		}
+		if a.Before(b) {
+			return 1
+		}
+		return 0
+	})
+	return weeks, nil
 }
 
 func (m *mockScheduleRepo) GetWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error) {
@@ -95,6 +113,35 @@ func (m *mockTeacherRepo) GetAllTeacherNames(ctx context.Context) ([]string, err
 		names = append(names, n)
 	}
 	return names, nil
+}
+
+func (m *mockTeacherRepo) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
+	weekSet := make(map[time.Time]struct{})
+	if name != "" {
+		for w := range m.teachers[name] {
+			weekSet[w] = struct{}{}
+		}
+	} else {
+		for _, wMap := range m.teachers {
+			for w := range wMap {
+				weekSet[w] = struct{}{}
+			}
+		}
+	}
+	var weeks []time.Time
+	for w := range weekSet {
+		weeks = append(weeks, w)
+	}
+	slices.SortFunc(weeks, func(a, b time.Time) int {
+		if a.After(b) {
+			return -1
+		}
+		if a.Before(b) {
+			return 1
+		}
+		return 0
+	})
+	return weeks, nil
 }
 
 func (m *mockTeacherRepo) GetWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error) {

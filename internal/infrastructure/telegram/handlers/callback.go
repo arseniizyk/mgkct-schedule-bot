@@ -35,6 +35,10 @@ func CallbacksHandler(log *slog.Logger, schedSvc ScheduleService, teacherSvc Tea
 				err = handleCabinetWeek(ctx, log, c, data, analyticsSvc)
 			}
 
+		// Архив
+		case strings.Contains(data, keyboard.ArchiveSelect):
+			err = handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc)
+
 		// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
 		case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
 			err = handleTeacherDayNav(ctx, log, c, data, teacherSvc)
@@ -270,5 +274,44 @@ func handleCabinetWeek(ctx context.Context, log *slog.Logger, c tele.Context, da
 	}
 
 	msg := formatter.FormatCabinetWeek(sched)
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+}
+
+func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService) error {
+	raw := dataFromCallbackData(data)
+	// формат "g:101:02.01.2006" или "t:Иванов И.И.:02.01.2006"
+	parts := strings.Split(raw, ":")
+	if len(parts) < 3 {
+		return fmt.Errorf("invalid archive select data: %s", raw)
+	}
+
+	targetType := parts[0]
+	targetID := parts[1]
+	dateStr := parts[2]
+
+	date, err := time.Parse("02.01.2006", dateStr)
+	if err != nil {
+		return err
+	}
+
+	if targetType == "g" {
+		groupID, err := strconv.Atoi(targetID)
+		if err != nil {
+			return err
+		}
+		group, err := schedSvc.GetArchiveSchedule(ctx, int32(groupID), date)
+		if err != nil {
+			return err
+		}
+		msg := formatter.FormatScheduleWeek(group)
+		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+	}
+
+	teacher, err := teacherSvc.GetTeacherArchiveSchedule(ctx, targetID, date)
+	if err != nil {
+		return err
+	}
+	member, _ := teacherSvc.GetFacultyMember(ctx, targetID)
+	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 }

@@ -243,3 +243,40 @@ func (r *ScheduleRepository) getWeekStr(ctx context.Context, orderBy string, pre
 
 	return r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(dest)
 }
+
+func (r *ScheduleRepository) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
+	const op = "repository.ScheduleRepository.GetAllWeeks"
+
+	query := r.sb.Select("week").
+		From("schedules").
+		OrderBy("week DESC")
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: build query to sql: %w", op, err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query all weeks: %w", op, err)
+	}
+	defer rows.Close()
+
+	var weeks []time.Time
+	for rows.Next() {
+		var wStr string
+		if err := rows.Scan(&wStr); err != nil {
+			return nil, fmt.Errorf("%s: scan row: %w", op, err)
+		}
+		w, err := time.Parse("2006-01-02", wStr)
+		if err != nil {
+			continue
+		}
+		weeks = append(weeks, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows err: %w", op, err)
+	}
+
+	return weeks, nil
+}

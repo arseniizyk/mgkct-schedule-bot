@@ -68,6 +68,7 @@ func New(
 	mux.HandleFunc("GET /api/v1/cabinet", s.handleCabinetSchedule)
 	mux.HandleFunc("GET /api/v1/analytics/endings", s.handleEndings)
 	mux.HandleFunc("GET /api/v1/analytics/stats", s.handleStats)
+	mux.HandleFunc("GET /api/v1/archive/weeks", s.handleArchiveWeeks)
 	mux.HandleFunc("GET /api/v1/calls", s.handleCalls)
 	mux.HandleFunc("GET /api/v1/user/profile", s.handleGetUserProfile)
 	mux.HandleFunc("POST /api/v1/user/profile", s.handleSetUserProfile)
@@ -407,6 +408,35 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"teacher": teacher,
 		"stats":   stats,
 		"total":   total,
+	})
+}
+
+func (s *Server) handleArchiveWeeks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	teacher := r.URL.Query().Get("teacher")
+
+	var weeks []time.Time
+	var err error
+
+	if teacher != "" {
+		weeks, err = s.teacherSvc.GetAllWeeks(ctx, teacher)
+	} else {
+		weeks, err = s.scheduleSvc.GetAllWeeks(ctx)
+	}
+
+	if err != nil {
+		s.log.Error("failed getting archive weeks", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	weekStrs := make([]string, 0, len(weeks))
+	for _, w := range weeks {
+		weekStrs = append(weekStrs, w.Format("2006-01-02"))
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"weeks": weekStrs,
 	})
 }
 

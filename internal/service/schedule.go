@@ -18,6 +18,7 @@ type ScheduleRepository interface {
 	GetByWeek(ctx context.Context, week time.Time) (*entities.Schedule, error)
 	GetLatest(ctx context.Context) (*entities.Schedule, error)
 	GetAll(ctx context.Context) (map[time.Time]*entities.Schedule, error)
+	GetAllWeeks(ctx context.Context) ([]time.Time, error)
 	GetWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error)
 }
 
@@ -135,4 +136,38 @@ func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {
 	}
 	slices.Sort(ids)
 	return ids, nil
+}
+
+func (s *ScheduleService) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
+	return s.scheduleRepo.GetAllWeeks(ctx)
+}
+
+func (s *ScheduleService) GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error) {
+	const op = "service.ScheduleService.GetArchiveSchedule"
+
+	targetDate = time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, time.UTC)
+	weekday := (int(targetDate.Weekday()) + 6) % 7 // Пн=0..Вс=6
+	monday := targetDate.AddDate(0, 0, -weekday)
+
+	grp, err := s.GetGroupScheduleByWeek(ctx, groupID, monday)
+	if err == nil {
+		return grp, nil
+	}
+
+	sch, err := s.scheduleRepo.GetByWeek(ctx, targetDate)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	group, ok := sch.Groups[groupID]
+	if !ok {
+		return nil, domainerr.ErrGroupNotFound
+	}
+
+	diff := targetDate.Sub(group.Week)
+	if diff < 0 || diff > 7*24*time.Hour {
+		return nil, domainerr.ErrWeekNotFound
+	}
+
+	return group, nil
 }

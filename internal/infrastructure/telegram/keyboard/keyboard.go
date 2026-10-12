@@ -3,6 +3,7 @@ package keyboard
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	tele "gopkg.in/telebot.v4"
 
@@ -31,6 +32,8 @@ const (
 	CabinetCurrentWeek = "cab_currweek"
 	CabinetPrevDay     = "cab_prevday"
 	CabinetNextDay     = "cab_nextday"
+
+	ArchiveSelect = "arch_sel"
 
 	btnCurrentWeek = "📆 Неделя"
 	btnPrev        = "◀️"
@@ -215,4 +218,30 @@ func scheduleReplyButtons() [][]tele.ReplyButton {
 		{tele.ReplyButton{Text: BtnDay}, tele.ReplyButton{Text: BtnWeek}},
 		{tele.ReplyButton{Text: BtnCalls}, tele.ReplyButton{Text: BtnTeachers}},
 	}
+}
+
+// InlineArchiveWeeksKeyboard создает инлайн-клавиатуру для выбора недели из архива
+// targetType: "g" (group) или "t" (teacher)
+// targetID: "101" или имя преподавателя
+func InlineArchiveWeeksKeyboard(targetType, targetID string, weeks []time.Time) *tele.ReplyMarkup {
+	if len(weeks) == 0 {
+		return nil
+	}
+
+	markup := &tele.ReplyMarkup{}
+	var rows []tele.Row
+
+	maxWeeks := min(len(weeks), 10)
+
+	for i := range maxWeeks {
+		w := weeks[i]
+		endW := w.AddDate(0, 0, 5)
+		title := fmt.Sprintf("📅 %s — %s", w.Format("02.01"), endW.Format("02.01.2006"))
+		data := fmt.Sprintf("%s:%s:%s", targetType, targetID, w.Format("02.01.2006"))
+		btn := markup.Data(title, ArchiveSelect, data)
+		rows = append(rows, markup.Row(btn))
+	}
+
+	markup.Inline(rows...)
+	return markup
 }

@@ -12,6 +12,8 @@ type ScheduleService interface {
 	GetGroupLatestSchedule(ctx context.Context, groupID int32) (*entities.Group, error)
 	GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error)
 	GetAvailableWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error)
+	GetAllWeeks(ctx context.Context) ([]time.Time, error)
+	GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error)
 }
 
 type TeacherService interface {
@@ -19,6 +21,8 @@ type TeacherService interface {
 	GetTeacherScheduleByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error)
 	GetAvailableWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error)
 	GetAllTeacherNames(ctx context.Context) ([]string, error)
+	GetAllWeeks(ctx context.Context, name string) ([]time.Time, error)
+	GetTeacherArchiveSchedule(ctx context.Context, name string, targetDate time.Time) (*entities.Teacher, error)
 	ValidateTeacher(ctx context.Context, name string) (string, []string, bool)
 	GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error)
 }

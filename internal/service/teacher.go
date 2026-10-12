@@ -20,6 +20,7 @@ type TeacherScheduleRepository interface {
 	GetAllLatest(ctx context.Context) (map[string]*entities.Teacher, error)
 	GetAll(ctx context.Context) ([]*entities.Teacher, error)
 	GetAllTeacherNames(ctx context.Context) ([]string, error)
+	GetAllWeeks(ctx context.Context, name string) ([]time.Time, error)
 	GetWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error)
 }
 
@@ -192,4 +193,33 @@ func (s *TeacherService) GetAllFaculty(ctx context.Context) ([]*entities.Faculty
 
 func (s *TeacherService) GetSubjectDictionary() SubjectDictionary {
 	return s.dict
+}
+
+func (s *TeacherService) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
+	return s.repo.GetAllWeeks(ctx, name)
+}
+
+func (s *TeacherService) GetTeacherArchiveSchedule(ctx context.Context, name string, targetDate time.Time) (*entities.Teacher, error) {
+	const op = "service.TeacherService.GetTeacherArchiveSchedule"
+
+	targetDate = time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, time.UTC)
+	weekday := (int(targetDate.Weekday()) + 6) % 7 // Пн=0..Вс=6
+	monday := targetDate.AddDate(0, 0, -weekday)
+
+	t, err := s.GetTeacherScheduleByWeek(ctx, name, monday)
+	if err == nil {
+		return t, nil
+	}
+
+	t, err = s.repo.GetByWeek(ctx, name, targetDate)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	diff := targetDate.Sub(t.Week)
+	if diff < 0 || diff > 7*24*time.Hour {
+		return nil, domainerr.ErrWeekNotFound
+	}
+
+	return t, nil
 }
