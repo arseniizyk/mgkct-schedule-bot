@@ -162,7 +162,7 @@ func (s *ScraperService) initFromDB(ctx context.Context) {
 func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 	log := s.log.With("operation", "service.ScraperService.scrapeOnce")
 
-	scrapeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	scrapeCtx, cancel := context.WithTimeout(ctx, 75*time.Second)
 	defer cancel()
 
 	// 1. Скрапинг групп
