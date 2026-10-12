@@ -73,9 +73,6 @@
         <div>
           <h2 id="currentDayTitle" class="text-base font-bold flex items-center gap-2">
             <span>Понедельник</span>
-            <span id="shiftBadge" class="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-[var(--tg-theme-button-color)] font-normal hidden">
-              1 смена
-            </span>
           </h2>
           <p id="pairsCountLabel" class="text-xs text-[var(--tg-theme-hint-color)]">0 пар</p>
         </div>
@@ -84,8 +81,8 @@
         </button>
       </div>
 
-      <!-- Schedule Cards List -->
-      <div id="pairsList" class="space-y-2.5">
+      <!-- Schedule Cards List (Pixel Connected Stack) -->
+      <div id="pairsList" class="flex flex-col gap-[3px]">
         <!-- Rendered by app.js -->
       </div>
     </div>
