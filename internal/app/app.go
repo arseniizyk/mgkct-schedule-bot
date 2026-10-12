@@ -71,6 +71,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 
 	// 4. Telegram Бот
 	botPref := tele.Settings{
+		URL:    cfg.Bot.APIURL,
 		Token:  cfg.Bot.Token,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
 		Client: &http.Client{

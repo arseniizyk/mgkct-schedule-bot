@@ -29,6 +29,8 @@
 - `ENV`: `dev` или `prod`.
 - `BOT_TOKEN` (или legacy `TELEGRAM_TOKEN`): токен Telegram-бота.
 - `BOT_HEALTH_PORT`: порт HTTP healthcheck-сервера (по умолчанию 8081).
+- `BOT_WEB_APP_URL`: публичный HTTPS URL Telegram Mini App.
+- `BOT_API_URL`: кастомный URL Telegram Bot API (например, Cloudflare Worker прокси).
 - `DB_PATH`: путь к файлу SQLite (по умолчанию `bot.db`).
 - `SCRAPER_INTERVAL`: стандартный дневной интервал опроса (по умолчанию `1m`).
 - `SCRAPER_PEAK_INTERVAL`: пиковый турбо-интервал (по умолчанию `25s`, активен в Пт 12:00 — Сб утро до нахождения новой недели).
