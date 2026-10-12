@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -243,4 +244,97 @@ func TestScraperService_EmitsEventOnActualChange(t *testing.T) {
 	event := <-eventCh
 	assert.Equal(t, service.EventTeacherScheduleUpdated, event.Type)
 	assert.Equal(t, "Иванов И. И.", event.Teacher.Name)
+}
+
+type dynamicParser struct {
+	mu        sync.Mutex
+	failsLeft int
+}
+
+func (p *dynamicParser) ParseStudent(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failsLeft > 0 {
+		return nil, assert.AnError
+	}
+	return make(map[time.Time]*entities.Schedule), nil
+}
+
+func (p *dynamicParser) ParseTeacher(ctx context.Context) ([]*entities.Teacher, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failsLeft > 0 {
+		p.failsLeft--
+		return nil, assert.AnError
+	}
+	return nil, nil
+}
+
+type mockFailingStudentParser struct {
+	dp *dynamicParser
+}
+
+func (m *mockFailingStudentParser) Parse(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
+	return m.dp.ParseStudent(ctx)
+}
+
+type mockFailingTeacherParser struct {
+	dp *dynamicParser
+}
+
+func (m *mockFailingTeacherParser) Parse(ctx context.Context) ([]*entities.Teacher, error) {
+	return m.dp.ParseTeacher(ctx)
+}
+
+func TestScraperService_ErrorAlertAndRecovery(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	dp := &dynamicParser{failsLeft: 5}
+	studentParser := &mockFailingStudentParser{dp: dp}
+	teacherParser := &mockFailingTeacherParser{dp: dp}
+
+	schedRepo := &mockScheduleRepo{schedules: make(map[time.Time]*entities.Schedule)}
+	teachRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+
+	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
+	scraperSvc := service.NewScraperService(
+		slog.Default(),
+		config.ScraperConfig{
+			Interval:      10 * time.Millisecond,
+			PeakInterval:  10 * time.Millisecond,
+			NightInterval: 10 * time.Millisecond,
+		},
+		studentParser,
+		teacherParser,
+		schedRepo,
+		teachRepo,
+		schedSvc,
+	)
+
+	eventCh := make(chan service.Event, 10)
+	go scraperSvc.Start(ctx, eventCh)
+
+	// Ждем событий (ошибка после 5 падений, затем восстановление)
+	var gotErrorEvent, gotRecoverEvent bool
+	timeout := time.After(2 * time.Second)
+
+	for !gotErrorEvent || !gotRecoverEvent {
+		select {
+		case ev := <-eventCh:
+			switch ev.Type {
+			case service.EventScraperError:
+				gotErrorEvent = true
+				assert.Equal(t, 5, ev.ConsecutiveFails)
+			case service.EventScraperRecovered:
+				gotRecoverEvent = true
+			default:
+			}
+		case <-timeout:
+			t.Fatalf("timeout waiting for error/recovered events: gotError=%v, gotRecover=%v", gotErrorEvent, gotRecoverEvent)
+		}
+	}
+
+	assert.True(t, gotErrorEvent, "expected EventScraperError")
+	assert.True(t, gotRecoverEvent, "expected EventScraperRecovered")
 }

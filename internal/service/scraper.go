@@ -42,6 +42,9 @@ type ScraperService struct {
 	groupHashes         map[string][32]byte // key: "<group_id>:<YYYY-MM-DD>"
 	teacherHashes       map[string][32]byte // key: "<teacher_name>:<YYYY-MM-DD>"
 	newWeekFoundInTurbo bool
+	consecutiveErrors   int
+	adminAlerted        bool
+	lastAlertTime       time.Time
 }
 
 func NewScraperService(
@@ -208,19 +211,54 @@ func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 	defer cancel()
 
 	// 1. Скрапинг групп
-	schedulesByWeek, err := s.studentParser.Parse(scrapeCtx)
-	if err != nil {
-		log.ErrorContext(ctx, "failed parsing student schedules", "error", err)
+	schedulesByWeek, studentErr := s.studentParser.Parse(scrapeCtx)
+	if studentErr != nil {
+		log.ErrorContext(ctx, "failed parsing student schedules", "error", studentErr)
 	} else {
 		s.processStudentSchedules(ctx, schedulesByWeek, eventCh)
 	}
 
 	// 2. Скрапинг преподавателей
-	teachers, err := s.teacherParser.Parse(scrapeCtx)
-	if err != nil {
-		log.ErrorContext(ctx, "failed parsing teacher schedules", "error", err)
+	teachers, teacherErr := s.teacherParser.Parse(scrapeCtx)
+	if teacherErr != nil {
+		log.ErrorContext(ctx, "failed parsing teacher schedules", "error", teacherErr)
 	} else {
 		s.processTeacherSchedules(ctx, teachers, eventCh)
+	}
+
+	// Отслеживание сбоев скрапинга и алертов
+	var scrapeErr error
+	if studentErr != nil && teacherErr != nil {
+		scrapeErr = fmt.Errorf("students: %w; teachers: %w", studentErr, teacherErr)
+	}
+
+	s.mu.Lock()
+	if scrapeErr != nil {
+		s.consecutiveErrors++
+		if s.consecutiveErrors >= 5 && (!s.adminAlerted || time.Since(s.lastAlertTime) > 30*time.Minute) {
+			s.adminAlerted = true
+			s.lastAlertTime = time.Now()
+			fails := s.consecutiveErrors
+			s.mu.Unlock()
+			eventCh <- Event{
+				Type:             EventScraperError,
+				Err:              scrapeErr,
+				ConsecutiveFails: fails,
+			}
+		} else {
+			s.mu.Unlock()
+		}
+	} else {
+		wasAlerted := s.adminAlerted
+		s.adminAlerted = false
+		s.consecutiveErrors = 0
+		s.mu.Unlock()
+
+		if wasAlerted {
+			eventCh <- Event{
+				Type: EventScraperRecovered,
+			}
+		}
 	}
 
 	// 3. Скрапинг педсостава (раз в сутки или при первом старте)

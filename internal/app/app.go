@@ -28,14 +28,16 @@ import (
 )
 
 type App struct {
-	log      *slog.Logger
-	cfg      *config.Config
-	database *sql.DB
-	bot      *tele.Bot
-	scraper  *service.ScraperService
-	notifier *notifier.Notifier
-	eventCh  chan service.Event
-	httpSrv  *httpserver.Server
+	log         *slog.Logger
+	cfg         *config.Config
+	database    *sql.DB
+	bot         *tele.Bot
+	scraper     *service.ScraperService
+	notifier    *notifier.Notifier
+	eventCh     chan service.Event
+	httpSrv     *httpserver.Server
+	scheduleSvc *service.ScheduleService
+	teacherSvc  *service.TeacherService
 }
 
 func New(log *slog.Logger, cfg *config.Config) (*App, error) {
@@ -126,6 +128,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/endings", handlers.Endings(log, analyticsSvc))
 	bot.Handle("/stats", handlers.Stats(log, analyticsSvc, userRepo, teacherSvc))
 	bot.Handle("/archive", handlers.Archive(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/notify", handlers.Notify(log, userRepo))
 
 	// Кнопки Reply-клавиатуры
 	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
@@ -134,11 +137,11 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, stateMgr))
 
 	// Инлайн-коллбэки и ввод текста
-	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc))
+	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo))
 	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc))
 
 	eventCh := make(chan service.Event, 100)
-	notif := notifier.New(log, bot, userRepo)
+	notif := notifier.New(log, bot, userRepo, cfg.Bot.AdminChatID)
 
 	httpSrv := httpserver.New(
 		log,
@@ -151,14 +154,16 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	)
 
 	return &App{
-		log:      log,
-		cfg:      cfg,
-		database: database,
-		bot:      bot,
-		scraper:  scraperSvc,
-		notifier: notif,
-		eventCh:  eventCh,
-		httpSrv:  httpSrv,
+		log:         log,
+		cfg:         cfg,
+		database:    database,
+		bot:         bot,
+		scraper:     scraperSvc,
+		notifier:    notif,
+		eventCh:     eventCh,
+		httpSrv:     httpSrv,
+		scheduleSvc: scheduleSvc,
+		teacherSvc:  teacherSvc,
 	}, nil
 }
 
@@ -170,17 +175,20 @@ func (a *App) Run() error {
 	// 1. Запуск обработчика событий рассылки
 	go a.listenEvents(ctx)
 
-	// 2. Запуск фонового скрапера
+	// 2. Запуск планировщика вечернего дайджеста
+	go a.startEveningDigestScheduler(ctx)
+
+	// 3. Запуск фонового скрапера
 	go a.scraper.Start(ctx, a.eventCh)
 
-	// 3. Запуск HTTP сервера (Healthcheck, REST API, WebApp)
+	// 4. Запуск HTTP сервера (Healthcheck, REST API, WebApp)
 	go func() {
 		if err := a.httpSrv.Start(); err != nil {
 			log.Error("http server failed", "error", err)
 		}
 	}()
 
-	// 4. Ожидание сигналов завершения
+	// 5. Ожидание сигналов завершения
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -228,6 +236,44 @@ func (a *App) listenEvents(ctx context.Context) {
 				log.Info("Received EventTeacherScheduleUpdated", "name", event.Teacher.Name)
 				if err := a.notifier.HandleTeacherScheduleUpdate(ctx, event.Teacher); err != nil {
 					log.Error("failed broadcasting teacher update", "name", event.Teacher.Name, "error", err)
+				}
+			case service.EventScraperError:
+				log.Warn("Received EventScraperError", "consecutive_fails", event.ConsecutiveFails, "error", event.Err)
+				if err := a.notifier.HandleScraperError(ctx, event.Err, event.ConsecutiveFails); err != nil {
+					log.Error("failed sending scraper error alert", "error", err)
+				}
+			case service.EventScraperRecovered:
+				log.Info("Received EventScraperRecovered")
+				if err := a.notifier.HandleScraperRecovered(ctx); err != nil {
+					log.Error("failed sending scraper recovery alert", "error", err)
+				}
+			}
+		}
+	}
+}
+
+func (a *App) startEveningDigestScheduler(ctx context.Context) {
+	log := a.log.With("operation", "app.App.startEveningDigestScheduler")
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	minskLoc := time.FixedZone("MSK", 3*3600)
+	var lastSentDate string
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case t := <-ticker.C:
+			localTime := t.In(minskLoc)
+			todayStr := localTime.Format("2006-01-02")
+
+			// Отправка в 20:00 по Минскому времени один раз в сутки
+			if localTime.Hour() == 20 && localTime.Minute() == 0 && lastSentDate != todayStr {
+				lastSentDate = todayStr
+				log.Info("Triggering scheduled evening digest", "time", localTime.Format("15:04:05"))
+				if err := a.notifier.SendEveningDigest(ctx, a.scheduleSvc, a.teacherSvc); err != nil {
+					log.Error("error during evening digest broadcast", "error", err)
 				}
 			}
 		}

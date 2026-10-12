@@ -34,6 +34,7 @@ const (
 	CabinetNextDay     = "cab_nextday"
 
 	ArchiveSelect = "arch_sel"
+	NotifyToggle  = "notify_toggle"
 
 	btnCurrentWeek = "📆 Неделя"
 	btnPrev        = "◀️"
@@ -243,5 +244,17 @@ func InlineArchiveWeeksKeyboard(targetType, targetID string, weeks []time.Time) 
 	}
 
 	markup.Inline(rows...)
+	return markup
+}
+
+func InlineNotifyKeyboard(enabled bool) *tele.ReplyMarkup {
+	markup := &tele.ReplyMarkup{}
+	var btn tele.Btn
+	if enabled {
+		btn = markup.Data("🔕 Отключить вечернюю рассылку", NotifyToggle, "off")
+	} else {
+		btn = markup.Data("🔔 Включить вечернюю рассылку", NotifyToggle, "on")
+	}
+	markup.Inline(markup.Row(btn))
 	return markup
 }

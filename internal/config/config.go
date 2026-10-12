@@ -25,10 +25,11 @@ type Config struct {
 }
 
 type BotConfig struct {
-	Token      string `env:"TOKEN"`
-	HealthPort string `env:"HEALTH_PORT" env-default:"8081"`
-	WebAppURL  string `env:"WEB_APP_URL" env-default:""`
-	APIURL     string `env:"API_URL" env-default:""`
+	Token       string `env:"TOKEN"`
+	HealthPort  string `env:"HEALTH_PORT" env-default:"8081"`
+	WebAppURL   string `env:"WEB_APP_URL" env-default:""`
+	APIURL      string `env:"API_URL" env-default:""`
+	AdminChatID int64  `env:"ADMIN_CHAT_ID" env-default:"0"`
 }
 
 type DBConfig struct {

@@ -15,7 +15,13 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
 
-func CallbacksHandler(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, analyticsSvc AnalyticsService) tele.HandlerFunc {
+func CallbacksHandler(
+	log *slog.Logger,
+	schedSvc ScheduleService,
+	teacherSvc TeacherService,
+	analyticsSvc AnalyticsService,
+	userRepo UserRepo,
+) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		callback := c.Callback()
 		data := callback.Data
@@ -25,6 +31,12 @@ func CallbacksHandler(log *slog.Logger, schedSvc ScheduleService, teacherSvc Tea
 
 		var err error
 		switch {
+		// Уведомления
+		case strings.Contains(data, keyboard.NotifyToggle):
+			if userRepo != nil {
+				err = handleNotifyToggle(ctx, log, c, data, userRepo)
+			}
+
 		// Кабинеты
 		case strings.Contains(data, keyboard.CabinetPrevDay), strings.Contains(data, keyboard.CabinetNextDay):
 			if analyticsSvc != nil {

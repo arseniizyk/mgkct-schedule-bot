@@ -33,6 +33,8 @@ type UserRepo interface {
 	SetUserGroup(ctx context.Context, chatID int64, groupID int) error
 	GetTeacher(ctx context.Context, chatID int64) (string, error)
 	SetTeacher(ctx context.Context, chatID int64, teacherName string) error
+	SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error
+	GetNotifyEvening(ctx context.Context, chatID int64) (bool, error)
 }
 
 type StateManager interface {

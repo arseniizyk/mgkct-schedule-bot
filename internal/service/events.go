@@ -12,11 +12,15 @@ const (
 	EventNewWeek                EventType = "new_week"
 	EventGroupScheduleUpdated   EventType = "group_schedule_updated"
 	EventTeacherScheduleUpdated EventType = "teacher_schedule_updated"
+	EventScraperError           EventType = "scraper_error"
+	EventScraperRecovered       EventType = "scraper_recovered"
 )
 
 type Event struct {
-	Type    EventType
-	Week    time.Time
-	Group   *entities.Group
-	Teacher *entities.Teacher
+	Type             EventType
+	Week             time.Time
+	Group            *entities.Group
+	Teacher          *entities.Teacher
+	Err              error
+	ConsecutiveFails int
 }
