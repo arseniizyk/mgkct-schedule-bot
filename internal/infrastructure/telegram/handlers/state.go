@@ -9,6 +9,8 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
@@ -58,6 +60,38 @@ func StatesHandler(log *slog.Logger, userRepo UserRepo, sm StateManager, teacher
 
 			_ = sm.Clear(chatID)
 			return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
+
+		case state.WaitingTeacherSchedule:
+			teacherQuery := c.Text()
+			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
+			if !ok {
+				if len(candidates) > 0 {
+					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
+				}
+				return c.Send(messages.TeacherNotFound)
+			}
+
+			_ = sm.Clear(chatID)
+
+			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, matched)
+			if err != nil {
+				log.Warn("failed getting teacher week schedule from state", "name", matched, "error", err)
+				return c.Send(formatter.FormatErrorMessage(err))
+			}
+
+			msg := formatter.FormatTeacherScheduleWeek(teacher)
+			weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+			if err != nil {
+				weeks = entities.WeekNavigation{}
+			}
+
+			return sendLongMessage(
+				c,
+				msg,
+				tele.ModeMarkdown,
+				keyboard.ReplyScheduleKeyboard,
+				keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
+			)
 
 		default:
 			_ = sm.Clear(chatID)

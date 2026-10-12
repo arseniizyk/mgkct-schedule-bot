@@ -102,7 +102,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/group", handlers.Day(log, scheduleSvc, userRepo))
 	bot.Handle("/day", handlers.Day(log, scheduleSvc, userRepo))
 	bot.Handle("/week", handlers.Week(log, scheduleSvc, userRepo))
-	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc))
+	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, stateMgr))
 	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo))
 	bot.Handle("/teacherweek", handlers.TeacherWeek(log, teacherSvc, userRepo))
@@ -111,7 +111,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, userRepo))
 	bot.Handle(kbd.BtnWeek, handlers.Week(log, scheduleSvc, userRepo))
 	bot.Handle(kbd.BtnCalls, handlers.Calls())
-	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc))
+	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, stateMgr))
 
 	// Инлайн-коллбэки и ввод текста
 	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc))

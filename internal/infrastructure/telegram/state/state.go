@@ -5,9 +5,10 @@ import "sync"
 type State string
 
 const (
-	None           State = ""
-	WaitingGroup   State = "waiting_group"
-	WaitingTeacher State = "waiting_teacher"
+	None                   State = ""
+	WaitingGroup           State = "waiting_group"
+	WaitingTeacher         State = "waiting_teacher"
+	WaitingTeacherSchedule State = "waiting_teacher_schedule"
 )
 
 // MemoryManager хранит временные интерактивные состояния пользователей в памяти.
