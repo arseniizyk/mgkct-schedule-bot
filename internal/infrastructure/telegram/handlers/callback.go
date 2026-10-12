@@ -15,7 +15,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
 
-func CallbacksHandler(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService) tele.HandlerFunc {
+func CallbacksHandler(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, analyticsSvc AnalyticsService) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		callback := c.Callback()
 		data := callback.Data
@@ -25,6 +25,16 @@ func CallbacksHandler(log *slog.Logger, schedSvc ScheduleService, teacherSvc Tea
 
 		var err error
 		switch {
+		// Кабинеты
+		case strings.Contains(data, keyboard.CabinetPrevDay), strings.Contains(data, keyboard.CabinetNextDay):
+			if analyticsSvc != nil {
+				err = handleCabinetDayNav(ctx, log, c, data, analyticsSvc)
+			}
+		case strings.Contains(data, keyboard.CabinetCurrentWeek):
+			if analyticsSvc != nil {
+				err = handleCabinetWeek(ctx, log, c, data, analyticsSvc)
+			}
+
 		// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
 		case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
 			err = handleTeacherDayNav(ctx, log, c, data, teacherSvc)
@@ -220,4 +230,45 @@ func dataFromCallbackData(data string) string {
 		return parts[1]
 	}
 	return ""
+}
+
+func handleCabinetDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc AnalyticsService) error {
+	raw := dataFromCallbackData(data)
+	cabinet, dayStr, found := strings.CutLast(raw, ":")
+	if !found {
+		return fmt.Errorf("invalid cabinet day nav data: %s", raw)
+	}
+
+	dayIdx, err := strconv.Atoi(dayStr)
+	if err != nil {
+		return err
+	}
+
+	sched, _, err := svc.GetCabinetSchedule(ctx, cabinet, time.Time{})
+	if err != nil {
+		return err
+	}
+	if sched == nil {
+		return fmt.Errorf("cabinet schedule not found for %s", cabinet)
+	}
+	if dayIdx < 0 || dayIdx >= len(sched.Days) {
+		return fmt.Errorf("day index %d out of range (total %d)", dayIdx, len(sched.Days))
+	}
+
+	msg := formatter.FormatCabinetDay(sched, dayIdx)
+	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineCabinetDayKeyboard(cabinet, dayIdx, len(sched.Days)))
+}
+
+func handleCabinetWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc AnalyticsService) error {
+	cabinet := dataFromCallbackData(data)
+	sched, _, err := svc.GetCabinetSchedule(ctx, cabinet, time.Time{})
+	if err != nil {
+		return err
+	}
+	if sched == nil {
+		return fmt.Errorf("cabinet schedule not found for %s", cabinet)
+	}
+
+	msg := formatter.FormatCabinetWeek(sched)
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 }

@@ -28,6 +28,10 @@ const (
 	TeacherPrevDay     = "t_prevday"
 	TeacherNextDay     = "t_nextday"
 
+	CabinetCurrentWeek = "cab_currweek"
+	CabinetPrevDay     = "cab_prevday"
+	CabinetNextDay     = "cab_nextday"
+
 	btnCurrentWeek = "📆 Неделя"
 	btnPrev        = "◀️"
 	btnNext        = "▶️"
@@ -173,6 +177,35 @@ func InlineTeacherScheduleKeyboard(teacherName string) *tele.ReplyMarkup {
 
 	markup := &tele.ReplyMarkup{}
 	weekBtn := markup.Data(btnCurrentWeek, TeacherCurrentWeek, teacherName)
+	markup.Inline(markup.Row(weekBtn))
+	return markup
+}
+
+func InlineCabinetDayKeyboard(cabinet string, dayIdx, dayCount int) *tele.ReplyMarkup {
+	if dayCount <= 1 {
+		return nil
+	}
+
+	markup := &tele.ReplyMarkup{}
+	prev := (dayIdx + dayCount - 1) % dayCount
+	next := (dayIdx + 1) % dayCount
+
+	markup.Inline(markup.Row(
+		markup.Data(btnPrev, CabinetPrevDay, fmt.Sprintf("%s:%d", cabinet, prev)),
+		markup.Data(btnCurrentWeek, CabinetCurrentWeek, cabinet),
+		markup.Data(btnNext, CabinetNextDay, fmt.Sprintf("%s:%d", cabinet, next)),
+	))
+
+	return markup
+}
+
+func InlineCabinetWeekKeyboard(cabinet string) *tele.ReplyMarkup {
+	if cabinet == "" {
+		return nil
+	}
+
+	markup := &tele.ReplyMarkup{}
+	weekBtn := markup.Data(btnCurrentWeek, CabinetCurrentWeek, cabinet)
 	markup.Inline(markup.Row(weekBtn))
 	return markup
 }

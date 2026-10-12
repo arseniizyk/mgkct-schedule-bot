@@ -36,3 +36,11 @@ type StateManager interface {
 	Set(chatID int64, st state.State) error
 	Clear(chatID int64) error
 }
+
+type AnalyticsService interface {
+	GetAllCabinets(ctx context.Context) ([]string, error)
+	GetCabinetSchedule(ctx context.Context, query string, week time.Time) (*entities.CabinetSchedule, []string, error)
+	GetEndings(ctx context.Context, dayIdx int) (*entities.EndingsStat, error)
+	GetGroupStats(ctx context.Context, groupID int32, week time.Time) ([]entities.SubjectStat, int, error)
+	GetTeacherStats(ctx context.Context, teacherName string, week time.Time) ([]entities.SubjectStat, int, error)
+}

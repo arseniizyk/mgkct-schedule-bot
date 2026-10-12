@@ -146,3 +146,91 @@ func TestFormatTeacherProfile(t *testing.T) {
 		t.Errorf("expected position and qualification, got: %s", got)
 	}
 }
+
+func TestFormatCabinetDay(t *testing.T) {
+	sched := &entities.CabinetSchedule{
+		Cabinet: "301",
+		Days: []*entities.CabinetDaySchedule{
+			{
+				DayIndex: 0,
+				DayName:  "Понедельник",
+				Bookings: []*entities.CabinetBooking{
+					{
+						DayIndex:  0,
+						DayName:   "Понедельник",
+						PairIndex: 1,
+						GroupID:   101,
+						Subject:   "Математика",
+						Teacher:   "Иванов И.И.",
+						Class:     "301",
+					},
+				},
+			},
+		},
+	}
+
+	got := FormatCabinetDay(sched, 0)
+	if !strings.Contains(got, "Кабинет 301") {
+		t.Errorf("expected cabinet 301, got %s", got)
+	}
+	if !strings.Contains(got, "Понедельник") {
+		t.Errorf("expected day name, got %s", got)
+	}
+	if !strings.Contains(got, "1 пара: гр. *101* | Математика | Иванов И.И.") {
+		t.Errorf("expected booking info, got %s", got)
+	}
+
+	weekGot := FormatCabinetWeek(sched)
+	if !strings.Contains(weekGot, "Расписание кабинета 301 на неделю") {
+		t.Errorf("expected week header, got %s", weekGot)
+	}
+}
+
+func TestFormatEndings(t *testing.T) {
+	endings := &entities.EndingsStat{
+		DayIndex: 0,
+		DayName:  "Понедельник",
+		Pairs: map[int][]int32{
+			3: {102},
+			4: {101},
+		},
+		DayOff: []int32{103},
+		Total:  3,
+	}
+
+	got := FormatEndings(endings)
+	if !strings.Contains(got, "Окончание пар: Понедельник") {
+		t.Errorf("expected title with day, got %s", got)
+	}
+	if !strings.Contains(got, "После 3 пары") || !strings.Contains(got, "После 4 пары") {
+		t.Errorf("expected pairs in message, got %s", got)
+	}
+	if !strings.Contains(got, "Выходной") || !strings.Contains(got, "103") {
+		t.Errorf("expected day off info, got %s", got)
+	}
+}
+
+func TestFormatStats(t *testing.T) {
+	stats := []entities.SubjectStat{
+		{
+			Subject:     "Математика",
+			SubjectFull: "Высшая математика",
+			Count:       8,
+			Types:       map[string]int{"лк": 4, "пз": 4},
+		},
+	}
+
+	got := FormatStats("Группа 101", stats, 16)
+	if !strings.Contains(got, "Статистика нагрузки: Группа 101") {
+		t.Errorf("expected header, got %s", got)
+	}
+	if !strings.Contains(got, "Всего пар на неделю: 16") {
+		t.Errorf("expected totals, got %s", got)
+	}
+	if !strings.Contains(got, "Математика") || !strings.Contains(got, "8 пар (50%)") {
+		t.Errorf("expected subject stat, got %s", got)
+	}
+	if !strings.Contains(got, "Высшая математика") {
+		t.Errorf("expected subject full name, got %s", got)
+	}
+}

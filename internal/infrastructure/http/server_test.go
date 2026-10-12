@@ -29,7 +29,26 @@ func (m *mockScheduleRepo) GetByWeek(ctx context.Context, week time.Time) (*enti
 func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, error) {
 	return &entities.Schedule{
 		Groups: map[int32]*entities.Group{
-			101: {ID: 101, Week: time.Now()},
+			101: {
+				ID:   101,
+				Week: time.Now(),
+				Days: []*entities.Day{
+					{
+						Name: "Понедельник",
+						Subjects: []*entities.Subject{
+							{
+								Pairs: []*entities.Pair{
+									{
+										Name:  "Математика",
+										Class: "301",
+										Group: "Иванов И.И.",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 			102: {ID: 102, Week: time.Now()},
 		},
 	}, nil
@@ -50,10 +69,32 @@ func (m *mockTeacherRepo) GetByWeek(ctx context.Context, name string, week time.
 	return nil, nil
 }
 func (m *mockTeacherRepo) GetLatest(ctx context.Context, name string) (*entities.Teacher, error) {
-	return nil, nil
+	return &entities.Teacher{
+		Name: name,
+		Week: time.Now(),
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{
+								Name:  "Математика",
+								Class: "301",
+								Group: "101",
+							},
+						},
+					},
+				},
+			},
+		},
+	}, nil
 }
 func (m *mockTeacherRepo) GetAllLatest(ctx context.Context) (map[string]*entities.Teacher, error) {
-	return nil, nil
+	t, _ := m.GetLatest(ctx, "Иванов И.И.")
+	return map[string]*entities.Teacher{
+		"Иванов И.И.": t,
+	}, nil
 }
 func (m *mockTeacherRepo) GetAll(ctx context.Context) ([]*entities.Teacher, error) {
 	return nil, nil
@@ -93,11 +134,14 @@ func setupTestServer(t *testing.T) (*Server, *sql.DB) {
 	}
 
 	log := testLogger()
-	schedSvc := service.NewScheduleService(log, &mockScheduleRepo{})
-	teacherSvc := service.NewTeacherService(log, &mockTeacherRepo{}, nil, nil)
+	schedRepo := &mockScheduleRepo{}
+	teachRepo := &mockTeacherRepo{}
+	schedSvc := service.NewScheduleService(log, schedRepo)
+	teacherSvc := service.NewTeacherService(log, teachRepo, nil, nil)
+	analyticsSvc := service.NewAnalyticsService(log, schedRepo, teachRepo, nil)
 	userRepo := repository.NewUserRepository(db)
 
-	srv := New(log, cfg, db, schedSvc, teacherSvc, userRepo)
+	srv := New(log, cfg, db, schedSvc, teacherSvc, analyticsSvc, userRepo)
 	return srv, db
 }
 
@@ -229,5 +273,117 @@ func TestHandleSubjectsList(t *testing.T) {
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("failed unmarshaling json: %v", err)
+	}
+}
+
+func TestHandleCabinetsList(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cabinets", nil)
+	rec := httptest.NewRecorder()
+
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var res struct {
+		Cabinets []string `json:"cabinets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed unmarshaling json: %v", err)
+	}
+	if len(res.Cabinets) == 0 || res.Cabinets[0] != "301" {
+		t.Fatalf("expected cabinet 301, got %v", res.Cabinets)
+	}
+}
+
+func TestHandleCabinetSchedule(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	// Missing query param
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cabinet", nil)
+	rec := httptest.NewRecorder()
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+
+	// Valid query
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/cabinet?number=301", nil)
+	rec = httptest.NewRecorder()
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var res struct {
+		Cabinet *entities.CabinetSchedule `json:"cabinet"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed unmarshaling json: %v", err)
+	}
+	if res.Cabinet == nil || res.Cabinet.Cabinet != "301" {
+		t.Fatalf("expected cabinet 301, got %+v", res.Cabinet)
+	}
+}
+
+func TestHandleEndings(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/analytics/endings?day=0", nil)
+	rec := httptest.NewRecorder()
+
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var res struct {
+		DayIndex int                   `json:"day_index"`
+		Endings  *entities.EndingsStat `json:"endings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed unmarshaling json: %v", err)
+	}
+	if res.DayIndex != 0 {
+		t.Fatalf("expected day_index 0, got %d", res.DayIndex)
+	}
+	if res.Endings == nil || len(res.Endings.Pairs[1]) == 0 || res.Endings.Pairs[1][0] != 101 {
+		t.Fatalf("expected group 101 in endings pairs, got %+v", res.Endings)
+	}
+}
+
+func TestHandleStats(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	// Missing params
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/analytics/stats", nil)
+	rec := httptest.NewRecorder()
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+
+	// Group stats
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/analytics/stats?group=101", nil)
+	rec = httptest.NewRecorder()
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	// Teacher stats
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/analytics/stats?teacher=Иванов+И.И.", nil)
+	rec = httptest.NewRecorder()
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 }
