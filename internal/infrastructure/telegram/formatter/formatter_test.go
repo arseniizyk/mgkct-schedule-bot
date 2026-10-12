@@ -125,3 +125,24 @@ func TestFormatScheduleDayAt(t *testing.T) {
 		}
 	})
 }
+
+func TestFormatTeacherProfile(t *testing.T) {
+	if got := FormatTeacherProfile(nil); got != "" {
+		t.Errorf("expected empty string for nil member, got %q", got)
+	}
+
+	member := &entities.FacultyMember{
+		FullName:      "Анципов Евгений Юрьевич",
+		ShortName:     "Анципов Е. Ю.",
+		Position:      "Преподаватель",
+		Qualification: "Второй категории",
+	}
+
+	got := FormatTeacherProfile(member)
+	if !strings.Contains(got, "Анципов Евгений Юрьевич") || !strings.Contains(got, "Анципов Е. Ю.") {
+		t.Errorf("expected names in profile, got: %s", got)
+	}
+	if !strings.Contains(got, "Преподаватель • Второй категории") {
+		t.Errorf("expected position and qualification, got: %s", got)
+	}
+}

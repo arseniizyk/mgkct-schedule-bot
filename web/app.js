@@ -11,6 +11,8 @@
     mode: 'group', // 'group' | 'teacher' | 'calls'
     groups: [],
     teachers: [],
+    facultyDirectory: [],
+    subjects: {},
     calls: [],
     selectedGroup: null,
     selectedTeacher: '',
@@ -177,10 +179,20 @@
         targetSelect.appendChild(opt);
       });
     } else if (state.mode === 'teacher') {
+      const facMap = {};
+      (state.facultyDirectory || []).forEach(f => {
+        if (f.short_name) facMap[f.short_name] = f;
+      });
+
       state.teachers.forEach(t => {
         const opt = document.createElement('option');
         opt.value = t;
-        opt.textContent = t;
+        const fac = facMap[t];
+        if (fac && fac.full_name && fac.full_name !== t) {
+          opt.textContent = `${t} (${fac.full_name})`;
+        } else {
+          opt.textContent = t;
+        }
         if (t === state.selectedTeacher) opt.selected = true;
         targetSelect.appendChild(opt);
       });
@@ -447,6 +459,12 @@
         ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)] uppercase tracking-wider">Идет сейчас</span>`
         : '';
 
+  function resolveSubjectName(rawName) {
+    if (!rawName) return '';
+    const cleaned = rawName.replace(/^[123]\.\s*/, '').replace(/^\d+\*?\s*[-–]\s*/, '').trim();
+    return state.subjects?.[cleaned] || '';
+  }
+
       const singleClassBadgeHtml = (singlePair && singlePair.class && singlePair.class !== '-')
         ? `<span class="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">каб. ${escapeHtml(singlePair.class)}</span>`
         : '';
@@ -462,8 +480,14 @@
           ? `<span class="px-1.5 py-0.5 rounded-md bg-[var(--tg-theme-secondary-bg-color)] text-[11px] font-medium">${escapeHtml(singlePair.type)}</span>`
           : '';
 
+        const fullSubj = resolveSubjectName(singlePair.name);
+        const fullSubjHtml = fullSubj
+          ? `<p class="text-[11px] text-[var(--tg-theme-hint-color)] mt-0.5">${escapeHtml(fullSubj)}</p>`
+          : '';
+
         bodyHtml = `
           <h3 class="font-semibold text-sm leading-snug">${escapeHtml(singlePair.name)}</h3>
+          ${fullSubjHtml}
           <div class="mt-2 flex items-center justify-between text-xs text-[var(--tg-theme-hint-color)]">
             <span>${escapeHtml(teacherOrGroup)}</span>
             ${typeBadgeHtml}
@@ -484,12 +508,20 @@
                 ? `<span class="px-1.5 py-0.5 rounded-md bg-[var(--tg-theme-secondary-bg-color)] text-[11px] font-medium">${escapeHtml(p.type)}</span>`
                 : '';
 
+              const fullSubj = resolveSubjectName(p.name);
+              const fullSubjHtml = fullSubj
+                ? `<p class="text-[11px] text-[var(--tg-theme-hint-color)] mt-0.5">${escapeHtml(fullSubj)}</p>`
+                : '';
+
               return `
                 <div class="${pIdx > 0 ? 'pt-2.5' : ''}">
                   <div class="flex items-start justify-between gap-2">
                     <div class="flex items-start gap-1.5 flex-1 min-w-0">
                       <span class="text-[10px] px-1.5 py-0.5 rounded font-bold bg-blue-500/10 text-[var(--tg-theme-button-color)] shrink-0 mt-0.5">${pIdx + 1} п/г</span>
-                      <h4 class="font-semibold text-sm leading-snug text-[var(--tg-theme-text-color)]">${escapeHtml(p.name)}</h4>
+                      <div>
+                        <h4 class="font-semibold text-sm leading-snug text-[var(--tg-theme-text-color)]">${escapeHtml(p.name)}</h4>
+                        ${fullSubjHtml}
+                      </div>
                     </div>
                     ${classBadge}
                   </div>
@@ -568,14 +600,17 @@
       const callsRes = await apiFetch('/api/v1/calls');
       state.calls = callsRes.calls || [];
 
-      // 2. Fetch Groups & Teachers
-      const [groupsRes, teachersRes] = await Promise.all([
+      // 2. Fetch Groups, Teachers & Subjects
+      const [groupsRes, teachersRes, subjectsRes] = await Promise.all([
         apiFetch('/api/v1/groups'),
         apiFetch('/api/v1/teachers'),
+        apiFetch('/api/v1/subjects'),
       ]);
 
       state.groups = groupsRes.groups || [];
       state.teachers = teachersRes.teachers || [];
+      state.facultyDirectory = teachersRes.directory || [];
+      state.subjects = subjectsRes.subjects || {};
 
       // 3. Fetch User Profile
       try {

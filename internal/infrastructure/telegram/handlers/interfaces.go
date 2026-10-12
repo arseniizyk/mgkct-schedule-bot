@@ -20,6 +20,7 @@ type TeacherService interface {
 	GetAvailableWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error)
 	GetAllTeacherNames(ctx context.Context) ([]string, error)
 	ValidateTeacher(ctx context.Context, name string) (string, []string, bool)
+	GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error)
 }
 
 type UserRepo interface {

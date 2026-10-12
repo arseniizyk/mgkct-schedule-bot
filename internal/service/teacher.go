@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,15 +23,38 @@ type TeacherScheduleRepository interface {
 	GetWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error)
 }
 
-type TeacherService struct {
-	log  *slog.Logger
-	repo TeacherScheduleRepository
+type FacultyRepository interface {
+	SaveBatch(ctx context.Context, members []*entities.FacultyMember) error
+	GetAll(ctx context.Context) ([]*entities.FacultyMember, error)
+	FindByShortName(ctx context.Context, shortName string) (*entities.FacultyMember, error)
+	Search(ctx context.Context, queryStr string) ([]*entities.FacultyMember, error)
 }
 
-func NewTeacherService(log *slog.Logger, repo TeacherScheduleRepository) *TeacherService {
+type SubjectDictionary interface {
+	Lookup(shortName string) (string, bool)
+	Resolve(raw string) (cleaned string, fullName string, found bool)
+	All() map[string]string
+	Search(query string) []entities.SubjectInfo
+}
+
+type TeacherService struct {
+	log         *slog.Logger
+	repo        TeacherScheduleRepository
+	facultyRepo FacultyRepository
+	dict        SubjectDictionary
+}
+
+func NewTeacherService(
+	log *slog.Logger,
+	repo TeacherScheduleRepository,
+	facultyRepo FacultyRepository,
+	dict SubjectDictionary,
+) *TeacherService {
 	return &TeacherService{
-		log:  log,
-		repo: repo,
+		log:         log,
+		repo:        repo,
+		facultyRepo: facultyRepo,
+		dict:        dict,
 	}
 }
 
@@ -112,6 +136,7 @@ func (s *TeacherService) FindTeacherByName(ctx context.Context, name string) (ex
 
 	lowerName := strings.ToLower(strings.TrimSpace(name))
 
+	// 1. Прямой поиск по расписанию преподавателей
 	for _, n := range names {
 		lower := strings.ToLower(n)
 		switch {
@@ -122,5 +147,49 @@ func (s *TeacherService) FindTeacherByName(ctx context.Context, name string) (ex
 		}
 	}
 
+	// 2. Если точных нет и подключен репозиторий педсостава, ищем по полному ФИО в справочнике
+	if len(exact) == 0 && s.facultyRepo != nil {
+		members, err := s.facultyRepo.Search(ctx, name)
+		if err == nil {
+			namesSet := make(map[string]struct{}, len(names))
+			for _, n := range names {
+				namesSet[n] = struct{}{}
+			}
+
+			for _, m := range members {
+				if _, ok := namesSet[m.ShortName]; !ok {
+					continue
+				}
+				if strings.EqualFold(m.FullName, strings.TrimSpace(name)) {
+					if !slices.Contains(exact, m.ShortName) {
+						exact = append(exact, m.ShortName)
+					}
+				} else {
+					if !slices.Contains(partial, m.ShortName) && !slices.Contains(exact, m.ShortName) {
+						partial = append(partial, m.ShortName)
+					}
+				}
+			}
+		}
+	}
+
 	return exact, partial, nil
+}
+
+func (s *TeacherService) GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error) {
+	if s.facultyRepo == nil {
+		return nil, domainerr.ErrTeacherNotFound
+	}
+	return s.facultyRepo.FindByShortName(ctx, teacherName)
+}
+
+func (s *TeacherService) GetAllFaculty(ctx context.Context) ([]*entities.FacultyMember, error) {
+	if s.facultyRepo == nil {
+		return nil, domainerr.ErrTeacherNotFound
+	}
+	return s.facultyRepo.GetAll(ctx)
+}
+
+func (s *TeacherService) GetSubjectDictionary() SubjectDictionary {
+	return s.dict
 }

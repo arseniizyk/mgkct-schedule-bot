@@ -16,6 +16,7 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/db"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/dictionary"
 	httpserver "github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/handlers"
@@ -50,14 +51,17 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	// 2. Репозитории
 	scheduleRepo := repository.NewScheduleRepository(database)
 	teacherRepo := repository.NewTeacherScheduleRepository(database)
+	facultyRepo := repository.NewFacultyRepository(database)
 	userRepo := repository.NewUserRepository(database)
 
-	// 3. Сервисы
+	// 3. Сервисы и справочники
+	subjectDict := dictionary.NewSubjectDictionary()
 	scheduleSvc := service.NewScheduleService(log, scheduleRepo)
-	teacherSvc := service.NewTeacherService(log, teacherRepo)
+	teacherSvc := service.NewTeacherService(log, teacherRepo, facultyRepo, subjectDict)
 
 	studentParser := parser.New(log)
 	teacherParser := parser.NewTeacherParser(log)
+	facultyParser := parser.NewFacultyParser(log)
 
 	scraperSvc := service.NewScraperService(
 		log,
@@ -68,6 +72,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		teacherRepo,
 		scheduleSvc,
 	)
+	scraperSvc.SetFaculty(facultyParser, facultyRepo)
 
 	// 4. Telegram Бот
 	botPref := tele.Settings{
@@ -113,6 +118,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo))
 	bot.Handle("/teacherweek", handlers.TeacherWeek(log, teacherSvc, userRepo))
+	bot.Handle("/subject", handlers.Subject(subjectDict))
 
 	// Кнопки Reply-клавиатуры
 	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
