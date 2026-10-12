@@ -30,3 +30,5 @@ bot.db*
 # Cloudflare Wrangler
 .wrangler/
 
+plan.md
+
