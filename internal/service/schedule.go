@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -102,4 +103,36 @@ func (s *ScheduleService) SetCache(sch *entities.Schedule) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cache = sch
+}
+
+func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {
+	const op = "service.ScheduleService.GetAllGroupIDs"
+
+	s.mu.RLock()
+	if s.cache != nil && len(s.cache.Groups) > 0 {
+		ids := make([]int32, 0, len(s.cache.Groups))
+		for id := range s.cache.Groups {
+			ids = append(ids, id)
+		}
+		s.mu.RUnlock()
+		slices.Sort(ids)
+		return ids, nil
+	}
+	s.mu.RUnlock()
+
+	sch, err := s.scheduleRepo.GetLatest(ctx)
+	if err != nil {
+		if errors.Is(err, domainerr.ErrScheduleNotFound) {
+			return []int32{}, nil
+		}
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	s.SetCache(sch)
+	ids := make([]int32, 0, len(sch.Groups))
+	for id := range sch.Groups {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids, nil
 }

@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite"
 	"github.com/pressly/goose/v3"
+	_ "modernc.org/sqlite"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 )

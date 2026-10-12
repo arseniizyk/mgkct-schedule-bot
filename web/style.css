@@ -1,0 +1,48 @@
+:root {
+  --tg-theme-bg-color: #ffffff;
+  --tg-theme-secondary-bg-color: #f4f4f5;
+  --tg-theme-text-color: #000000;
+  --tg-theme-hint-color: #71717a;
+  --tg-theme-link-color: #2481cc;
+  --tg-theme-button-color: #2481cc;
+  --tg-theme-button-text-color: #ffffff;
+  --tg-theme-header-bg-color: #ffffff;
+  --tg-theme-section-bg-color: #ffffff;
+  --tg-theme-section-separator-color: #e4e4e7;
+}
+
+.dark {
+  --tg-theme-bg-color: #18181b;
+  --tg-theme-secondary-bg-color: #27272a;
+  --tg-theme-text-color: #fafafa;
+  --tg-theme-hint-color: #a1a1aa;
+  --tg-theme-link-color: #3b82f6;
+  --tg-theme-button-color: #2563eb;
+  --tg-theme-button-text-color: #ffffff;
+  --tg-theme-header-bg-color: #18181b;
+  --tg-theme-section-bg-color: #27272a;
+  --tg-theme-section-separator-color: #3f3f46;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--tg-theme-bg-color);
+  color: var(--tg-theme-text-color);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Расписание МГКЦТ</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="p-0 m-0 min-h-screen flex flex-col transition-colors duration-200">
+
+  <!-- Top Filter & Week Navigation Bar -->
+  <div id="scheduleToolbar" class="sticky top-0 z-40 px-4 py-2.5 bg-[var(--tg-theme-header-bg-color)] border-b border-[var(--tg-theme-section-separator-color)] shadow-xs">
+    <div class="max-w-xl mx-auto w-full flex flex-col gap-2.5">
+      <!-- Target selection & Week switcher & Theme -->
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <span class="text-xs text-[var(--tg-theme-hint-color)] uppercase tracking-wider font-semibold shrink-0" id="targetLabel">Группа:</span>
+          <div class="relative flex-1 max-w-[220px]">
+            <select id="targetSelect" class="w-full appearance-none font-semibold text-sm bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-text-color)] border border-[var(--tg-theme-section-separator-color)] rounded-xl px-3 py-1.5 pr-7 focus:outline-none focus:ring-1 focus:ring-[var(--tg-theme-button-color)] truncate">
+              <option value="">Загрузка...</option>
+            </select>
+            <span class="pointer-events-none absolute right-2.5 top-2 text-xs text-[var(--tg-theme-hint-color)]">▼</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 shrink-0">
+          <!-- Week Switcher -->
+          <div class="flex items-center gap-0.5 bg-[var(--tg-theme-secondary-bg-color)] p-0.5 rounded-xl border border-[var(--tg-theme-section-separator-color)] text-xs font-medium">
+            <button id="prevWeekBtn" title="Предыдущая неделя" class="px-2 py-1 rounded-lg hover:bg-[var(--tg-theme-bg-color)] transition disabled:opacity-30 disabled:pointer-events-none">◀</button>
+            <span id="weekLabel" class="px-2 text-xs font-semibold whitespace-nowrap">Неделя</span>
+            <button id="nextWeekBtn" title="Следующая неделя" class="px-2 py-1 rounded-lg hover:bg-[var(--tg-theme-bg-color)] transition disabled:opacity-30 disabled:pointer-events-none">▶</button>
+          </div>
+
+          <!-- Theme Toggle Button -->
+          <button id="themeToggle" title="Сменить тему" class="p-1.5 rounded-xl text-xs font-medium bg-[var(--tg-theme-secondary-bg-color)] border border-[var(--tg-theme-section-separator-color)] hover:opacity-80 transition">
+            🌓
+          </button>
+        </div>
+      </div>
+
+      <!-- Day Selector Strip (Scrollable Tabs) -->
+      <div class="flex gap-1.5 overflow-x-auto hide-scrollbar py-0.5" id="dayTabs">
+        <!-- Will be populated dynamically by app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Content Container -->
+  <main class="flex-1 p-4 overflow-y-auto max-w-xl mx-auto w-full">
+
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="hidden flex-col items-center justify-center py-12 text-[var(--tg-theme-hint-color)] gap-2">
+      <div class="w-7 h-7 border-2 border-[var(--tg-theme-button-color)] border-t-transparent rounded-full animate-spin"></div>
+      <span class="text-xs">Загрузка расписания...</span>
+    </div>
+
+    <!-- Error State -->
+    <div id="errorState" class="hidden text-center py-10 px-4">
+      <div class="text-3xl mb-2">😕</div>
+      <h3 id="errorMessage" class="text-sm font-semibold text-[var(--tg-theme-text-color)]">Расписание не найдено</h3>
+      <p class="text-xs text-[var(--tg-theme-hint-color)] mt-1">Попробуйте выбрать другую группу или неделю</p>
+      <button id="retryBtn" class="mt-4 px-3 py-1.5 bg-[var(--tg-theme-button-color)] text-[var(--tg-theme-button-text-color)] rounded-lg text-xs font-medium">
+        Повторить
+      </button>
+    </div>
+
+    <!-- SCHEDULE VIEW -->
+    <div id="scheduleView" class="space-y-3">
+      <!-- Day Header -->
+      <div class="flex items-center justify-between pb-1">
+        <div>
+          <h2 id="currentDayTitle" class="text-base font-bold flex items-center gap-2">
+            <span>Понедельник</span>
+            <span id="shiftBadge" class="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-[var(--tg-theme-button-color)] font-normal hidden">
+              1 смена
+            </span>
+          </h2>
+          <p id="pairsCountLabel" class="text-xs text-[var(--tg-theme-hint-color)]">0 пар</p>
+        </div>
+        <button id="saveDefaultBtn" class="text-xs px-2.5 py-1.5 rounded-lg font-medium bg-[var(--tg-theme-secondary-bg-color)] text-[var(--tg-theme-hint-color)] hover:text-[var(--tg-theme-text-color)] border border-[var(--tg-theme-section-separator-color)] transition">
+          Моя группа
+        </button>
+      </div>
+
+      <!-- Schedule Cards List -->
+      <div id="pairsList" class="space-y-2.5">
+        <!-- Rendered by app.js -->
+      </div>
+    </div>
+
+    <!-- CALLS SCHEDULE VIEW -->
+    <div id="callsView" class="hidden space-y-3">
+      <div class="pb-1">
+        <h2 class="text-base font-bold">Расписание звонков</h2>
+        <p class="text-xs text-[var(--tg-theme-hint-color)]">Длительность пар и перерывов МГКЦТ</p>
+      </div>
+
+      <div id="callsList" class="bg-[var(--tg-theme-section-bg-color)] border border-[var(--tg-theme-section-separator-color)] rounded-2xl overflow-hidden divide-y divide-[var(--tg-theme-section-separator-color)]">
+        <!-- Rendered by app.js -->
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom Navigation Bar (Thumb-friendly Mobile Tabs) -->
+  <nav class="sticky bottom-0 z-40 bg-[var(--tg-theme-bg-color)] border-t border-[var(--tg-theme-section-separator-color)] p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg">
+    <div class="max-w-xl mx-auto grid grid-cols-3 gap-1.5 p-1 bg-[var(--tg-theme-secondary-bg-color)] rounded-2xl text-sm font-medium">
+      <button id="tabGroup" class="py-2 rounded-xl bg-[var(--tg-theme-bg-color)] shadow-xs text-[var(--tg-theme-button-color)] font-semibold transition text-center flex items-center justify-center">
+        Группа
+      </button>
+      <button id="tabTeacher" class="py-2 rounded-xl text-[var(--tg-theme-hint-color)] hover:text-[var(--tg-theme-text-color)] transition text-center flex items-center justify-center">
+        Преподаватель
+      </button>
+      <button id="tabCalls" class="py-2 rounded-xl text-[var(--tg-theme-hint-color)] hover:text-[var(--tg-theme-text-color)] transition text-center flex items-center justify-center">
+        Звонки
+      </button>
+    </div>
+  </nav>
+
+  <script src="/app.js"></script>
+</body>
+</html>

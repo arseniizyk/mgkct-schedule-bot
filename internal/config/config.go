@@ -27,6 +27,7 @@ type Config struct {
 type BotConfig struct {
 	Token      string `env:"TOKEN"`
 	HealthPort string `env:"HEALTH_PORT" env-default:"8081"`
+	WebAppURL  string `env:"WEB_APP_URL" env-default:""`
 }
 
 type DBConfig struct {
