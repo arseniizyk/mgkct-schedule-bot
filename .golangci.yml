@@ -378,7 +378,7 @@ linters:
       packages:
         - github.com/jmoiron/sqlx
 
-    sloglint:
+    # sloglint:
       # Report the use of functions without a context.Context.
       # https://github.com/go-simpler/sloglint#context-only
       # Values: "all", "scope"
