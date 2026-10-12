@@ -99,17 +99,17 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/calls", handlers.Calls())
 	bot.Handle("/cancel", handlers.Cancel(log, stateMgr))
 	bot.Handle("/setgroup", handlers.SetGroup(log, userRepo, stateMgr))
-	bot.Handle("/group", handlers.Day(log, scheduleSvc, userRepo))
-	bot.Handle("/day", handlers.Day(log, scheduleSvc, userRepo))
-	bot.Handle("/week", handlers.Week(log, scheduleSvc, userRepo))
+	bot.Handle("/group", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/day", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/week", handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, stateMgr))
 	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo))
 	bot.Handle("/teacherweek", handlers.TeacherWeek(log, teacherSvc, userRepo))
 
 	// Кнопки Reply-клавиатуры
-	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, userRepo))
-	bot.Handle(kbd.BtnWeek, handlers.Week(log, scheduleSvc, userRepo))
+	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle(kbd.BtnWeek, handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle(kbd.BtnCalls, handlers.Calls())
 	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, stateMgr))
 

@@ -265,6 +265,43 @@ func (r *TeacherScheduleRepository) GetAllLatest(ctx context.Context) (map[strin
 	return result, nil
 }
 
+func (r *TeacherScheduleRepository) GetAll(ctx context.Context) ([]*entities.Teacher, error) {
+	const op = "repository.TeacherScheduleRepository.GetAll"
+
+	query := r.sb.Select("schedule").From("teacher_schedules")
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: build query: %w", op, err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query all: %w", op, err)
+	}
+	defer rows.Close()
+
+	var result []*entities.Teacher
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("%s: scan row: %w", op, err)
+		}
+
+		var t entities.Teacher
+		if err := json.Unmarshal([]byte(raw), &t); err != nil {
+			continue
+		}
+
+		result = append(result, &t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows err: %w", op, err)
+	}
+
+	return result, nil
+}
+
 func (r *TeacherScheduleRepository) getWeekStr(ctx context.Context, orderBy string, pred, dest any) error {
 	query := r.sb.Select("week").
 		From("teacher_schedules").

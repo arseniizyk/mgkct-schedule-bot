@@ -17,6 +17,7 @@ type TeacherScheduleRepository interface {
 	GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error)
 	GetLatest(ctx context.Context, name string) (*entities.Teacher, error)
 	GetAllLatest(ctx context.Context) (map[string]*entities.Teacher, error)
+	GetAll(ctx context.Context) ([]*entities.Teacher, error)
 	GetAllTeacherNames(ctx context.Context) ([]string, error)
 	GetWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error)
 }

@@ -16,6 +16,7 @@ type ScheduleRepository interface {
 	Save(ctx context.Context, week time.Time, schedule *entities.Schedule) error
 	GetByWeek(ctx context.Context, week time.Time) (*entities.Schedule, error)
 	GetLatest(ctx context.Context) (*entities.Schedule, error)
+	GetAll(ctx context.Context) (map[time.Time]*entities.Schedule, error)
 	GetWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error)
 }
 

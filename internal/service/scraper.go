@@ -30,10 +30,10 @@ type ScraperService struct {
 	teacherRepo   TeacherScheduleRepository
 	scheduleSvc   *ScheduleService
 
-	mu             sync.RWMutex
-	latestWeek     time.Time
-	groupHashes    map[int32][32]byte
-	teacherHashes  map[string][32]byte
+	mu                  sync.RWMutex
+	latestWeek          time.Time
+	groupHashes         map[string][32]byte // key: "<group_id>:<YYYY-MM-DD>"
+	teacherHashes       map[string][32]byte // key: "<teacher_name>:<YYYY-MM-DD>"
 	newWeekFoundInTurbo bool
 }
 
@@ -54,7 +54,7 @@ func NewScraperService(
 		scheduleRepo:  scheduleRepo,
 		teacherRepo:   teacherRepo,
 		scheduleSvc:   scheduleSvc,
-		groupHashes:   make(map[int32][32]byte),
+		groupHashes:   make(map[string][32]byte),
 		teacherHashes: make(map[string][32]byte),
 	}
 }
@@ -125,27 +125,34 @@ func (s *ScraperService) initFromDB(ctx context.Context) {
 	initCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	latest, err := s.scheduleRepo.GetLatest(initCtx)
-	if err == nil && latest != nil {
+	schedules, err := s.scheduleRepo.GetAll(initCtx)
+	if err == nil && len(schedules) > 0 {
 		s.mu.Lock()
-		for _, g := range latest.Groups {
-			if g.Week.After(s.latestWeek) {
-				s.latestWeek = g.Week
+		for week, sch := range schedules {
+			if week.After(s.latestWeek) {
+				s.latestWeek = week
 			}
-			if h, err := hashItem(g); err == nil {
-				s.groupHashes[g.ID] = h
+			for _, g := range sch.Groups {
+				key := fmt.Sprintf("%d:%s", g.ID, g.Week.Format("2006-01-02"))
+				if h, err := hashItem(g); err == nil {
+					s.groupHashes[key] = h
+				}
 			}
 		}
 		s.mu.Unlock()
-		s.scheduleSvc.SetCache(latest)
+
+		if latestSch, ok := schedules[s.latestWeek]; ok {
+			s.scheduleSvc.SetCache(latestSch)
+		}
 	}
 
-	teachers, err := s.teacherRepo.GetAllLatest(initCtx)
-	if err == nil && teachers != nil {
+	teachers, err := s.teacherRepo.GetAll(initCtx)
+	if err == nil && len(teachers) > 0 {
 		s.mu.Lock()
-		for name, t := range teachers {
+		for _, t := range teachers {
+			key := fmt.Sprintf("%s:%s", t.Name, t.Week.Format("2006-01-02"))
 			if h, err := hashItem(t); err == nil {
-				s.teacherHashes[name] = h
+				s.teacherHashes[key] = h
 			}
 		}
 		s.mu.Unlock()
@@ -212,20 +219,23 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 	// Обновляем кэш последней недели
 	if latestSch, ok := schedules[s.latestWeek]; ok {
 		s.scheduleSvc.SetCache(latestSch)
+	}
 
-		// Проверяем изменения по каждой группе
-		for groupID, group := range latestSch.Groups {
+	// Проверяем изменения по каждой группе во всех распарсенных неделях
+	for _, sch := range schedules {
+		for groupID, group := range sch.Groups {
 			newHash, err := hashItem(group)
 			if err != nil {
 				continue
 			}
 
-			oldHash, exists := s.groupHashes[groupID]
-			if !exists || oldHash != newHash {
-				s.groupHashes[groupID] = newHash
+			key := fmt.Sprintf("%d:%s", groupID, group.Week.Format("2006-01-02"))
+			oldHash, exists := s.groupHashes[key]
+			s.groupHashes[key] = newHash
 
-				// Отправляем событие обновления конкретной группы
-				log.InfoContext(ctx, "group schedule updated", "group_id", groupID)
+			// Уведомление отправляется ТОЛЬКО если расписание уже существовало и его содержимое реально изменилось!
+			if exists && oldHash != newHash {
+				log.InfoContext(ctx, "group schedule updated", "group_id", groupID, "week", group.Week)
 				eventCh <- Event{
 					Type:  EventGroupScheduleUpdated,
 					Group: group,
@@ -249,19 +259,20 @@ func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers [
 			continue
 		}
 
-		s.mu.Lock()
-		oldHash, exists := s.teacherHashes[t.Name]
-		if !exists || oldHash != newHash {
-			s.teacherHashes[t.Name] = newHash
-			s.mu.Unlock()
+		key := fmt.Sprintf("%s:%s", t.Name, t.Week.Format("2006-01-02"))
 
-			log.InfoContext(ctx, "teacher schedule updated", "name", t.Name)
+		s.mu.Lock()
+		oldHash, exists := s.teacherHashes[key]
+		s.teacherHashes[key] = newHash
+		s.mu.Unlock()
+
+		// Уведомление отправляется ТОЛЬКО если расписание уже существовало и его содержимое реально изменилось!
+		if exists && oldHash != newHash {
+			log.InfoContext(ctx, "teacher schedule updated", "name", t.Name, "week", t.Week)
 			eventCh <- Event{
 				Type:    EventTeacherScheduleUpdated,
 				Teacher: t,
 			}
-		} else {
-			s.mu.Unlock()
 		}
 	}
 }
