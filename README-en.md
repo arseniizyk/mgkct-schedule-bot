@@ -2,142 +2,123 @@
 
 [Русский](README.md) | **English**
 
-A bot for viewing MGKCT (Minsk State College of Digital Technologies) timetables, including first/second shift split.
+A Telegram bot for easy viewing of Minsk State College of Digital Technologies (MGKCT) timetables for students and teachers.
 
-Microservice architecture: Scraper ↔ gRPC/NATS ↔ Tg-bot.
-
-## Found a bug, optimization, or have an idea?
-
-Open an **issue**.
+Lightweight Go monolith (Single Binary) with embedded **SQLite (WAL)**, smart adaptive scraping, and instant change notifications.
 
 ---
 
-## 🚀 Deploy
+## ✨ Features
 
-1. **Install [Docker](https://www.docker.com/)**
-2. **Clone the repository:**
+- 📅 **Timetables for groups and teachers:**
+  - Daily schedule with fast navigation (◀️ / ▶️);
+  - Weekly schedule with week switching (◀️ Prev Week / Next Week ▶️);
+  - Second-shift support with automatic pair index offsets;
+  - Interactive teacher surname search.
+- ⏰ **Bell schedule:** updated unified pair timing for all school days.
+- ⚡ **Smart Dynamic Polling:**
+  - **Turbo mode (Fri 12:00 — Sat morning):** frequent scraping (every 25s) until a new week is published;
+  - **Regular mode:** scrapes once a minute during the day;
+  - **Night / Sunday mode:** scrapes every 20 minutes to save server resources.
+- 🔔 **Clean notifications (no spam):**
+  - Notification when a new week's timetable is released (strictly once);
+  - Personal notifications on changes only when subjects/classrooms actually change;
+  - Rate Limiter (25 msg/s) preventing Telegram API flood bans.
+- 💾 **Embedded Database:** Pure Go SQLite (`modernc.org/sqlite`) in WAL mode, requiring no external DBMS, CGO, or Docker.
 
+---
+
+## 🚀 Quick Start
+
+### Option 1: Local Run (No Docker needed)
+
+1. **Clone the repository:**
    ```bash
-   git clone github.com/arseniizyk/mgkct-schedule-bot
+   git clone https://github.com/arseniizyk/mgkct-schedule-bot.git
+   cd mgkct-schedule-bot
    ```
-3. **Get the API token from [BotFather](https://t.me/botfather)**
-4. **Create `.env` based on `.env.example`:**
 
+2. **Create configuration file:**
    ```bash
    cp configs/.env.example configs/.env
    ```
+   Set your bot token in `configs/.env`:
+   ```env
+   BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+   ```
 
-   and set a real `TELEGRAM_TOKEN` in it.
-5. **Run:**
-
+3. **Run:**
    ```bash
    task run
+   # or directly:
+   go run ./cmd/bot
    ```
-
-   or directly:
-
-   ```bash
-   docker compose --env-file=./configs/.env up --build -d
-   ```
-
-### Host ports
-
-| Service         | Port | Purpose                                        |
-| --------------- | ---- | ---------------------------------------------- |
-| scraper (gRPC)  | 9001 | gRPC timetable API                             |
-| NATS            | 4223 | client connections (4222 inside compose)       |
-| NATS monitoring | 8222 | http://localhost:8222                          |
-| Adminer         | 8080 | web UI for databases                           |
-| tg-bot healthz  | 8081 | only inside the compose network                |
-
-### Environment variables
-
-The main variables are described in `configs/.env.example`. Key points:
-
-* `ENV` — `dev` or `prod`; any other value crashes services at startup;
-* `TELEGRAM_TOKEN` — bot token from BotFather;
-* scraper DB uses the `SCRAPER_DB_*` prefix (`HOST` and `NAME` are required);
-* bot DB uses the `BOT_DB_*` prefix;
-* `NATS_URL` defaults to `nats://nats:4222` (address inside the compose network).
-
-### Migrations
-
-Migrations run via [goose](https://github.com/pressly/goose): SQL files are
-**embedded into the binaries** (`embed`) and applied automatically at each
-service startup. No separate migration containers are needed.
-
-To add a new migration for service `<svc>`:
-
-1. Create a file `services/<svc>/internal/infrastructure/db/migrations/NNNNNN_name.sql`
-   with the sections:
-
-   ```sql
-   -- +goose Up
-   CREATE TABLE ...;
-
-   -- +goose Down
-   DROP TABLE ...;
-   ```
-
-2. Wrap plpgsql functions/procedures in
-   `-- +goose StatementBegin` / `-- +goose StatementEnd`.
-
-Applied versions are tracked in each database's `goose_db_version` table;
-restarting a service never re-applies migrations.
 
 ---
 
-## 🧩 Architecture
-
-The project consists of two services connected via **gRPC** and **NATS**.
-
-### 1. Scraper
-
-A service that:
-
-* parses timetables from the MGKCT website;
-* stores data in **PostgreSQL**;
-* exposes a gRPC interface:
-
-```protobuf
-rpc GetGroupSchedule(GroupScheduleRequest) returns (GroupScheduleResponse);      // Full group timetable for the latest week
-rpc GetGroupScheduleByWeek(GroupScheduleRequest) returns (GroupScheduleResponse); // Full group timetable for a specific week
-rpc GetAvailableWeeks(AvailableWeeksRequest) returns (AvailableWeeksResponse);   // List of available weeks
-```
-
-**Events via NATS:**
-
-* when a timetable changes — publishes an update event;
-* when a new week appears — publishes a new-week event.
-
-### 2. Tg-bot
-
-A service implementing the Telegram bot with the following features:
-
-* day-by-day timetable view with ◀️ Today ▶️ navigation;
-* weekly timetable view with ◀️ Current ▶️ navigation;
-* second-shift group support (pair numbers follow the website data; the day header shows "2 смена" marker);
-* notifications about a new week becoming available;
-* notifications about timetable changes.
-
----
-
-## 🧪 Tests
+### Option 2: Run via Docker Compose
 
 ```bash
-task test              # unit tests
-task test-integration  # integration tests (requires running Docker)
+task up
+# or:
+docker compose --env-file=./configs/.env up --build -d
+```
+
+Stop:
+```bash
+task down
 ```
 
 ---
 
-## ✅ Todo
+### Option 3: Free Cloud Hosting (Koyeb / Render / Fly.io / VPS)
 
-* ~~Refactoring~~ ✅
-* ~~Dockerfile fixes~~ ✅
-* ~~Unit tests~~ ✅
-* ~~Proper CI/CD~~ ✅
-* Bugfixes
-* Redis caching
-* Teachers' timetable support
-* Telegram Mini App (React/Vue)
+Thanks to the single-binary Go + SQLite architecture, the project builds into a tiny Docker image (<30 MB):
+- Healthcheck port: `8081` (`GET /healthz`);
+- Persistent storage volume: `/app/data` (file `/app/data/bot.db`).
+
+---
+
+## ⚙️ Environment Variables
+
+Main settings configured in `configs/.env` or system environment:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ENV` | `dev` | Application mode (`dev` or `prod`) |
+| `BOT_TOKEN` | — | Telegram Bot token from [@BotFather](https://t.me/BotFather) (legacy `TELEGRAM_TOKEN` also supported) |
+| `BOT_HEALTH_PORT` | `8081` | HTTP healthcheck server port (`/healthz`) |
+| `DB_PATH` | `bot.db` | Path to SQLite database file |
+| `SCRAPER_INTERVAL` | `1m` | Standard daytime scraper interval |
+| `SCRAPER_PEAK_INTERVAL` | `25s` | Turbo mode interval on Fri-Sat until new week is found |
+| `SCRAPER_NIGHT_INTERVAL` | `20m` | Night / Sunday interval (22:00 - 08:00 and Sundays) |
+
+---
+
+## 🛠 Development Commands (Taskfile)
+
+- `task build` — builds binary to `bin/bot`;
+- `task run` — runs application locally;
+- `task test` — executes unit tests;
+- `task lint` / `task lint:fix` — runs `golangci-lint` checks and auto-fixes;
+- `task format` — formats source code (`go fmt`);
+- `task tidy` — tidies Go module dependencies.
+
+---
+
+## 🏛 Architecture
+
+```
+┌────────────────────────────────────────────────────────┐
+│               mgkct-bot (Single Binary)                │
+│                                                        │
+│  ┌──────────────────┐           ┌───────────────────┐  │
+│  │  Scraper Engine  │ ─(Chan)─► │  Telegram Engine  │  │
+│  │ (Smart Polling)  │           │  (Telebot + Rate) │  │
+│  └────────┬─────────┘           └─────────┬─────────┘  │
+│           │                               │            │
+│           └───────────────┬───────────────┘            │
+│                           ▼                            │
+│                 Embedded SQLite (WAL)                  │
+└────────────────────────────────────────────────────────┘
+```
