@@ -295,3 +295,104 @@ func (r *UserRepository) UserIDsByTeacherName(ctx context.Context, teacherName s
 
 	return userIDs, nil
 }
+
+func (r *UserRepository) SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error {
+	const op = "repository.UserRepository.SetNotifyEvening"
+
+	val := 0
+	if enabled {
+		val = 1
+	}
+
+	query := r.sb.Insert("users").
+		Columns("chat_id", "notify_evening").
+		Values(chatID, val).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET notify_evening = excluded.notify_evening")
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return fmt.Errorf("%s: build query: %w", op, err)
+	}
+
+	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
+		return fmt.Errorf("%s: exec query: %w", op, err)
+	}
+
+	return nil
+}
+
+func (r *UserRepository) GetNotifyEvening(ctx context.Context, chatID int64) (bool, error) {
+	const op = "repository.UserRepository.GetNotifyEvening"
+
+	query := r.sb.Select("notify_evening").From("users").Where(sq.Eq{"chat_id": chatID})
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return true, fmt.Errorf("%s: build query: %w", op, err)
+	}
+
+	var notify sql.NullInt64
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&notify); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, nil
+		}
+		return true, fmt.Errorf("%s: query row: %w", op, err)
+	}
+
+	if !notify.Valid {
+		return true, nil
+	}
+	return notify.Int64 == 1, nil
+}
+
+func (r *UserRepository) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
+	const op = "repository.UserRepository.UsersForEveningNotification"
+
+	query := r.sb.Select("chat_id, group_id, teacher_name").
+		From("users").
+		Where(sq.Eq{"notify_evening": 1}).
+		Where(sq.Or{
+			sq.Gt{"group_id": 0},
+			sq.NotEq{"teacher_name": ""},
+		})
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: build query: %w", op, err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query users: %w", op, err)
+	}
+	defer rows.Close()
+
+	var users []entities.User
+	for rows.Next() {
+		var (
+			chatID      int64
+			groupID     sql.NullInt64
+			teacherName sql.NullString
+		)
+		if err := rows.Scan(&chatID, &groupID, &teacherName); err != nil {
+			return nil, fmt.Errorf("%s: scan row: %w", op, err)
+		}
+		var g int
+		if groupID.Valid {
+			g = int(groupID.Int64)
+		}
+		var tn string
+		if teacherName.Valid {
+			tn = teacherName.String
+		}
+		users = append(users, entities.User{
+			ChatID:        chatID,
+			Group:         g,
+			TeacherName:   tn,
+			NotifyEvening: true,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows err: %w", op, err)
+	}
+	return users, nil
+}

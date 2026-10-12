@@ -139,3 +139,33 @@ func TestInlineArchiveWeeksKeyboard(t *testing.T) {
 		t.Errorf("unexpected button label: %s", btn.Text)
 	}
 }
+
+func TestInlineNotifyKeyboard(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
+		m := InlineNotifyKeyboard(true)
+		if m == nil || len(m.InlineKeyboard) != 1 || len(m.InlineKeyboard[0]) != 1 {
+			t.Fatalf("unexpected keyboard structure: %+v", m)
+		}
+		btn := m.InlineKeyboard[0][0]
+		if btn.Unique+"|"+btn.Data != "notify_toggle|off" {
+			t.Errorf("btn callback = %s|%s, want notify_toggle|off", btn.Unique, btn.Data)
+		}
+		if !strings.Contains(btn.Text, "Отключить") {
+			t.Errorf("btn.Text = %q, want Отключить", btn.Text)
+		}
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		m := InlineNotifyKeyboard(false)
+		if m == nil || len(m.InlineKeyboard) != 1 || len(m.InlineKeyboard[0]) != 1 {
+			t.Fatalf("unexpected keyboard structure: %+v", m)
+		}
+		btn := m.InlineKeyboard[0][0]
+		if btn.Unique+"|"+btn.Data != "notify_toggle|on" {
+			t.Errorf("btn callback = %s|%s, want notify_toggle|on", btn.Unique, btn.Data)
+		}
+		if !strings.Contains(btn.Text, "Включить") {
+			t.Errorf("btn.Text = %q, want Включить", btn.Text)
+		}
+	})
+}
