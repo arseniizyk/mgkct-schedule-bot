@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "modernc.org/sqlite"
 	"github.com/pressly/goose/v3"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
@@ -16,42 +17,48 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-func Connect(ctx context.Context, cfg *config.DBConfig) (*pgxpool.Pool, error) {
-	dsn := cfg.DSN()
+func Connect(ctx context.Context, cfg *config.DBConfig) (*sql.DB, error) {
+	// Создаем родительскую директорию для файла БД при необходимости
+	dir := filepath.Dir(cfg.Path)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("db: create directory for sqlite: %w", err)
+		}
+	}
 
-	pool, err := pgxpool.New(ctx, dsn)
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", cfg.Path)
+
+	database, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("db: connect to database: %w", err)
+		return nil, fmt.Errorf("db: open sqlite database: %w", err)
 	}
 
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("db: ping database: %w", err)
+	// Настройка пула для SQLite: в режиме WAL несколько читателей, 1 писатель
+	database.SetMaxOpenConns(10)
+	database.SetMaxIdleConns(5)
+
+	if err := database.PingContext(ctx); err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("db: ping sqlite database: %w", err)
 	}
 
-	if err := migrateUp(ctx, dsn); err != nil {
-		pool.Close()
+	if err := migrateUp(ctx, database); err != nil {
+		_ = database.Close()
 		return nil, fmt.Errorf("db: apply migrations: %w", err)
 	}
 
-	return pool, nil
+	return database, nil
 }
 
-func migrateUp(ctx context.Context, dsn string) error {
-	g, err := sql.Open("pgx", dsn)
-	if err != nil {
-		return fmt.Errorf("db: open migration connection: %w", err)
-	}
-	defer func() { _ = g.Close() }()
-
+func migrateUp(ctx context.Context, database *sql.DB) error {
 	goose.SetBaseFS(migrationsFS)
 	goose.SetLogger(goose.NopLogger())
 
-	if err := goose.SetDialect("postgres"); err != nil {
+	if err := goose.SetDialect("sqlite3"); err != nil {
 		return fmt.Errorf("db: set goose dialect: %w", err)
 	}
 
-	if err := goose.UpContext(ctx, g, "migrations"); err != nil {
+	if err := goose.UpContext(ctx, database, "migrations"); err != nil {
 		return fmt.Errorf("db: apply up migrations: %w", err)
 	}
 

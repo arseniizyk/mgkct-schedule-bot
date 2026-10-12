@@ -2,9 +2,11 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
+	"github.com/joho/godotenv"
 )
 
 type Env string
@@ -23,33 +25,12 @@ type Config struct {
 }
 
 type BotConfig struct {
-	Token      string `env:"TOKEN" env-required:"true"`
+	Token      string `env:"TOKEN"`
 	HealthPort string `env:"HEALTH_PORT" env-default:"8081"`
 }
 
 type DBConfig struct {
-	URL      string `env:"URL"`
-	Host     string `env:"HOST" env-default:"localhost"`
-	Port     string `env:"PORT" env-default:"5432"`
-	User     string `env:"USER" env-default:"postgres"`
-	Password string `env:"PASSWORD" env-default:"password"`
-	Name     string `env:"NAME" env-default:"schedule_bot"`
-	SSLMode  string `env:"SSLMODE" env-default:"disable"`
-}
-
-func (c *DBConfig) DSN() string {
-	if c.URL != "" {
-		return c.URL
-	}
-	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		c.User,
-		c.Password,
-		c.Host,
-		c.Port,
-		c.Name,
-		c.SSLMode,
-	)
+	Path string `env:"PATH" env-default:"bot.db"`
 }
 
 type ScraperConfig struct {
@@ -60,17 +41,33 @@ type ScraperConfig struct {
 
 func New(configPath string) (*Config, error) {
 	const op = "internal.config.New"
+
+	// Автоматическая загрузка configs/.env, если файл существует
+	if _, err := os.Stat("configs/.env"); err == nil {
+		_ = godotenv.Load("configs/.env")
+	}
+
 	var cfg Config
 
-	if configPath == "" {
+	if configPath != "" {
+		if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
+			return nil, fmt.Errorf("%s: failed to load from file %s: %w", op, configPath, err)
+		}
+	} else {
 		if err := cleanenv.ReadEnv(&cfg); err != nil {
 			return nil, fmt.Errorf("%s: failed to load from env: %w", op, err)
 		}
-		return &cfg, nil
 	}
 
-	if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
-		return nil, fmt.Errorf("%s: failed to load from file: %w", op, err)
+	// Поддержка legacy TELEGRAM_TOKEN переменной
+	if cfg.Bot.Token == "" {
+		if legacyToken := os.Getenv("TELEGRAM_TOKEN"); legacyToken != "" {
+			cfg.Bot.Token = legacyToken
+		}
+	}
+
+	if cfg.Bot.Token == "" {
+		return nil, fmt.Errorf("%s: bot token is required (set TELEGRAM_TOKEN or BOT_TOKEN)", op)
 	}
 
 	return &cfg, nil

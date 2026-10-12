@@ -1,58 +1,51 @@
 -- +goose Up
--- +goose StatementBegin
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
--- +goose StatementEnd
-
-CREATE TABLE schedules (
-    id SERIAL PRIMARY KEY,
-    week DATE UNIQUE NOT NULL,
-    schedule JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+CREATE TABLE IF NOT EXISTS schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    week TEXT UNIQUE NOT NULL,
+    schedule TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TRIGGER trg_schedules_set_updated_at
-BEFORE UPDATE ON schedules
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
+-- +goose StatementBegin
+CREATE TRIGGER IF NOT EXISTS trg_schedules_set_updated_at AFTER UPDATE ON schedules
+BEGIN
+    UPDATE schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+-- +goose StatementEnd
 
-CREATE TABLE teacher_schedules (
-    id SERIAL PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS teacher_schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    week DATE NOT NULL,
-    schedule JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now(),
+    week TEXT NOT NULL,
+    schedule TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(name, week)
 );
 
-CREATE INDEX idx_teacher_schedules_name ON teacher_schedules(name);
+CREATE INDEX IF NOT EXISTS idx_teacher_schedules_name ON teacher_schedules(name);
 
-CREATE TRIGGER trg_teacher_schedules_set_updated_at
-BEFORE UPDATE ON teacher_schedules
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at();
+-- +goose StatementBegin
+CREATE TRIGGER IF NOT EXISTS trg_teacher_schedules_set_updated_at AFTER UPDATE ON teacher_schedules
+BEGIN
+    UPDATE teacher_schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+-- +goose StatementEnd
 
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    chat_id BIGINT UNIQUE NOT NULL,
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id INTEGER UNIQUE NOT NULL,
     username TEXT,
-    group_id INT,
+    group_id INTEGER,
     teacher_name TEXT,
     state TEXT NOT NULL DEFAULT ''
 );
 
 -- +goose Down
 DROP TABLE IF EXISTS users;
-DROP TRIGGER IF EXISTS trg_teacher_schedules_set_updated_at ON teacher_schedules;
+DROP TRIGGER IF EXISTS trg_teacher_schedules_set_updated_at;
 DROP INDEX IF EXISTS idx_teacher_schedules_name;
 DROP TABLE IF EXISTS teacher_schedules;
-DROP TRIGGER IF EXISTS trg_schedules_set_updated_at ON schedules;
+DROP TRIGGER IF EXISTS trg_schedules_set_updated_at;
 DROP TABLE IF EXISTS schedules;
-DROP FUNCTION IF EXISTS set_updated_at();

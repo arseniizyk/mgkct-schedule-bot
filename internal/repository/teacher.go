@@ -2,28 +2,27 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 )
 
 type TeacherScheduleRepository struct {
-	pool *pgxpool.Pool
-	sb   squirrel.StatementBuilderType
+	db *sql.DB
+	sb squirrel.StatementBuilderType
 }
 
-func NewTeacherScheduleRepository(pool *pgxpool.Pool) *TeacherScheduleRepository {
+func NewTeacherScheduleRepository(db *sql.DB) *TeacherScheduleRepository {
 	return &TeacherScheduleRepository{
-		pool: pool,
-		sb:   squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar),
+		db: db,
+		sb: squirrel.StatementBuilder.PlaceholderFormat(squirrel.Question),
 	}
 }
 
@@ -35,17 +34,18 @@ func (r *TeacherScheduleRepository) Save(ctx context.Context, name string, week 
 		return fmt.Errorf("%s: marshal teacher schedule: %w", op, err)
 	}
 
+	weekStr := week.Format("2006-01-02")
 	query := r.sb.Insert("teacher_schedules").
 		Columns("name", "week", "schedule").
-		Values(name, week, data).
-		Suffix("ON CONFLICT (name, week) DO UPDATE SET schedule = EXCLUDED.schedule")
+		Values(name, weekStr, string(data)).
+		Suffix("ON CONFLICT(name, week) DO UPDATE SET schedule = excluded.schedule, updated_at = CURRENT_TIMESTAMP")
 
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return fmt.Errorf("%s: build query to sql: %w", op, err)
 	}
 
-	if _, err := r.pool.Exec(ctx, sql, args...); err != nil {
+	if _, err := r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
 		return fmt.Errorf("%s: exec sql query: %w", op, err)
 	}
 
@@ -55,28 +55,29 @@ func (r *TeacherScheduleRepository) Save(ctx context.Context, name string, week 
 func (r *TeacherScheduleRepository) GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
 	const op = "repository.TeacherScheduleRepository.GetByWeek"
 
+	weekStr := week.Format("2006-01-02")
 	query := r.sb.Select("schedule").
 		From("teacher_schedules").
 		Where(squirrel.Eq{"name": name}).
-		Where(squirrel.LtOrEq{"week": week}).
+		Where(squirrel.LtOrEq{"week": weekStr}).
 		OrderBy("week DESC").
 		Limit(1)
 
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: build query to sql: %w", op, err)
 	}
 
-	var raw []byte
-	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&raw); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	var raw string
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domainerr.ErrWeekNotFound
 		}
 		return nil, fmt.Errorf("%s: get teacher schedule: %w", op, err)
 	}
 
 	var t entities.Teacher
-	if err := json.Unmarshal(raw, &t); err != nil {
+	if err := json.Unmarshal([]byte(raw), &t); err != nil {
 		return nil, fmt.Errorf("%s: unmarshal teacher schedule: %w", op, err)
 	}
 
@@ -89,25 +90,25 @@ func (r *TeacherScheduleRepository) GetLatest(ctx context.Context, name string) 
 	query := r.sb.Select("schedule").
 		From("teacher_schedules").
 		Where(squirrel.Eq{"name": name}).
-		OrderBy("updated_at DESC").
+		OrderBy("week DESC").
 		Limit(1)
 
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: build query to sql: %w", op, err)
 	}
 
-	var raw []byte
-	err = r.pool.QueryRow(ctx, sql, args...).Scan(&raw)
+	var raw string
+	err = r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&raw)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domainerr.ErrScheduleNotFound
 		}
 		return nil, fmt.Errorf("%s: get latest teacher schedule: %w", op, err)
 	}
 
 	var t entities.Teacher
-	if err := json.Unmarshal(raw, &t); err != nil {
+	if err := json.Unmarshal([]byte(raw), &t); err != nil {
 		return nil, fmt.Errorf("%s: unmarshal teacher schedule: %w", op, err)
 	}
 
@@ -122,15 +123,16 @@ func (r *TeacherScheduleRepository) GetWeeks(ctx context.Context, name string, w
 	if week.IsZero() {
 		query := r.sb.Select("week").
 			From("teacher_schedules").
+			Where(squirrel.Eq{"name": name}).
 			OrderBy("week DESC").
 			Limit(2)
 
-		sql, args, err := query.ToSql()
+		sqlQuery, args, err := query.ToSql()
 		if err != nil {
 			return entities.WeekNavigation{}, fmt.Errorf("%s: failed to create query: %w", op, err)
 		}
 
-		rows, err := r.pool.Query(ctx, sql, args...)
+		rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 		if err != nil {
 			return entities.WeekNavigation{}, fmt.Errorf("%s: repository sql query: %w", op, err)
 		}
@@ -138,9 +140,13 @@ func (r *TeacherScheduleRepository) GetWeeks(ctx context.Context, name string, w
 
 		var weeks []time.Time
 		for rows.Next() {
-			var w time.Time
-			if err := rows.Scan(&w); err != nil {
+			var wStr string
+			if err := rows.Scan(&wStr); err != nil {
 				return entities.WeekNavigation{}, fmt.Errorf("%s: repository scan rows: %w", op, err)
+			}
+			w, err := time.Parse("2006-01-02", wStr)
+			if err != nil {
+				return entities.WeekNavigation{}, fmt.Errorf("%s: parse date %s: %w", op, wStr, err)
 			}
 			weeks = append(weeks, w)
 		}
@@ -158,24 +164,21 @@ func (r *TeacherScheduleRepository) GetWeeks(ctx context.Context, name string, w
 		}, nil
 	}
 
-	var current, prev, next time.Time
+	weekStr := week.Format("2006-01-02")
+	var currentStr, prevStr, nextStr string
 
-	if err := r.getWeek(ctx, "DESC", squirrel.Eq{"week": week}, &current); err != nil {
+	if err := r.getWeekStr(ctx, "DESC", squirrel.And{squirrel.Eq{"name": name}, squirrel.Eq{"week": weekStr}}, &currentStr); err != nil {
 		return entities.WeekNavigation{}, fmt.Errorf("%s: get current week: %w", op, err)
 	}
+	current, _ := time.Parse("2006-01-02", currentStr)
 
-	if err := r.getWeek(ctx, "DESC", squirrel.Lt{"week": week}, &prev); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return entities.WeekNavigation{}, fmt.Errorf("%s: get prev week: %w", op, err)
-		}
-		prev = time.Time{}
+	var prev, next time.Time
+	if err := r.getWeekStr(ctx, "DESC", squirrel.And{squirrel.Eq{"name": name}, squirrel.Lt{"week": weekStr}}, &prevStr); err == nil {
+		prev, _ = time.Parse("2006-01-02", prevStr)
 	}
 
-	if err := r.getWeek(ctx, "ASC", squirrel.Gt{"week": week}, &next); err != nil {
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return entities.WeekNavigation{}, fmt.Errorf("%s: get next week: %w", op, err)
-		}
-		next = time.Time{}
+	if err := r.getWeekStr(ctx, "ASC", squirrel.And{squirrel.Eq{"name": name}, squirrel.Gt{"week": weekStr}}, &nextStr); err == nil {
+		next, _ = time.Parse("2006-01-02", nextStr)
 	}
 
 	return entities.WeekNavigation{
@@ -192,12 +195,12 @@ func (r *TeacherScheduleRepository) GetAllTeacherNames(ctx context.Context) ([]s
 		From("teacher_schedules").
 		OrderBy("name ASC")
 
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("%s: build query to sql: %w", op, err)
 	}
 
-	rows, err := r.pool.Query(ctx, sql, args...)
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: query teacher names: %w", op, err)
 	}
@@ -222,16 +225,18 @@ func (r *TeacherScheduleRepository) GetAllTeacherNames(ctx context.Context) ([]s
 func (r *TeacherScheduleRepository) GetAllLatest(ctx context.Context) (map[string]*entities.Teacher, error) {
 	const op = "repository.TeacherScheduleRepository.GetAllLatest"
 
-	query, args, err := r.sb.
-		Select("DISTINCT ON (ts.name) ts.name", "ts.schedule").
-		From("teacher_schedules ts").
-		OrderBy("ts.name", "ts.updated_at DESC").
-		ToSql()
-	if err != nil {
-		return nil, fmt.Errorf("can't build query: %w", err)
-	}
+	// Чистый SQLite запрос для получения последнего расписания каждого преподавателя
+	query := `
+		SELECT ts.name, ts.schedule 
+		FROM teacher_schedules ts
+		INNER JOIN (
+			SELECT name, MAX(week) AS max_week 
+			FROM teacher_schedules 
+			GROUP BY name
+		) latest ON ts.name = latest.name AND ts.week = latest.max_week
+	`
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("%s: query all latest: %w", op, err)
 	}
@@ -240,13 +245,13 @@ func (r *TeacherScheduleRepository) GetAllLatest(ctx context.Context) (map[strin
 	result := make(map[string]*entities.Teacher)
 	for rows.Next() {
 		var name string
-		var raw []byte
+		var raw string
 		if err := rows.Scan(&name, &raw); err != nil {
 			return nil, fmt.Errorf("%s: scan row: %w", op, err)
 		}
 
 		var t entities.Teacher
-		if err := json.Unmarshal(raw, &t); err != nil {
+		if err := json.Unmarshal([]byte(raw), &t); err != nil {
 			return nil, fmt.Errorf("%s: unmarshal teacher: %w", op, err)
 		}
 
@@ -260,21 +265,16 @@ func (r *TeacherScheduleRepository) GetAllLatest(ctx context.Context) (map[strin
 	return result, nil
 }
 
-func (r *TeacherScheduleRepository) getWeek(ctx context.Context, orderBy string, pred, dest any) error {
+func (r *TeacherScheduleRepository) getWeekStr(ctx context.Context, orderBy string, pred, dest any) error {
 	query := r.sb.Select("week").
 		From("teacher_schedules").
 		Where(pred).
 		OrderBy("week " + orderBy).
 		Limit(1)
-	sql, args, err := query.ToSql()
+	sqlQuery, args, err := query.ToSql()
 	if err != nil {
 		return err
 	}
 
-	row := r.pool.QueryRow(ctx, sql, args...)
-	if err := row.Scan(dest); err != nil {
-		return err
-	}
-
-	return nil
+	return r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(dest)
 }
