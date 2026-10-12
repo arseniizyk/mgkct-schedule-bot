@@ -87,7 +87,8 @@ task down
 |---|---|---|
 | `ENV` | `dev` | Режим работы (`dev` или `prod`) |
 | `BOT_TOKEN` | — | Токен бота от [@BotFather](https://t.me/BotFather) (также поддерживается `TELEGRAM_TOKEN`) |
-| `BOT_HEALTH_PORT` | `8081` | Порт HTTP healthcheck-сервера (`/healthz`) |
+| `BOT_HEALTH_PORT` | `8081` | Порт HTTP-сервера (`/healthz`, REST API и WebApp) |
+| `BOT_WEB_APP_URL` | — | Публичный HTTPS URL для Telegram Mini App |
 | `DB_PATH` | `bot.db` | Путь к файлу базы данных SQLite |
 | `SCRAPER_INTERVAL` | `1m` | Стандартный интервал опроса сайта |
 | `SCRAPER_PEAK_INTERVAL` | `25s` | Турбо-интервал в Пт-Сб до нахождения новой недели |
@@ -117,6 +118,11 @@ task down
 │  │ (Smart Polling)  │           │  (Telebot + Rate) │  │
 │  └────────┬─────────┘           └─────────┬─────────┘  │
 │           │                               │            │
+│           │                     ┌─────────┴─────────┐  │
+│           │                     │  HTTP / WebApp    │  │
+│           │                     │  (Mini App + API) │  │
+│           │                     └─────────┬─────────┘  │
+│           │                               │            │
 │           └───────────────┬───────────────┘            │
 │                           ▼                            │
 │              Встроенная SQLite (WAL-mode)              │
@@ -124,5 +130,6 @@ task down
 ```
 
 - **Кодовая база:** единый Go-модуль без protobuf/gRPC и брокеров NATS.
+- **Telegram Mini App (TMA):** встроенное адаптивное веб-приложение для наглядного просмотра расписания звонков, групп и преподавателей с поддержкой тем Telegram и быстрой навигации.
 - **Миграции:** встроенные через `embed` goose-миграции, применяются автоматически при старте.
-- **Graceful Shutdown:** корректное завершение long-polling сессии telebot, остановка скрапера, закрытие HTTP health-сервера и соединений SQLite по сигналам `SIGINT`/`SIGTERM`.
+- **Graceful Shutdown:** корректное завершение long-polling сессии telebot, остановка скрапера, закрытие HTTP сервера и соединений SQLite по сигналам `SIGINT`/`SIGTERM`.

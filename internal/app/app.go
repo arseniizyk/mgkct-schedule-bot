@@ -3,10 +3,8 @@ package app
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +16,7 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/db"
+	httpserver "github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/parser"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/handlers"
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
@@ -28,14 +27,14 @@ import (
 )
 
 type App struct {
-	log       *slog.Logger
-	cfg       *config.Config
-	database  *sql.DB
-	bot       *tele.Bot
-	scraper   *service.ScraperService
-	notifier  *notifier.Notifier
-	eventCh   chan service.Event
-	healthSrv *http.Server
+	log      *slog.Logger
+	cfg      *config.Config
+	database *sql.DB
+	bot      *tele.Bot
+	scraper  *service.ScraperService
+	notifier *notifier.Notifier
+	eventCh  chan service.Event
+	httpSrv  *httpserver.Server
 }
 
 func New(log *slog.Logger, cfg *config.Config) (*App, error) {
@@ -74,6 +73,9 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	botPref := tele.Settings{
 		Token:  cfg.Bot.Token,
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+		Client: &http.Client{
+			Timeout: 30 * time.Second,
+		},
 	}
 
 	bot, err := tele.NewBot(botPref)
@@ -94,8 +96,12 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		}
 	})
 
+	// Инициализация клавиатуры с WebApp URL (если настроен)
+	kbd.InitKeyboard(cfg.Bot.WebAppURL)
+
 	// Регистрация команд
 	bot.Handle("/start", handlers.Start(log, userRepo))
+	bot.Handle("/app", handlers.App(cfg.Bot.WebAppURL))
 	bot.Handle("/calls", handlers.Calls())
 	bot.Handle("/cancel", handlers.Cancel(log, stateMgr))
 	bot.Handle("/setgroup", handlers.SetGroup(log, userRepo, stateMgr))
@@ -120,6 +126,15 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	eventCh := make(chan service.Event, 100)
 	notif := notifier.New(log, bot, userRepo)
 
+	httpSrv := httpserver.New(
+		log,
+		cfg,
+		database,
+		scheduleSvc,
+		teacherSvc,
+		userRepo,
+	)
+
 	return &App{
 		log:      log,
 		cfg:      cfg,
@@ -128,6 +143,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		scraper:  scraperSvc,
 		notifier: notif,
 		eventCh:  eventCh,
+		httpSrv:  httpSrv,
 	}, nil
 }
 
@@ -142,8 +158,12 @@ func (a *App) Run() error {
 	// 2. Запуск фонового скрапера
 	go a.scraper.Start(ctx, a.eventCh)
 
-	// 3. Запуск Healthcheck HTTP сервера
-	a.startHealthServer()
+	// 3. Запуск HTTP сервера (Healthcheck, REST API, WebApp)
+	go func() {
+		if err := a.httpSrv.Start(); err != nil {
+			log.Error("http server failed", "error", err)
+		}
+	}()
 
 	// 4. Ожидание сигналов завершения
 	sigChan := make(chan os.Signal, 1)
@@ -155,10 +175,10 @@ func (a *App) Run() error {
 		a.bot.Stop()
 		cancel()
 
-		if a.healthSrv != nil {
+		if a.httpSrv != nil {
 			shutdownCtx, sCancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer sCancel()
-			_ = a.healthSrv.Shutdown(shutdownCtx)
+			_ = a.httpSrv.Shutdown(shutdownCtx)
 		}
 
 		_ = a.database.Close()
@@ -197,32 +217,4 @@ func (a *App) listenEvents(ctx context.Context) {
 			}
 		}
 	}
-}
-
-func (a *App) startHealthServer() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		pingCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-
-		if err := a.database.PingContext(pingCtx); err != nil {
-			http.Error(w, "database unhealthy: "+err.Error(), http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	})
-
-	addr := net.JoinHostPort("0.0.0.0", a.cfg.Bot.HealthPort)
-	a.healthSrv = &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	go func() {
-		if err := a.healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			a.log.Error("health server failed", "error", err)
-		}
-	}()
 }

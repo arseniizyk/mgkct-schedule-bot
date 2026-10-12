@@ -87,7 +87,8 @@ Main settings configured in `configs/.env` or system environment:
 |---|---|---|
 | `ENV` | `dev` | Application mode (`dev` or `prod`) |
 | `BOT_TOKEN` | — | Telegram Bot token from [@BotFather](https://t.me/BotFather) (legacy `TELEGRAM_TOKEN` also supported) |
-| `BOT_HEALTH_PORT` | `8081` | HTTP healthcheck server port (`/healthz`) |
+| `BOT_HEALTH_PORT` | `8081` | HTTP server port (`/healthz`, REST API and WebApp) |
+| `BOT_WEB_APP_URL` | — | Public HTTPS URL for Telegram Mini App |
 | `DB_PATH` | `bot.db` | Path to SQLite database file |
 | `SCRAPER_INTERVAL` | `1m` | Standard daytime scraper interval |
 | `SCRAPER_PEAK_INTERVAL` | `25s` | Turbo mode interval on Fri-Sat until new week is found |
@@ -117,8 +118,18 @@ Main settings configured in `configs/.env` or system environment:
 │  │ (Smart Polling)  │           │  (Telebot + Rate) │  │
 │  └────────┬─────────┘           └─────────┬─────────┘  │
 │           │                               │            │
+│           │                     ┌─────────┴─────────┐  │
+│           │                     │  HTTP / WebApp    │  │
+│           │                     │  (Mini App + API) │  │
+│           │                     └─────────┬─────────┘  │
+│           │                               │            │
 │           └───────────────┬───────────────┘            │
 │                           ▼                            │
 │                 Embedded SQLite (WAL)                  │
 └────────────────────────────────────────────────────────┘
 ```
+
+- **Telegram Mini App (TMA):** built-in responsive web application for viewing schedules, calls, and teachers with Telegram theme integration.
+- **Embedded migrations:** embedded via `embed` goose migrations applied automatically on startup.
+- **Graceful Shutdown:** graceful shutdown of telebot long-polling session, scraper, HTTP server, and SQLite connections on `SIGINT`/`SIGTERM`.
+

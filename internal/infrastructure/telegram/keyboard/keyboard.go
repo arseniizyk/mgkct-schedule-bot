@@ -14,6 +14,7 @@ const (
 	BtnWeek     = "📆 Неделя"
 	BtnCalls    = "⏰ Звонки"
 	BtnTeachers = "👨‍🏫 Преподаватели"
+	BtnApp      = "📱 Приложение"
 
 	CurrentWeek = "currentweek"
 	PrevWeek    = "prevweek"
@@ -40,6 +41,41 @@ var (
 		IsPersistent:   true,
 	}
 )
+
+func BuildReplyScheduleKeyboard(webAppURL string) *tele.ReplyMarkup {
+	markup := &tele.ReplyMarkup{
+		ResizeKeyboard: true,
+		IsPersistent:   true,
+	}
+	var rows [][]tele.ReplyButton
+	if webAppURL != "" {
+		rows = append(rows, []tele.ReplyButton{
+			{Text: BtnApp, WebApp: &tele.WebApp{URL: webAppURL}},
+		})
+	}
+	rows = append(rows,
+		[]tele.ReplyButton{{Text: BtnDay}, {Text: BtnWeek}},
+		[]tele.ReplyButton{{Text: BtnCalls}, {Text: BtnTeachers}},
+	)
+	markup.ReplyKeyboard = rows
+	return markup
+}
+
+func InitKeyboard(webAppURL string) {
+	if webAppURL != "" {
+		ReplyScheduleKeyboard = BuildReplyScheduleKeyboard(webAppURL)
+	}
+}
+
+func InlineWebAppKeyboard(webAppURL string) *tele.ReplyMarkup {
+	if webAppURL == "" {
+		return nil
+	}
+	markup := &tele.ReplyMarkup{}
+	btn := markup.WebApp("📱 Открыть в приложении", &tele.WebApp{URL: webAppURL})
+	markup.Inline(markup.Row(btn))
+	return markup
+}
 
 func InlineScheduleKeyboard(groupID int) *tele.ReplyMarkup {
 	if groupID == 0 {
