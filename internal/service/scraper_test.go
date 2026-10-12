@@ -118,8 +118,7 @@ func (p *mockTeacherParser) Parse(ctx context.Context) ([]*entities.Teacher, err
 }
 
 func TestScraperService_NoSpamWhenUnchanged(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	week1 := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
 	week2 := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
@@ -157,12 +156,11 @@ func TestScraperService_NoSpamWhenUnchanged(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Событий быть НЕ должно, так как расписание не изменилось!
-	assert.Equal(t, 0, len(eventCh), "Скрапер не должен слать спам-события при неизменном расписании")
+	assert.Empty(t, eventCh, "Скрапер не должен слать спам-события при неизменном расписании")
 }
 
 func TestScraperService_EmitsEventOnActualChange(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	week1 := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
 	t1w1 := &entities.Teacher{Name: "Иванов И. И.", Week: week1, Days: []*entities.Day{{Name: "Понедельник"}}}
@@ -194,7 +192,7 @@ func TestScraperService_EmitsEventOnActualChange(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	assert.Equal(t, 1, len(eventCh), "Скрапер должен отправить ровно 1 событие при реальном изменении")
+	assert.Len(t, eventCh, 1, "Скрапер должен отправить ровно 1 событие при реальном изменении")
 	event := <-eventCh
 	assert.Equal(t, service.EventTeacherScheduleUpdated, event.Type)
 	assert.Equal(t, "Иванов И. И.", event.Teacher.Name)

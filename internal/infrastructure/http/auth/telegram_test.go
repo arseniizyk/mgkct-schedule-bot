@@ -4,9 +4,11 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +42,7 @@ func generateValidInitData(botToken string, params map[string]string) string {
 func TestValidateInitData_Success(t *testing.T) {
 	token := "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 	params := map[string]string{
-		"auth_date": fmt.Sprintf("%d", time.Now().Unix()),
+		"auth_date": strconv.FormatInt(time.Now().Unix(), 10),
 		"query_id":  "AAHdF6IQAAAAAN0XohDhrOrc",
 		"user":      `{"id":12345678,"first_name":"Иван","username":"ivan_test"}`,
 	}
@@ -66,14 +68,14 @@ func TestValidateInitData_Success(t *testing.T) {
 func TestValidateInitData_InvalidHash(t *testing.T) {
 	token := "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 	params := map[string]string{
-		"auth_date": fmt.Sprintf("%d", time.Now().Unix()),
+		"auth_date": strconv.FormatInt(time.Now().Unix(), 10),
 		"user":      `{"id":12345678}`,
 	}
 
 	initData := generateValidInitData(token, params)
 	// Mutate token to simulate wrong signature
 	_, err := ValidateInitData(initData, "wrong_token", time.Hour)
-	if err == nil || err != ErrInvalidHash {
+	if !errors.Is(err, ErrInvalidHash) {
 		t.Fatalf("expected ErrInvalidHash, got %v", err)
 	}
 }
@@ -82,13 +84,13 @@ func TestValidateInitData_Outdated(t *testing.T) {
 	token := "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
 	oldTime := time.Now().Add(-2 * time.Hour).Unix()
 	params := map[string]string{
-		"auth_date": fmt.Sprintf("%d", oldTime),
+		"auth_date": strconv.FormatInt(oldTime, 10),
 		"user":      `{"id":12345678}`,
 	}
 
 	initData := generateValidInitData(token, params)
 	_, err := ValidateInitData(initData, token, time.Hour)
-	if err == nil || err != ErrOutdatedAuth {
+	if !errors.Is(err, ErrOutdatedAuth) {
 		t.Fatalf("expected ErrOutdatedAuth, got %v", err)
 	}
 }

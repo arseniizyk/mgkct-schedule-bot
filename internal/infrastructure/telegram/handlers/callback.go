@@ -143,13 +143,12 @@ func handleWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data s
 
 func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
 	raw := dataFromCallbackData(data)
-	idx := strings.LastIndex(raw, ":")
-	if idx < 0 {
+	teacherName, dayStr, found := strings.CutLast(raw, ":")
+	if !found {
 		return fmt.Errorf("invalid teacher day nav data: %s", raw)
 	}
 
-	teacherName := raw[:idx]
-	dayIdx, err := strconv.Atoi(raw[idx+1:])
+	dayIdx, err := strconv.Atoi(dayStr)
 	if err != nil {
 		return err
 	}
@@ -186,13 +185,12 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 
 func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
 	raw := dataFromCallbackData(data)
-	idx := strings.LastIndex(raw, ":")
-	if idx < 0 {
+	teacherName, dateStr, found := strings.CutLast(raw, ":")
+	if !found {
 		return fmt.Errorf("invalid teacher week nav data: %s", raw)
 	}
 
-	teacherName := raw[:idx]
-	date, err := time.Parse("02.01.2006", raw[idx+1:])
+	date, err := time.Parse("02.01.2006", dateStr)
 	if err != nil {
 		return err
 	}

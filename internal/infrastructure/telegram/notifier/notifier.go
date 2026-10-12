@@ -58,11 +58,12 @@ func (n *Notifier) HandleNewWeek(ctx context.Context, week time.Time) error {
 			log.WarnContext(ctx, "broadcast cancelled by context")
 			return ctx.Err()
 		case <-n.throttle:
-			if u.Group != 0 {
+			switch {
+			case u.Group != 0:
 				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated, keyboard.InlineScheduleKeyboard(u.Group))
-			} else if u.TeacherName != "" {
+			case u.TeacherName != "":
 				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.TeacherWeekUpdated, keyboard.InlineTeacherScheduleKeyboard(u.TeacherName))
-			} else {
+			default:
 				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated)
 			}
 		}
