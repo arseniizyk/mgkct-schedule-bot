@@ -158,9 +158,9 @@ func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID
 	const op = "repository.UserRepository.SetUserGroup"
 
 	query := r.sb.Insert("users").
-		Columns("chat_id", "group_id").
-		Values(chatID, groupID).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET group_id = excluded.group_id")
+		Columns("chat_id", "group_id", "teacher_name").
+		Values(chatID, groupID, nil).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET group_id = excluded.group_id, teacher_name = NULL")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -178,9 +178,9 @@ func (r *UserRepository) SetTeacher(ctx context.Context, chatID int64, teacherNa
 	const op = "repository.UserRepository.SetTeacher"
 
 	query := r.sb.Insert("users").
-		Columns("chat_id", "teacher_name").
-		Values(chatID, teacherName).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET teacher_name = excluded.teacher_name")
+		Columns("chat_id", "teacher_name", "group_id").
+		Values(chatID, teacherName, nil).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET teacher_name = excluded.teacher_name, group_id = NULL")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {

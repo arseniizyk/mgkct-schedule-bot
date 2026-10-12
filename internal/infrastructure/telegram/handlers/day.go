@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	tele "gopkg.in/telebot.v4"
@@ -14,27 +16,84 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
 
-func Day(log *slog.Logger, schedSvc ScheduleService, userRepo UserRepo) tele.HandlerFunc {
+func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		var (
-			groupID int
-			err     error
-		)
-
 		args := c.Args()
 		if len(args) > 0 {
-			groupID, err = strconv.Atoi(args[0])
-			if err != nil || groupID <= 0 {
-				return c.Send(messages.OnlyNumbers)
+			// Если аргумент число — расписание группы
+			groupID, err := strconv.Atoi(args[0])
+			if err == nil && groupID > 0 {
+				group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
+				if err != nil {
+					log.Warn("failed getting group schedule", "group_id", groupID, "error", err)
+					return c.Send(formatter.FormatErrorMessage(err))
+				}
+
+				msg := formatter.FormatScheduleDay(group)
+				dayIdx := formatter.EffectiveDayIndex(group)
+
+				return c.Send(
+					msg,
+					tele.ModeMarkdown,
+					keyboard.ReplyScheduleKeyboard,
+					keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days)),
+				)
 			}
-		} else {
-			groupID, err = userRepo.GroupByChatID(ctx, c.Chat().ID)
+
+			// Иначе пробуем найти преподавателя по фамилии
+			query := strings.Join(args, " ")
+			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
+			if !ok {
+				if len(candidates) > 0 {
+					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
+				}
+				return c.Send(messages.TeacherNotFound)
+			}
+
+			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, matched)
 			if err != nil {
+				log.Warn("failed getting teacher schedule", "name", matched, "error", err)
 				return c.Send(formatter.FormatErrorMessage(err))
 			}
+
+			msg := formatter.FormatTeacherScheduleDay(teacher)
+			dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
+
+			return c.Send(
+				msg,
+				tele.ModeMarkdown,
+				keyboard.ReplyScheduleKeyboard,
+				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days)),
+			)
+		}
+
+		// Без аргументов: если у пользователя установлен преподаватель, отдаем его расписание
+		teacherName, err := userRepo.GetTeacher(ctx, c.Chat().ID)
+		if err == nil && teacherName != "" {
+			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
+			if err != nil {
+				log.Warn("failed getting teacher schedule", "name", teacherName, "error", err)
+				return c.Send(formatter.FormatErrorMessage(err))
+			}
+
+			msg := formatter.FormatTeacherScheduleDay(teacher)
+			dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
+
+			return c.Send(
+				msg,
+				tele.ModeMarkdown,
+				keyboard.ReplyScheduleKeyboard,
+				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days)),
+			)
+		}
+
+		// Иначе запрашиваем группу студента
+		groupID, err := userRepo.GroupByChatID(ctx, c.Chat().ID)
+		if err != nil {
+			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
 		group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
@@ -55,27 +114,96 @@ func Day(log *slog.Logger, schedSvc ScheduleService, userRepo UserRepo) tele.Han
 	}
 }
 
-func Week(log *slog.Logger, schedSvc ScheduleService, userRepo UserRepo) tele.HandlerFunc {
+func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		var (
-			groupID int
-			err     error
-		)
-
 		args := c.Args()
 		if len(args) > 0 {
-			groupID, err = strconv.Atoi(args[0])
-			if err != nil || groupID <= 0 {
-				return c.Send(messages.OnlyNumbers)
+			// Если аргумент число — расписание группы на неделю
+			groupID, err := strconv.Atoi(args[0])
+			if err == nil && groupID > 0 {
+				group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
+				if err != nil {
+					log.Warn("failed getting group schedule for week", "group_id", groupID, "error", err)
+					return c.Send(formatter.FormatErrorMessage(err))
+				}
+
+				msg := formatter.FormatScheduleWeek(group)
+				weeks, err := schedSvc.GetAvailableWeeks(ctx, group.Week)
+				if err != nil {
+					weeks = entities.WeekNavigation{}
+				}
+
+				return sendLongMessage(
+					c,
+					msg,
+					tele.ModeMarkdown,
+					keyboard.ReplyScheduleKeyboard,
+					keyboard.InlineWeekKeyboard(int(group.ID), weeks),
+				)
 			}
-		} else {
-			groupID, err = userRepo.GroupByChatID(ctx, c.Chat().ID)
+
+			// Иначе пробуем найти преподавателя по фамилии
+			query := strings.Join(args, " ")
+			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
+			if !ok {
+				if len(candidates) > 0 {
+					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
+				}
+				return c.Send(messages.TeacherNotFound)
+			}
+
+			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, matched)
 			if err != nil {
+				log.Warn("failed getting teacher week schedule", "name", matched, "error", err)
 				return c.Send(formatter.FormatErrorMessage(err))
 			}
+
+			msg := formatter.FormatTeacherScheduleWeek(teacher)
+			weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+			if err != nil {
+				weeks = entities.WeekNavigation{}
+			}
+
+			return sendLongMessage(
+				c,
+				msg,
+				tele.ModeMarkdown,
+				keyboard.ReplyScheduleKeyboard,
+				keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
+			)
+		}
+
+		// Без аргументов: если у пользователя установлен преподаватель, отдаем его расписание
+		teacherName, err := userRepo.GetTeacher(ctx, c.Chat().ID)
+		if err == nil && teacherName != "" {
+			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
+			if err != nil {
+				log.Warn("failed getting teacher week schedule", "name", teacherName, "error", err)
+				return c.Send(formatter.FormatErrorMessage(err))
+			}
+
+			msg := formatter.FormatTeacherScheduleWeek(teacher)
+			weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+			if err != nil {
+				weeks = entities.WeekNavigation{}
+			}
+
+			return sendLongMessage(
+				c,
+				msg,
+				tele.ModeMarkdown,
+				keyboard.ReplyScheduleKeyboard,
+				keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
+			)
+		}
+
+		// Иначе запрашиваем группу студента
+		groupID, err := userRepo.GroupByChatID(ctx, c.Chat().ID)
+		if err != nil {
+			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
 		group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))

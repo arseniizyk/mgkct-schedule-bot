@@ -83,6 +83,51 @@ func (r *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (*en
 	return &s, nil
 }
 
+func (r *ScheduleRepository) GetAll(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
+	const op = "repository.ScheduleRepository.GetAll"
+
+	query := r.sb.Select("week, schedule").From("schedules")
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: build query to sql: %w", op, err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query all schedules: %w", op, err)
+	}
+	defer rows.Close()
+
+	res := make(map[time.Time]*entities.Schedule)
+	for rows.Next() {
+		var (
+			weekStr string
+			raw     string
+		)
+		if err := rows.Scan(&weekStr, &raw); err != nil {
+			return nil, fmt.Errorf("%s: scan row: %w", op, err)
+		}
+
+		w, err := time.Parse("2006-01-02", weekStr)
+		if err != nil {
+			continue
+		}
+
+		var s entities.Schedule
+		if err := json.Unmarshal([]byte(raw), &s); err != nil {
+			continue
+		}
+
+		res[w] = &s
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows err: %w", op, err)
+	}
+
+	return res, nil
+}
+
 func (r *ScheduleRepository) GetLatest(ctx context.Context) (*entities.Schedule, error) {
 	const op = "repository.ScheduleRepository.GetLatest"
 
