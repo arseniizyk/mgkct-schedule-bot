@@ -12,14 +12,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
 
-func newSelectionText(text string) *goquery.Selection {
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader("<p>" + text + "</p>"))
-	if err != nil {
-		panic(err)
-	}
-	return doc.Find("p").First()
-}
-
 func TestParseGroup(t *testing.T) {
 	t.Parallel()
 

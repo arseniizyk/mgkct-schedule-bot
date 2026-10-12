@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
@@ -160,9 +159,4 @@ func parseWeek(text string) (time.Time, error) {
 	}
 
 	return time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC), nil
-}
-
-// parseWeekSelection для обратной совместимости с тестами
-func parseWeekSelection(e *goquery.Selection) (time.Time, error) {
-	return parseWeek(e.Text())
 }

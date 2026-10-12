@@ -286,8 +286,7 @@ func (s *Server) handleCalls(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) extractUser(r *http.Request) (*auth.TelegramUser, error) {
 	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "tma ") {
-		initData := strings.TrimPrefix(authHeader, "tma ")
+	if initData, ok := strings.CutPrefix(authHeader, "tma "); ok {
 		user, err := auth.ValidateInitData(initData, s.cfg.Bot.Token, 24*time.Hour)
 		if err == nil {
 			return user, nil

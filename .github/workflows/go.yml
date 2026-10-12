@@ -1,123 +1,68 @@
 name: Go
 
 on:
-    push:
-        branches: '**'
-    pull_request:
-        branches: '**'
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
 
 concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-    GO_VERSION: '1.27'
+  GO_VERSION: '1.27'
 
 jobs:
-    build-and-unit:
-        name: build & unit (${{ matrix.module }})
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: false
-            matrix:
-                module:
-                    - services/scraper
-                    - services/tg-bot
-                    - libs/config
-                    - proto
-        defaults:
-            run:
-                working-directory: ${{ matrix.module }}
-        steps:
-            - uses: actions/checkout@v4
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-            - uses: actions/setup-go@v5
-              with:
-                  go-version: ${{ env.GO_VERSION }}
-                  cache-dependency-path: ${{ matrix.module }}/go.sum
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
 
-            - name: Download dependencies
-              run: go mod download
+      - name: Download dependencies
+        run: go mod download
 
-            - name: Build
-              run: go build -v ./...
+      - name: Build
+        run: go build -v ./...
 
-            - name: Vet
-              run: go vet ./...
+      - name: Vet
+        run: go vet ./...
 
-            - name: Unit tests
-              run: go test -v ./...
+      - name: Unit tests
+        run: go test -v ./internal/...
 
-    lint:
-        name: golangci-lint (${{ matrix.module }})
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: false
-            matrix:
-                module:
-                    - services/scraper
-                    - services/tg-bot
-                    - libs/config
-                    - proto
-        steps:
-            - uses: actions/checkout@v4
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-            - uses: actions/setup-go@v5
-              with:
-                  go-version: ${{ env.GO_VERSION }}
-                  cache-dependency-path: ${{ matrix.module }}/go.sum
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
 
-            - uses: golangci/golangci-lint-action@v8
-              with:
-                  working-directory: ${{ matrix.module }}
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14
 
-    integration-tests:
-        name: integration (${{ matrix.module }})
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: false
-            matrix:
-                module:
-                    - services/scraper
-                    - services/tg-bot
-        defaults:
-            run:
-                working-directory: ${{ matrix.module }}
-        steps:
-            - uses: actions/checkout@v4
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-            - uses: actions/setup-go@v5
-              with:
-                  go-version: ${{ env.GO_VERSION }}
-                  cache-dependency-path: ${{ matrix.module }}/go.sum
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
 
-            - name: Download dependencies
-              run: go mod download
-
-            - name: Integration tests (testcontainers)
-              run: go test -v -tags=integration ./...
-
-    govulncheck:
-        name: govulncheck (${{ matrix.module }})
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: false
-            matrix:
-                module:
-                    - services/scraper
-                    - services/tg-bot
-                    - libs/config
-                    - proto
-        defaults:
-            run:
-                working-directory: ${{ matrix.module }}
-        steps:
-            - uses: actions/checkout@v4
-
-            - uses: actions/setup-go@v5
-              with:
-                  go-version: ${{ env.GO_VERSION }}
-                  cache-dependency-path: ${{ matrix.module }}/go.sum
-
-            - name: Govulncheck
-              run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+      - name: Govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...

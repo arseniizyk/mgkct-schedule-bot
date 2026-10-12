@@ -1,5 +1,5 @@
 # Multi-stage build для создания легковесного контейнера (<30 МБ)
-FROM golang:1.24-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 

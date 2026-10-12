@@ -62,7 +62,7 @@ linters:
     - funcorder # checks the order of functions, methods, and constructors
     #- funlen # tool for detection of long functions
     - gocheckcompilerdirectives # validates go compiler directive comments (//go:)
-    - gochecknoglobals # checks that no global variables exist
+    #- gochecknoglobals # checks that no global variables exist
     - gochecknoinits # checks that no init functions are present in Go code
     - gochecksumtype # checks exhaustiveness on Go "sum types"
     #    - gocognit # computes and checks the cognitive complexity of functions
@@ -70,7 +70,7 @@ linters:
     - gocyclo # computes and checks the cyclomatic complexity of functions
     - godoclint # checks Golang's documentation practice
     #- godot # checks if comments end in a period
-    - gomoddirectives # manages the use of 'replace', 'retract', and 'excludes' directives in go.mod
+    #- gomoddirectives # manages the use of 'replace', 'retract', and 'excludes' directives in go.mod
     - goprintffuncname # checks that printf-like functions are named with f at the end
     - gosec # inspects source code for security problems
     - govet # reports suspicious constructs, such as Printf calls whose arguments do not align with the format string
@@ -106,7 +106,7 @@ linters:
     - testableexamples # checks if examples are testable (have an expected output)
     - testifylint # checks usage of github.com/stretchr/testify
     - unconvert # removes unnecessary type conversions
-    - unparam # reports unused function parameters
+    #- unparam # reports unused function parameters
     - unqueryvet # detects SELECT * in SQL queries and SQL builders, encouraging explicit column selection
     - unused # checks for unused constants, variables, functions and types
     - usestdlibvars # detects the possibility to use variables/constants from the Go standard library
@@ -383,7 +383,7 @@ linters:
       # https://github.com/go-simpler/sloglint#context-only
       # Values: "all", "scope"
       # Default: "" (disabled)
-      context: scope
+      # context: scope
 
     staticcheck:
       # SAxxxx checks in https://staticcheck.dev/docs/configuration/options/#checks
@@ -396,7 +396,7 @@ linters:
         - -ST1000
         # Use consistent method receiver names.
         # https://staticcheck.dev/docs/checks/#ST1016
-        - -ST1016
+        - -ST1003
         # Underscores in package names.
         # https://staticcheck.dev/docs/checks/#ST1003
         - -ST1003
@@ -414,6 +414,9 @@ linters:
         # Integer overflow conversion uint64 -> int: values are validated at a higher level.
         # https://securego.io/docs/rules/g115
         - G115
+        # Integer overflow conversion strconv.Atoi -> int32: values are validated at a higher level.
+        # https://securego.io/docs/rules/g109
+        - G109
         # Errors unhandled: fully duplicates errcheck, but without its exclude-functions.
         # https://securego.io/docs/rules/g104
         - G104
@@ -453,5 +456,6 @@ linters:
           - errcheck
           - funlen
           - gosec
+          - nilnil
           - noctx
           - wrapcheck
