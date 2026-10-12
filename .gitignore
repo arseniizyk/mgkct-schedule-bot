@@ -26,3 +26,7 @@ bot.db*
 *.db
 *.db-shm
 *.db-wal
+
+# Cloudflare Wrangler
+.wrangler/
+
