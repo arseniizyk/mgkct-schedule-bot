@@ -38,14 +38,12 @@ var (
 	ReplyScheduleKeyboard = &tele.ReplyMarkup{
 		ResizeKeyboard: true,
 		ReplyKeyboard:  scheduleReplyButtons(),
-		IsPersistent:   true,
 	}
 )
 
 func BuildReplyScheduleKeyboard(webAppURL string) *tele.ReplyMarkup {
 	markup := &tele.ReplyMarkup{
 		ResizeKeyboard: true,
-		IsPersistent:   true,
 	}
 	var rows [][]tele.ReplyButton
 	if webAppURL != "" {

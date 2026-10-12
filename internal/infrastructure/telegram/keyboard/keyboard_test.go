@@ -90,3 +90,31 @@ func TestInlineWeekKeyboard(t *testing.T) {
 		}
 	})
 }
+
+func TestReplyScheduleKeyboard(t *testing.T) {
+	if !ReplyScheduleKeyboard.ResizeKeyboard {
+		t.Errorf("expected ReplyScheduleKeyboard.ResizeKeyboard = true, got false")
+	}
+	if ReplyScheduleKeyboard.IsPersistent {
+		t.Errorf("expected ReplyScheduleKeyboard.IsPersistent = false to allow swipe gestures, got true")
+	}
+
+	markupWithoutApp := BuildReplyScheduleKeyboard("")
+	if !markupWithoutApp.ResizeKeyboard {
+		t.Errorf("expected BuildReplyScheduleKeyboard(\"\").ResizeKeyboard = true, got false")
+	}
+	if markupWithoutApp.IsPersistent {
+		t.Errorf("expected BuildReplyScheduleKeyboard(\"\").IsPersistent = false, got true")
+	}
+	if len(markupWithoutApp.ReplyKeyboard) != 2 {
+		t.Errorf("expected 2 rows without webApp, got %d", len(markupWithoutApp.ReplyKeyboard))
+	}
+
+	markupWithApp := BuildReplyScheduleKeyboard("https://example.com")
+	if markupWithApp.IsPersistent {
+		t.Errorf("expected BuildReplyScheduleKeyboard with app URL to have IsPersistent = false, got true")
+	}
+	if len(markupWithApp.ReplyKeyboard) != 3 {
+		t.Errorf("expected 3 rows with webApp, got %d", len(markupWithApp.ReplyKeyboard))
+	}
+}
