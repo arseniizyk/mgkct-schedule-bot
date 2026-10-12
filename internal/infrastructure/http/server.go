@@ -24,13 +24,14 @@ import (
 )
 
 type Server struct {
-	log         *slog.Logger
-	cfg         *config.Config
-	database    *sql.DB
-	scheduleSvc *service.ScheduleService
-	teacherSvc  *service.TeacherService
-	userRepo    *repository.UserRepository
-	httpSrv     *http.Server
+	log          *slog.Logger
+	cfg          *config.Config
+	database     *sql.DB
+	scheduleSvc  *service.ScheduleService
+	teacherSvc   *service.TeacherService
+	analyticsSvc *service.AnalyticsService
+	userRepo     *repository.UserRepository
+	httpSrv      *http.Server
 }
 
 func New(
@@ -39,15 +40,17 @@ func New(
 	database *sql.DB,
 	scheduleSvc *service.ScheduleService,
 	teacherSvc *service.TeacherService,
+	analyticsSvc *service.AnalyticsService,
 	userRepo *repository.UserRepository,
 ) *Server {
 	s := &Server{
-		log:         log,
-		cfg:         cfg,
-		database:    database,
-		scheduleSvc: scheduleSvc,
-		teacherSvc:  teacherSvc,
-		userRepo:    userRepo,
+		log:          log,
+		cfg:          cfg,
+		database:     database,
+		scheduleSvc:  scheduleSvc,
+		teacherSvc:   teacherSvc,
+		analyticsSvc: analyticsSvc,
+		userRepo:     userRepo,
 	}
 
 	mux := http.NewServeMux()
@@ -61,6 +64,10 @@ func New(
 	mux.HandleFunc("GET /api/v1/groups", s.handleGroupsList)
 	mux.HandleFunc("GET /api/v1/teachers", s.handleTeachersList)
 	mux.HandleFunc("GET /api/v1/subjects", s.handleSubjectsList)
+	mux.HandleFunc("GET /api/v1/cabinets", s.handleCabinetsList)
+	mux.HandleFunc("GET /api/v1/cabinet", s.handleCabinetSchedule)
+	mux.HandleFunc("GET /api/v1/analytics/endings", s.handleEndings)
+	mux.HandleFunc("GET /api/v1/analytics/stats", s.handleStats)
 	mux.HandleFunc("GET /api/v1/calls", s.handleCalls)
 	mux.HandleFunc("GET /api/v1/user/profile", s.handleGetUserProfile)
 	mux.HandleFunc("POST /api/v1/user/profile", s.handleSetUserProfile)
@@ -276,6 +283,130 @@ func (s *Server) handleSubjectsList(w http.ResponseWriter, _ *http.Request) {
 
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"subjects": dict.All(),
+	})
+}
+
+func (s *Server) handleCabinetsList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	cabinets, err := s.analyticsSvc.GetAllCabinets(ctx)
+	if err != nil {
+		s.log.Error("failed getting cabinets list", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"cabinets": cabinets,
+	})
+}
+
+func (s *Server) handleCabinetSchedule(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	cabinet := r.URL.Query().Get("number")
+	if cabinet == "" {
+		cabinet = r.URL.Query().Get("cabinet")
+	}
+	if cabinet == "" {
+		http.Error(w, "cabinet number is required", http.StatusBadRequest)
+		return
+	}
+
+	sched, candidates, err := s.analyticsSvc.GetCabinetSchedule(ctx, cabinet, time.Time{})
+	if err != nil {
+		s.log.Error("failed getting cabinet schedule", "error", err, "cabinet", cabinet)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if sched == nil {
+		if len(candidates) > 0 {
+			s.writeJSON(w, http.StatusOK, map[string]any{
+				"candidates": candidates,
+			})
+			return
+		}
+		http.Error(w, "cabinet schedule not found", http.StatusNotFound)
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"cabinet": sched,
+	})
+}
+
+func (s *Server) handleEndings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	dayIdx := s.analyticsSvc.EffectiveEndingsDayIndex()
+	if dayStr := r.URL.Query().Get("day"); dayStr != "" {
+		parsedDay, err := strconv.Atoi(dayStr)
+		if err != nil || parsedDay < 0 || parsedDay > 6 {
+			http.Error(w, "invalid day parameter (0-6 expected)", http.StatusBadRequest)
+			return
+		}
+		dayIdx = parsedDay
+	}
+
+	endings, err := s.analyticsSvc.GetEndings(ctx, dayIdx)
+	if err != nil {
+		s.log.Error("failed getting endings", "error", err, "day", dayIdx)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"day_index": dayIdx,
+		"endings":   endings,
+	})
+}
+
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	groupStr := r.URL.Query().Get("group")
+	teacher := r.URL.Query().Get("teacher")
+
+	if groupStr == "" && teacher == "" {
+		http.Error(w, "either group or teacher parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	if groupStr != "" {
+		groupID, err := strconv.Atoi(groupStr)
+		if err != nil {
+			http.Error(w, "invalid group id", http.StatusBadRequest)
+			return
+		}
+		stats, total, err := s.analyticsSvc.GetGroupStats(ctx, int32(groupID), time.Time{})
+		if err != nil {
+			if errors.Is(err, domainerr.ErrGroupNotFound) || errors.Is(err, domainerr.ErrScheduleNotFound) {
+				http.Error(w, "group schedule not found", http.StatusNotFound)
+				return
+			}
+			s.log.Error("failed getting group stats", "error", err, "group", groupID)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		s.writeJSON(w, http.StatusOK, map[string]any{
+			"group_id": groupID,
+			"stats":    stats,
+			"total":    total,
+		})
+		return
+	}
+
+	stats, total, err := s.analyticsSvc.GetTeacherStats(ctx, teacher, time.Time{})
+	if err != nil {
+		if errors.Is(err, domainerr.ErrTeacherNotFound) || errors.Is(err, domainerr.ErrScheduleNotFound) {
+			http.Error(w, "teacher schedule not found", http.StatusNotFound)
+			return
+		}
+		s.log.Error("failed getting teacher stats", "error", err, "teacher", teacher)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"teacher": teacher,
+		"stats":   stats,
+		"total":   total,
 	})
 }
 

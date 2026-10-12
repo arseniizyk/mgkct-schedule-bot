@@ -58,6 +58,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	subjectDict := dictionary.NewSubjectDictionary()
 	scheduleSvc := service.NewScheduleService(log, scheduleRepo)
 	teacherSvc := service.NewTeacherService(log, teacherRepo, facultyRepo, subjectDict)
+	analyticsSvc := service.NewAnalyticsService(log, scheduleRepo, teacherRepo, subjectDict)
 
 	studentParser := parser.New(log)
 	teacherParser := parser.NewTeacherParser(log)
@@ -119,6 +120,11 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo))
 	bot.Handle("/teacherweek", handlers.TeacherWeek(log, teacherSvc, userRepo))
 	bot.Handle("/subject", handlers.Subject(subjectDict))
+	bot.Handle("/cabinet", handlers.Cabinet(log, analyticsSvc))
+	bot.Handle("/auditory", handlers.Cabinet(log, analyticsSvc))
+	bot.Handle("/cabinets", handlers.Cabinets(log, analyticsSvc))
+	bot.Handle("/endings", handlers.Endings(log, analyticsSvc))
+	bot.Handle("/stats", handlers.Stats(log, analyticsSvc, userRepo, teacherSvc))
 
 	// Кнопки Reply-клавиатуры
 	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
@@ -127,7 +133,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, stateMgr))
 
 	// Инлайн-коллбэки и ввод текста
-	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc))
+	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc))
 	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc))
 
 	eventCh := make(chan service.Event, 100)
@@ -139,6 +145,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		database,
 		scheduleSvc,
 		teacherSvc,
+		analyticsSvc,
 		userRepo,
 	)
 
