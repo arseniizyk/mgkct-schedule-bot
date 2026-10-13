@@ -26,14 +26,14 @@ func Notify(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 					log.Error("failed setting notify evening on", "error", err)
 					return c.Send("Ошибка сохранения настроек уведомлений.", keyboard.ReplyScheduleKeyboard)
 				}
-				return c.Send("🔔 Вечерняя рассылка расписания на завтра *включена* (рассылается в 20:00).", tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+				return c.Send("🔔 Рассылка расписания на завтра *включена* (после окончания пар и вечером в 20:00).", tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 			}
 			if arg == "off" || arg == "0" || arg == "false" {
 				if err := userRepo.SetNotifyEvening(ctx, c.Chat().ID, false); err != nil {
 					log.Error("failed setting notify evening off", "error", err)
 					return c.Send("Ошибка сохранения настроек уведомлений.", keyboard.ReplyScheduleKeyboard)
 				}
-				return c.Send("🔕 Вечерняя рассылка расписания на завтра *отключена*.", tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+				return c.Send("🔕 Рассылка расписания на завтра *отключена*.", tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 			}
 		}
 
@@ -42,13 +42,13 @@ func Notify(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 			enabled = true
 		}
 
-		statusStr := "🔔 Включена (каждый вечер в 20:00)"
+		statusStr := "🔔 Включена (после окончания пар и в 20:00)"
 		if !enabled {
 			statusStr = "🔕 Отключена"
 		}
 
 		msg := fmt.Sprintf(
-			"⚙️ *Настройки уведомлений*\n\nВечерняя рассылка расписания на завтра:\n*Статус:* %s\n\nВы можете переключить статус кнопкой ниже или командами:\n• `/notify on` — включить\n• `/notify off` — отключить",
+			"⚙️ *Настройки уведомлений*\n\nРассылка расписания на следующий день:\n*Статус:* %s\n\nВы можете переключить статус кнопкой ниже или командами:\n• `/notify on` — включить\n• `/notify off` — отключить",
 			statusStr,
 		)
 
@@ -65,13 +65,13 @@ func handleNotifyToggle(ctx context.Context, log *slog.Logger, c tele.Context, d
 		return err
 	}
 
-	statusStr := "🔔 Включена (каждый вечер в 20:00)"
+	statusStr := "🔔 Включена (после окончания пар и в 20:00)"
 	if !enable {
 		statusStr = "🔕 Отключена"
 	}
 
 	msg := fmt.Sprintf(
-		"⚙️ *Настройки уведомлений*\n\nВечерняя рассылка расписания на завтра:\n*Статус:* %s\n\nВы можете переключить статус кнопкой ниже или командами:\n• `/notify on` — включить\n• `/notify off` — отключить",
+		"⚙️ *Настройки уведомлений*\n\nРассылка расписания на следующий день:\n*Статус:* %s\n\nВы можете переключить статус кнопкой ниже или командами:\n• `/notify on` — включить\n• `/notify off` — отключить",
 		statusStr,
 	)
 

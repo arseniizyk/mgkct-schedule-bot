@@ -19,6 +19,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/dictionary"
 	httpserver "github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/parser"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/handlers"
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/notifier"
@@ -258,7 +259,9 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 	defer ticker.Stop()
 
 	minskLoc := time.FixedZone("MSK", 3*3600)
-	var lastSentDate string
+	sentGroupsToday := make(map[string]bool)   // key: "YYYY-MM-DD:group_id"
+	sentTeachersToday := make(map[string]bool) // key: "YYYY-MM-DD:teacher_name"
+	var lastEveningDate string
 
 	for {
 		select {
@@ -267,11 +270,68 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 		case t := <-ticker.C:
 			localTime := t.In(minskLoc)
 			todayStr := localTime.Format("2006-01-02")
+			todayWeekday := localTime.Weekday() // 0=Вс, 1=Пн, ... 6=Сб
 
-			// Отправка в 20:00 по Минскому времени один раз в сутки
-			if localTime.Hour() == 20 && localTime.Minute() == 0 && lastSentDate != todayStr {
-				lastSentDate = todayStr
-				log.Info("Triggering scheduled evening digest", "time", localTime.Format("15:04:05"))
+			// Сброс старых ключей при наступлении новых суток
+			if lastEveningDate != "" && lastEveningDate != todayStr && len(sentGroupsToday) > 1000 {
+				clear(sentGroupsToday)
+				clear(sentTeachersToday)
+			}
+
+			// 1. Проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на завтра
+			if todayWeekday >= time.Monday && todayWeekday <= time.Saturday {
+				dayIdx := int(todayWeekday - 1) // 0..5 для Пн..Сб
+
+				users, err := a.notifier.UsersForNotification(ctx)
+				if err == nil {
+					for _, u := range users {
+						if u.Group > 0 {
+							key := fmt.Sprintf("%s:%d", todayStr, u.Group)
+							if sentGroupsToday[key] {
+								continue
+							}
+
+							grp, err := a.scheduleSvc.GetGroupLatestSchedule(ctx, int32(u.Group))
+							if err == nil && dayIdx < len(grp.Days) {
+								lastSubject := formatter.FindLastSubject(grp.Days[dayIdx].Subjects)
+								if lastSubject != -1 {
+									if endTime, ok := formatter.GetDayEndTime(dayIdx, lastSubject+1, minskLoc); ok {
+										if !localTime.Before(endTime) {
+											sentGroupsToday[key] = true
+											log.Info("Lessons ended for group, sending next day digest", "group", u.Group, "time", localTime.Format("15:04:05"))
+											_ = a.notifier.SendNextDayDigestForTarget(ctx, a.scheduleSvc, a.teacherSvc, u.Group, "")
+										}
+									}
+								}
+							}
+						} else if u.TeacherName != "" {
+							key := fmt.Sprintf("%s:%s", todayStr, u.TeacherName)
+							if sentTeachersToday[key] {
+								continue
+							}
+
+							teacher, err := a.teacherSvc.GetTeacherLatestSchedule(ctx, u.TeacherName)
+							if err == nil && dayIdx < len(teacher.Days) {
+								lastSubject := formatter.FindLastSubject(teacher.Days[dayIdx].Subjects)
+								if lastSubject != -1 {
+									if endTime, ok := formatter.GetDayEndTime(dayIdx, lastSubject+1, minskLoc); ok {
+										if !localTime.Before(endTime) {
+											sentTeachersToday[key] = true
+											log.Info("Lessons ended for teacher, sending next day digest", "teacher", u.TeacherName, "time", localTime.Format("15:04:05"))
+											_ = a.notifier.SendNextDayDigestForTarget(ctx, a.scheduleSvc, a.teacherSvc, 0, u.TeacherName)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			// 2. В 20:00 (или в воскресенье/выходные) отправляем общий вечерний дайджест тем, у кого сегодня не было пар или кто еще не получил
+			if localTime.Hour() >= 20 && lastEveningDate != todayStr {
+				lastEveningDate = todayStr
+				log.Info("Triggering scheduled evening digest fallback", "time", localTime.Format("15:04:05"))
 				if err := a.notifier.SendEveningDigest(ctx, a.scheduleSvc, a.teacherSvc); err != nil {
 					log.Error("error during evening digest broadcast", "error", err)
 				}
