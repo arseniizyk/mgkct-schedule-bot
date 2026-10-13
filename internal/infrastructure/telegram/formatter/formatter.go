@@ -121,7 +121,8 @@ var weekendTimeEnd = map[int][2]int{
 	6: {20, 0},
 }
 
-func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
+// GetDayEndTime возвращает время окончания пар для указанного дня (0=Пн..5=Сб) и номера последней пары (1-based).
+func GetDayEndTime(dayIdx, lastSubject int, loc *time.Location) (time.Time, bool) {
 	var hhmm [2]int
 	var ok bool
 
@@ -135,9 +136,16 @@ func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
 		return time.Time{}, false
 	}
 
-	now := time.Now()
-	end := time.Date(now.Year(), now.Month(), now.Day(), hhmm[0], hhmm[1], 0, 0, time.Local)
+	if loc == nil {
+		loc = time.Local
+	}
+	now := time.Now().In(loc)
+	end := time.Date(now.Year(), now.Month(), now.Day(), hhmm[0], hhmm[1], 0, 0, loc)
 	return end, true
+}
+
+func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
+	return GetDayEndTime(dayIdx, lastSubject, time.Local)
 }
 
 func FormatScheduleWeek(group *entities.Group) string {
@@ -257,6 +265,11 @@ var mdEscaper = strings.NewReplacer(
 
 func escapeMD(s string) string {
 	return mdEscaper.Replace(s)
+}
+
+// FindLastSubject находит индекс последнего непустого предмета в дне (0-based) или -1 если пар нет.
+func FindLastSubject(subjects []*entities.Subject) int {
+	return findLastSubject(subjects)
 }
 
 func findLastSubject(subjects []*entities.Subject) int {

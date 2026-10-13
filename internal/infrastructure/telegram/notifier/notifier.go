@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -52,6 +53,11 @@ func New(log *slog.Logger, bot *tele.Bot, userStore UserStore, adminChatID int64
 		adminChatID: adminChatID,
 		throttle:    ticker.C,
 	}
+}
+
+// UsersForNotification возвращает список пользователей, подписанных на уведомления о расписании на завтра.
+func (n *Notifier) UsersForNotification(ctx context.Context) ([]entities.User, error) {
+	return n.userStore.UsersForEveningNotification(ctx)
 }
 
 // HandleNewWeek рассылает уведомление о новой неделе ВСЕМ пользователям.
@@ -184,7 +190,7 @@ func (n *Notifier) HandleScraperRecovered(ctx context.Context) error {
 	return sendErr
 }
 
-// CalculateTomorrowDate рассчитывает дату и индекс дня (0..5 для Пн..Сб) для вечернего дайджеста.
+// CalculateTomorrowDate рассчитывает целевую дату следующего учебного дня и индекс дня (0..5 для Пн..Сб).
 func CalculateTomorrowDate(now time.Time) (targetDate time.Time, dayIdx int) {
 	minskLoc := time.FixedZone("MSK", 3*3600)
 	localNow := now.In(minskLoc)
@@ -198,14 +204,120 @@ func CalculateTomorrowDate(now time.Time) (targetDate time.Time, dayIdx int) {
 	case time.Sunday:
 		targetDate = localNow.AddDate(0, 0, 1)
 		dayIdx = 0
+	case time.Friday:
+		// В пятницу после окончания пар следующее расписание — на субботу (индекс 5)
+		targetDate = localNow.AddDate(0, 0, 1)
+		dayIdx = 5
 	default:
 		targetDate = localNow.AddDate(0, 0, 1)
-		dayIdx = int(weekday) // для Пн(1) -> завтра Вт, индекс в массиве Days равен 1.
+		dayIdx = int(weekday) // Для Пн(1) -> Вт(индекс 1 в grp.Days), для Вт(2) -> Ср(индекс 2)
 	}
 	return targetDate, dayIdx
 }
 
-// SendEveningDigest рассылает расписание на завтра пользователям с включенными вечерними уведомлениями.
+// FormatNextDayDigest формирует текст сообщения с расписанием на следующий учебный день.
+func FormatNextDayDigest(
+	ctx context.Context,
+	user entities.User,
+	targetDate time.Time,
+	dayIdx int,
+	schedProvider ScheduleProvider,
+	teacherProvider TeacherProvider,
+) (string, error) {
+	targetMonday := targetDate.AddDate(0, 0, -dayIdx)
+
+	if user.Group > 0 {
+		grp, err := schedProvider.GetGroupScheduleByWeek(ctx, int32(user.Group), targetMonday)
+		if err != nil {
+			grp, err = schedProvider.GetGroupLatestSchedule(ctx, int32(user.Group))
+		}
+		if err != nil {
+			return "", err
+		}
+
+		if dayIdx < 0 || dayIdx >= len(grp.Days) {
+			return "", fmt.Errorf("dayIdx %d out of range", dayIdx)
+		}
+
+		dayMsg, err := formatter.FormatScheduleDayAt(grp, dayIdx)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("📚 *Расписание на завтра (%s)*:\n\n%s", targetDate.Format("02.01.2006"), dayMsg), nil
+	}
+
+	if user.TeacherName != "" {
+		t, err := teacherProvider.GetTeacherScheduleByWeek(ctx, user.TeacherName, targetMonday)
+		if err != nil {
+			t, err = teacherProvider.GetTeacherLatestSchedule(ctx, user.TeacherName)
+		}
+		if err != nil {
+			return "", err
+		}
+
+		if dayIdx < 0 || dayIdx >= len(t.Days) {
+			return "", fmt.Errorf("dayIdx %d out of range", dayIdx)
+		}
+
+		teachMsg, err := formatter.FormatTeacherScheduleDayAt(t, dayIdx)
+		if err != nil {
+			return "", err
+		}
+		member, _ := teacherProvider.GetFacultyMember(ctx, user.TeacherName)
+		profile := formatter.FormatTeacherProfile(member)
+		return fmt.Sprintf("📚 *Расписание на завтра (%s)*:\n\n%s%s", targetDate.Format("02.01.2006"), profile, teachMsg), nil
+	}
+
+	return "", errors.New("neither group nor teacher specified")
+}
+
+// SendNextDayDigestForTarget отправляет расписание на следующий день всем подписчикам конкретной группы или преподавателя.
+func (n *Notifier) SendNextDayDigestForTarget(
+	ctx context.Context,
+	schedProvider ScheduleProvider,
+	teacherProvider TeacherProvider,
+	targetGroup int,
+	targetTeacher string,
+) error {
+	log := n.log.With("operation", "notifier.Notifier.SendNextDayDigestForTarget", "group", targetGroup, "teacher", targetTeacher)
+	users, err := n.userStore.UsersForEveningNotification(ctx)
+	if err != nil {
+		log.ErrorContext(ctx, "failed getting users for digest", "error", err)
+		return err
+	}
+
+	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
+
+	for _, u := range users {
+		match := false
+		if targetGroup > 0 && u.Group == targetGroup {
+			match = true
+		} else if targetTeacher != "" && u.TeacherName == targetTeacher {
+			match = true
+		}
+		if !match {
+			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-n.throttle:
+			msg, err := FormatNextDayDigest(ctx, u, targetDate, dayIdx, schedProvider, teacherProvider)
+			if err != nil {
+				log.WarnContext(ctx, "failed formatting next day digest", "chat_id", u.ChatID, "error", err)
+				continue
+			}
+			if _, sendErr := n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown); sendErr != nil {
+				log.WarnContext(ctx, "failed sending next day digest", "chat_id", u.ChatID, "error", sendErr)
+			}
+		}
+	}
+
+	return nil
+}
+
+// SendEveningDigest рассылает расписание на завтра всем пользователям с включенными уведомлениями.
 func (n *Notifier) SendEveningDigest(
 	ctx context.Context,
 	schedProvider ScheduleProvider,
@@ -226,8 +338,6 @@ func (n *Notifier) SendEveningDigest(
 	}
 
 	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
-	// Понедельник недели для targetDate
-	targetMonday := targetDate.AddDate(0, 0, -dayIdx)
 
 	for _, u := range users {
 		select {
@@ -235,41 +345,11 @@ func (n *Notifier) SendEveningDigest(
 			log.WarnContext(ctx, "evening digest cancelled by context")
 			return ctx.Err()
 		case <-n.throttle:
-			if u.Group > 0 {
-				grp, err := schedProvider.GetGroupScheduleByWeek(ctx, int32(u.Group), targetMonday)
-				if err != nil {
-					grp, err = schedProvider.GetGroupLatestSchedule(ctx, int32(u.Group))
-				}
-				if err != nil {
-					continue
-				}
-
-				if dayIdx >= 0 && dayIdx < len(grp.Days) {
-					dayMsg, err := formatter.FormatScheduleDayAt(grp, dayIdx)
-					if err == nil {
-						msg := fmt.Sprintf("🌙 *Расписание на завтра (%s)*:\n\n%s", targetDate.Format("02.01.2006"), dayMsg)
-						_, _ = n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown)
-					}
-				}
-			} else if u.TeacherName != "" {
-				t, err := teacherProvider.GetTeacherScheduleByWeek(ctx, u.TeacherName, targetMonday)
-				if err != nil {
-					t, err = teacherProvider.GetTeacherLatestSchedule(ctx, u.TeacherName)
-				}
-				if err != nil {
-					continue
-				}
-
-				if dayIdx >= 0 && dayIdx < len(t.Days) {
-					teachMsg, err := formatter.FormatTeacherScheduleDayAt(t, dayIdx)
-					if err == nil {
-						member, _ := teacherProvider.GetFacultyMember(ctx, u.TeacherName)
-						profile := formatter.FormatTeacherProfile(member)
-						msg := fmt.Sprintf("🌙 *Расписание на завтра (%s)*:\n\n%s%s", targetDate.Format("02.01.2006"), profile, teachMsg)
-						_, _ = n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown)
-					}
-				}
+			msg, err := FormatNextDayDigest(ctx, u, targetDate, dayIdx, schedProvider, teacherProvider)
+			if err != nil {
+				continue
 			}
+			_, _ = n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown)
 		}
 	}
 
