@@ -15,7 +15,7 @@ const (
 	BtnWeek     = "📆 Неделя"
 	BtnCalls    = "⏰ Звонки"
 	BtnTeachers = "👨‍🏫 Преподаватели"
-	BtnApp      = "📱 Приложение"
+	BtnApp      = "Приложение"
 
 	CurrentWeek = "currentweek"
 	PrevWeek    = "prevweek"
@@ -78,7 +78,7 @@ func InlineWebAppKeyboard(webAppURL string) *tele.ReplyMarkup {
 		return nil
 	}
 	markup := &tele.ReplyMarkup{}
-	btn := markup.WebApp("📱 Открыть в приложении", &tele.WebApp{URL: webAppURL})
+	btn := markup.WebApp("Открыть в приложении", &tele.WebApp{URL: webAppURL})
 	markup.Inline(markup.Row(btn))
 	return markup
 }
