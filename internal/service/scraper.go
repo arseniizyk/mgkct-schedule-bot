@@ -39,8 +39,11 @@ type ScraperService struct {
 	mu                  sync.RWMutex
 	latestWeek          time.Time
 	lastFacultyScrape   time.Time
-	groupHashes         map[string][32]byte // key: "<group_id>:<YYYY-MM-DD>"
-	teacherHashes       map[string][32]byte // key: "<teacher_name>:<YYYY-MM-DD>"
+	groupHashes         map[string][32]byte          // key: "<group_id>:<YYYY-MM-DD>"
+	teacherHashes       map[string][32]byte          // key: "<teacher_name>:<YYYY-MM-DD>"
+	groupSchedules      map[string]*entities.Group   // key: "<group_id>:<YYYY-MM-DD>"
+	teacherSchedules    map[string]*entities.Teacher // key: "<teacher_name>:<YYYY-MM-DD>"
+	nowFunc             func() time.Time
 	newWeekFoundInTurbo bool
 	consecutiveErrors   int
 	adminAlerted        bool
@@ -57,15 +60,18 @@ func NewScraperService(
 	scheduleSvc *ScheduleService,
 ) *ScraperService {
 	return &ScraperService{
-		log:           log,
-		cfg:           cfg,
-		studentParser: studentParser,
-		teacherParser: teacherParser,
-		scheduleRepo:  scheduleRepo,
-		teacherRepo:   teacherRepo,
-		scheduleSvc:   scheduleSvc,
-		groupHashes:   make(map[string][32]byte),
-		teacherHashes: make(map[string][32]byte),
+		log:              log,
+		cfg:              cfg,
+		studentParser:    studentParser,
+		teacherParser:    teacherParser,
+		scheduleRepo:     scheduleRepo,
+		teacherRepo:      teacherRepo,
+		scheduleSvc:      scheduleSvc,
+		groupHashes:      make(map[string][32]byte),
+		teacherHashes:    make(map[string][32]byte),
+		groupSchedules:   make(map[string]*entities.Group),
+		teacherSchedules: make(map[string]*entities.Teacher),
+		nowFunc:          time.Now,
 	}
 }
 
@@ -74,6 +80,39 @@ func (s *ScraperService) SetFaculty(facultyParser FacultyParser, facultyRepo Fac
 	defer s.mu.Unlock()
 	s.facultyParser = facultyParser
 	s.facultyRepo = facultyRepo
+}
+
+func (s *ScraperService) SetNowFunc(f func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nowFunc = f
+}
+
+func (s *ScraperService) now() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.nowFunc != nil {
+		return s.nowFunc()
+	}
+	return time.Now()
+}
+
+func (s *ScraperService) cleanupOldWeeksLocked(currentWeekStart time.Time) {
+	for key, g := range s.groupSchedules {
+		wMonday := time.Date(g.Week.Year(), g.Week.Month(), g.Week.Day(), 0, 0, 0, 0, currentWeekStart.Location())
+		if wMonday.Before(currentWeekStart) {
+			delete(s.groupSchedules, key)
+			delete(s.groupHashes, key)
+		}
+	}
+
+	for key, t := range s.teacherSchedules {
+		wMonday := time.Date(t.Week.Year(), t.Week.Month(), t.Week.Day(), 0, 0, 0, 0, currentWeekStart.Location())
+		if wMonday.Before(currentWeekStart) {
+			delete(s.teacherSchedules, key)
+			delete(s.teacherHashes, key)
+		}
+	}
 }
 
 func (s *ScraperService) scrapeFaculty(ctx context.Context) {
@@ -170,6 +209,8 @@ func (s *ScraperService) initFromDB(ctx context.Context) {
 	initCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	currentWeekStart := CurrentWeekMonday(s.now())
+
 	schedules, err := s.scheduleRepo.GetAll(initCtx)
 	if err == nil && len(schedules) > 0 {
 		s.mu.Lock()
@@ -177,10 +218,15 @@ func (s *ScraperService) initFromDB(ctx context.Context) {
 			if week.After(s.latestWeek) {
 				s.latestWeek = week
 			}
+			wMonday := time.Date(week.Year(), week.Month(), week.Day(), 0, 0, 0, 0, currentWeekStart.Location())
+			if wMonday.Before(currentWeekStart) {
+				continue
+			}
 			for _, g := range sch.Groups {
 				key := fmt.Sprintf("%d:%s", g.ID, g.Week.Format("2006-01-02"))
 				if h, err := hashItem(g); err == nil {
 					s.groupHashes[key] = h
+					s.groupSchedules[key] = g
 				}
 			}
 		}
@@ -195,9 +241,14 @@ func (s *ScraperService) initFromDB(ctx context.Context) {
 	if err == nil && len(teachers) > 0 {
 		s.mu.Lock()
 		for _, t := range teachers {
+			wMonday := time.Date(t.Week.Year(), t.Week.Month(), t.Week.Day(), 0, 0, 0, 0, currentWeekStart.Location())
+			if wMonday.Before(currentWeekStart) {
+				continue
+			}
 			key := fmt.Sprintf("%s:%s", t.Name, t.Week.Format("2006-01-02"))
 			if h, err := hashItem(t); err == nil {
 				s.teacherHashes[key] = h
+				s.teacherSchedules[key] = t
 			}
 		}
 		s.mu.Unlock()
@@ -275,22 +326,16 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 	log := s.log.With("operation", "service.ScraperService.processStudentSchedules")
 
 	var maxWeek time.Time
-
-	for week, sch := range schedules {
+	for week := range schedules {
 		if week.After(maxWeek) {
 			maxWeek = week
 		}
-
-		// Сохраняем каждую распарсенную неделю в БД
-		if err := s.scheduleRepo.Save(ctx, week, sch); err != nil {
-			log.ErrorContext(ctx, "failed saving schedule for week", "week", week, "error", err)
-			continue
-		}
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	now := s.now()
+	currentWeekStart := CurrentWeekMonday(now)
 
+	s.mu.Lock()
 	// Проверяем появление новой недели: ровно ОДНО событие!
 	if !s.latestWeek.IsZero() && maxWeek.After(s.latestWeek) {
 		log.InfoContext(ctx, "NEW WEEK DETECTED!", "old_week", s.latestWeek, "new_week", maxWeek)
@@ -310,7 +355,14 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 		s.scheduleSvc.SetCache(latestSch)
 	}
 
-	// Проверяем изменения по каждой группе во всех распарсенных неделях
+	s.cleanupOldWeeksLocked(currentWeekStart)
+
+	type pendingGroupEvent struct {
+		group *entities.Group
+		diff  *entities.ScheduleDiff
+	}
+	var pendingEvents []pendingGroupEvent
+
 	for _, sch := range schedules {
 		for groupID, group := range sch.Groups {
 			newHash, err := hashItem(group)
@@ -320,16 +372,39 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 
 			key := fmt.Sprintf("%d:%s", groupID, group.Week.Format("2006-01-02"))
 			oldHash, exists := s.groupHashes[key]
-			s.groupHashes[key] = newHash
+			oldGroup := s.groupSchedules[key]
 
-			// Уведомление отправляется ТОЛЬКО если расписание уже существовало и его содержимое реально изменилось!
 			if exists && oldHash != newHash {
 				log.InfoContext(ctx, "group schedule updated", "group_id", groupID, "week", group.Week)
-				eventCh <- Event{
-					Type:  EventGroupScheduleUpdated,
-					Group: group,
+				diff := ComputeGroupDiff(oldGroup, group, now)
+				if diff != nil && len(diff.Days) > 0 {
+					pendingEvents = append(pendingEvents, pendingGroupEvent{
+						group: group,
+						diff:  diff,
+					})
 				}
 			}
+
+			s.groupHashes[key] = newHash
+			s.groupSchedules[key] = group
+		}
+	}
+	s.mu.Unlock()
+
+	// Сохраняем каждую распарсенную неделю в БД
+	for week, sch := range schedules {
+		if err := s.scheduleRepo.Save(ctx, week, sch); err != nil {
+			log.ErrorContext(ctx, "failed saving schedule for week", "week", week, "error", err)
+			continue
+		}
+	}
+
+	// Рассылаем нотификации подписчикам
+	for _, pe := range pendingEvents {
+		eventCh <- Event{
+			Type:  EventGroupScheduleUpdated,
+			Group: pe.group,
+			Diff:  pe.diff,
 		}
 	}
 }
@@ -337,31 +412,56 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers []*entities.Teacher, eventCh chan<- Event) {
 	log := s.log.With("operation", "service.ScraperService.processTeacherSchedules")
 
-	for _, t := range teachers {
-		if err := s.teacherRepo.Save(ctx, t.Name, t.Week, t); err != nil {
-			log.ErrorContext(ctx, "failed saving teacher schedule", "name", t.Name, "error", err)
-			continue
-		}
+	now := s.now()
+	currentWeekStart := CurrentWeekMonday(now)
 
+	s.mu.Lock()
+	s.cleanupOldWeeksLocked(currentWeekStart)
+
+	type pendingTeacherEvent struct {
+		teacher *entities.Teacher
+		diff    *entities.ScheduleDiff
+	}
+	var pendingEvents []pendingTeacherEvent
+
+	for _, t := range teachers {
 		newHash, err := hashItem(t)
 		if err != nil {
 			continue
 		}
 
 		key := fmt.Sprintf("%s:%s", t.Name, t.Week.Format("2006-01-02"))
-
-		s.mu.Lock()
 		oldHash, exists := s.teacherHashes[key]
-		s.teacherHashes[key] = newHash
-		s.mu.Unlock()
+		oldTeacher := s.teacherSchedules[key]
 
-		// Уведомление отправляется ТОЛЬКО если расписание уже существовало и его содержимое реально изменилось!
 		if exists && oldHash != newHash {
 			log.InfoContext(ctx, "teacher schedule updated", "name", t.Name, "week", t.Week)
-			eventCh <- Event{
-				Type:    EventTeacherScheduleUpdated,
-				Teacher: t,
+			diff := ComputeTeacherDiff(oldTeacher, t, now)
+			if diff != nil && len(diff.Days) > 0 {
+				pendingEvents = append(pendingEvents, pendingTeacherEvent{
+					teacher: t,
+					diff:    diff,
+				})
 			}
+		}
+
+		s.teacherHashes[key] = newHash
+		s.teacherSchedules[key] = t
+	}
+	s.mu.Unlock()
+
+	for _, t := range teachers {
+		if err := s.teacherRepo.Save(ctx, t.Name, t.Week, t); err != nil {
+			log.ErrorContext(ctx, "failed saving teacher schedule", "name", t.Name, "error", err)
+			continue
+		}
+	}
+
+	for _, pe := range pendingEvents {
+		eventCh <- Event{
+			Type:    EventTeacherScheduleUpdated,
+			Teacher: pe.teacher,
+			Diff:    pe.diff,
 		}
 	}
 }

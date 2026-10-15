@@ -2,9 +2,12 @@ package notifier
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
+
+	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
@@ -271,3 +274,181 @@ var errNotFound = &notFoundError{}
 type notFoundError struct{}
 
 func (e *notFoundError) Error() string { return "not found" }
+
+type mockBotSender struct {
+	sent []struct {
+		to   tele.Recipient
+		what any
+		opts []any
+	}
+}
+
+func (m *mockBotSender) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
+	m.sent = append(m.sent, struct {
+		to   tele.Recipient
+		what any
+		opts []any
+	}{to: to, what: what, opts: opts})
+	return &tele.Message{}, nil
+}
+
+type mockUserStore struct {
+	groupUsers   map[int][]int64
+	teacherUsers map[string][]int64
+}
+
+func (m *mockUserStore) AllUsers(ctx context.Context) ([]entities.User, error) {
+	return nil, nil
+}
+func (m *mockUserStore) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {
+	return m.groupUsers[groupID], nil
+}
+func (m *mockUserStore) UserIDsByTeacherName(ctx context.Context, teacherName string) ([]int64, error) {
+	return m.teacherUsers[teacherName], nil
+}
+func (m *mockUserStore) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
+	return nil, nil
+}
+
+func TestNotifier_HandleGroupScheduleUpdate_DiffHTMLAndKeyboard(t *testing.T) {
+	bot := &mockBotSender{}
+	userStore := &mockUserStore{
+		groupUsers: map[int][]int64{
+			101: {111, 222},
+		},
+	}
+
+	throttleCh := make(chan time.Time, 100)
+	for range 10 {
+		throttleCh <- time.Now()
+	}
+
+	n := &Notifier{
+		log:       slog.Default(),
+		bot:       bot,
+		userStore: userStore,
+		throttle:  throttleCh,
+	}
+
+	diff := &entities.ScheduleDiff{
+		Title: "Группа 101",
+		Days: []entities.DayDiff{
+			{
+				DayName: "Вторник",
+				Date:    time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC),
+				Pairs: []entities.PairDiff{
+					{
+						Number: 1,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Type:    entities.ChangeTypeAdded,
+								NewPair: &entities.Pair{Name: "Информатика", Class: "102"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	group := &entities.Group{ID: 101}
+	err := n.HandleGroupScheduleUpdate(ctx, group, diff)
+	if err != nil {
+		t.Fatalf("HandleGroupScheduleUpdate failed: %v", err)
+	}
+
+	if len(bot.sent) != 2 {
+		t.Fatalf("expected 2 messages sent, got %d", len(bot.sent))
+	}
+
+	for _, msg := range bot.sent {
+		hasHTML := false
+		hasMarkup := false
+		for _, opt := range msg.opts {
+			if opt == tele.ModeHTML {
+				hasHTML = true
+			}
+			if rm, ok := opt.(*tele.ReplyMarkup); ok && rm != nil {
+				hasMarkup = true
+			}
+		}
+		if !hasHTML {
+			t.Errorf("expected tele.ModeHTML in send opts")
+		}
+		if !hasMarkup {
+			t.Errorf("expected inline keyboard attached to message")
+		}
+	}
+}
+
+func TestNotifier_HandleTeacherScheduleUpdate_DiffHTMLAndKeyboard(t *testing.T) {
+	bot := &mockBotSender{}
+	userStore := &mockUserStore{
+		teacherUsers: map[string][]int64{
+			"Иванов И.И.": {333},
+		},
+	}
+
+	throttleCh := make(chan time.Time, 100)
+	for range 10 {
+		throttleCh <- time.Now()
+	}
+
+	n := &Notifier{
+		log:       slog.Default(),
+		bot:       bot,
+		userStore: userStore,
+		throttle:  throttleCh,
+	}
+
+	diff := &entities.ScheduleDiff{
+		Title: "Иванов И.И.",
+		Days: []entities.DayDiff{
+			{
+				DayName: "Среда",
+				Date:    time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC),
+				Pairs: []entities.PairDiff{
+					{
+						Number: 1,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Type:    entities.ChangeTypeRemoved,
+								OldPair: &entities.Pair{Group: "101", Name: "Математика", Class: "204"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	teacher := &entities.Teacher{Name: "Иванов И.И."}
+	err := n.HandleTeacherScheduleUpdate(ctx, teacher, diff)
+	if err != nil {
+		t.Fatalf("HandleTeacherScheduleUpdate failed: %v", err)
+	}
+
+	if len(bot.sent) != 1 {
+		t.Fatalf("expected 1 message sent, got %d", len(bot.sent))
+	}
+
+	msg := bot.sent[0]
+	hasHTML := false
+	hasMarkup := false
+	for _, opt := range msg.opts {
+		if opt == tele.ModeHTML {
+			hasHTML = true
+		}
+		if rm, ok := opt.(*tele.ReplyMarkup); ok && rm != nil {
+			hasMarkup = true
+		}
+	}
+	if !hasHTML {
+		t.Errorf("expected tele.ModeHTML in send opts")
+	}
+	if !hasMarkup {
+		t.Errorf("expected inline keyboard attached to message")
+	}
+}

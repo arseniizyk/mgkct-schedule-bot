@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
@@ -345,5 +347,185 @@ func TestGetDayEndTime(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFormatGroupScheduleDiff(t *testing.T) {
+	diff := &entities.ScheduleDiff{
+		Title: "Группа 101",
+		Days: []entities.DayDiff{
+			{
+				DayName:  "Вторник",
+				DayIndex: 1,
+				Date:     time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC),
+				Pairs: []entities.PairDiff{
+					{
+						Number: 2,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Subgroup: "2 п/г",
+								Type:     entities.ChangeTypeModified,
+								OldPair:  &entities.Pair{Name: "Информатика", Class: "305"},
+								NewPair:  &entities.Pair{Name: "Информатика", Class: "102"},
+							},
+						},
+					},
+					{
+						Number: 3,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Subgroup: "",
+								Type:     entities.ChangeTypeAdded,
+								NewPair:  &entities.Pair{Name: "Информатика", Type: "Лаб", Class: "102"},
+							},
+						},
+					},
+					{
+						Number: 4,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Subgroup: "",
+								Type:     entities.ChangeTypeRemoved,
+								OldPair:  &entities.Pair{Name: "Химия", Class: "110"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := FormatGroupScheduleDiff(diff)
+	expected := "🔔 <b>Изменения в расписании</b>\n" +
+		"📅 <b>Вторник, 15 октября</b>\n\n" +
+		"▫️ <b>2 пара • 2 п/г</b>\n" +
+		"  🔄 Информатика: ауд. <s>305</s> ➔ <b>102</b>\n\n" +
+		"▫️ <b>3 пара</b>\n" +
+		"  🆕 <i>Новая пара:</i> <b>Информатика • Лаб • ауд. 102</b>\n\n" +
+		"▫️ <b>4 пара</b>\n" +
+		"  ❌ <i>Отменена:</i> <s>Химия • ауд. 110</s>"
+
+	assert.Equal(t, expected, got)
+}
+
+func TestFormatTeacherScheduleDiff(t *testing.T) {
+	diff := &entities.ScheduleDiff{
+		Title: "Иванов И.И.",
+		Days: []entities.DayDiff{
+			{
+				DayName:  "Среда",
+				DayIndex: 2,
+				Date:     time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC),
+				Pairs: []entities.PairDiff{
+					{
+						Number: 1,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Subgroup: "",
+								Type:     entities.ChangeTypeModified,
+								OldPair:  &entities.Pair{Group: "101", Name: "Математика", Class: "204"},
+								NewPair:  &entities.Pair{Group: "102", Name: "Математика", Class: "301"},
+							},
+						},
+					},
+					{
+						Number: 3,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Subgroup: "",
+								Type:     entities.ChangeTypeRemoved,
+								OldPair:  &entities.Pair{Group: "201", Name: "Высшая математика", Class: "105"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := FormatTeacherScheduleDiff(diff)
+	expected := "🔔 <b>Изменения в расписании</b>\n" +
+		"📅 <b>Среда, 16 октября</b>\n\n" +
+		"▫️ <b>1 пара</b>\n" +
+		"  <s>101 • Математика • ауд. 204</s>\n" +
+		"  👉 <b>102 • Математика • ауд. 301</b>\n\n" +
+		"▫️ <b>3 пара</b>\n" +
+		"  ❌ <i>Отменена:</i> <s>201 • Высшая математика • ауд. 105</s>"
+
+	assert.Equal(t, expected, got)
+}
+
+func TestFormatScheduleDiff_HTMLEscaping(t *testing.T) {
+	diff := &entities.ScheduleDiff{
+		Title: "Группа <101> & Co",
+		Days: []entities.DayDiff{
+			{
+				DayName:  "Пятница",
+				DayIndex: 4,
+				Date:     time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC),
+				Pairs: []entities.PairDiff{
+					{
+						Number: 1,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Subgroup: "1 <п/г>",
+								Type:     entities.ChangeTypeAdded,
+								NewPair:  &entities.Pair{Name: "C++ & C#", Type: "<Лаб>", Class: "201 <к>"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := FormatGroupScheduleDiff(diff)
+	assert.Contains(t, got, "1 &lt;п/г&gt;")
+	assert.Contains(t, got, "C++ &amp; C#")
+	assert.Contains(t, got, "&lt;Лаб&gt;")
+	assert.Contains(t, got, "201 &lt;к&gt;")
+	assert.NotContains(t, got, "<101>")
+	assert.NotContains(t, got, "<Лаб>")
+}
+
+func TestSplitMessage_WithDiffHTML(t *testing.T) {
+	diff := &entities.ScheduleDiff{
+		Title: "Группа 101",
+		Days: []entities.DayDiff{
+			{
+				DayName:  "Понедельник",
+				DayIndex: 0,
+				Date:     time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC),
+				Pairs: []entities.PairDiff{
+					{
+						Number: 1,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Type:    entities.ChangeTypeAdded,
+								NewPair: &entities.Pair{Name: "Предмет 1", Class: "101"},
+							},
+						},
+					},
+					{
+						Number: 2,
+						SubgroupDiffs: []entities.SubgroupDiff{
+							{
+								Type:    entities.ChangeTypeAdded,
+								NewPair: &entities.Pair{Name: "Предмет 2", Class: "102"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	formatted := FormatGroupScheduleDiff(diff)
+	chunks := SplitMessage(formatted, 60)
+	assert.Greater(t, len(chunks), 1)
+
+	for _, chunk := range chunks {
+		assert.NotEmpty(t, chunk)
+		assert.LessOrEqual(t, len([]rune(chunk)), 60)
 	}
 }
