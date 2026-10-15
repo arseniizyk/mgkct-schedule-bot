@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
@@ -232,5 +233,117 @@ func TestFormatStats(t *testing.T) {
 	}
 	if !strings.Contains(got, "Высшая математика") {
 		t.Errorf("expected subject full name, got %s", got)
+	}
+}
+
+func TestFindLastSubject(t *testing.T) {
+	tests := []struct {
+		name     string
+		subjects []*entities.Subject
+		want     int
+	}{
+		{
+			name:     "empty subjects",
+			subjects: []*entities.Subject{},
+			want:     -1,
+		},
+		{
+			name: "all subjects with pairs empty",
+			subjects: []*entities.Subject{
+				{Pairs: []*entities.Pair{}},
+				{Pairs: []*entities.Pair{{Name: "", Type: "", Group: "", Class: ""}}},
+			},
+			want: -1,
+		},
+		{
+			name: "single subject with valid pair",
+			subjects: []*entities.Subject{
+				{Pairs: []*entities.Pair{{Name: "Математика"}}},
+			},
+			want: 0,
+		},
+		{
+			name: "multiple subjects, last non-empty is index 2",
+			subjects: []*entities.Subject{
+				{Pairs: []*entities.Pair{{Name: "Физика"}}},
+				{Pairs: []*entities.Pair{{Name: "Химия"}}},
+				{Pairs: []*entities.Pair{{Name: "Информатика"}}},
+				{Pairs: []*entities.Pair{}},
+			},
+			want: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FindLastSubject(tt.subjects); got != tt.want {
+				t.Errorf("FindLastSubject() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetDayEndTime(t *testing.T) {
+	minskLoc := time.FixedZone("MSK", 3*3600)
+
+	tests := []struct {
+		name        string
+		dayIdx      int
+		lastSubject int
+		wantHour    int
+		wantMin     int
+		wantOK      bool
+	}{
+		{
+			name:        "weekday pair 1",
+			dayIdx:      0, // Monday
+			lastSubject: 1,
+			wantHour:    10,
+			wantMin:     40,
+			wantOK:      true,
+		},
+		{
+			name:        "weekday pair 3",
+			dayIdx:      4, // Friday
+			lastSubject: 3,
+			wantHour:    14,
+			wantMin:     40,
+			wantOK:      true,
+		},
+		{
+			name:        "Saturday pair 3",
+			dayIdx:      5, // Saturday
+			lastSubject: 3,
+			wantHour:    14,
+			wantMin:     30,
+			wantOK:      true,
+		},
+		{
+			name:        "invalid pair number 0",
+			dayIdx:      0,
+			lastSubject: 0,
+			wantOK:      false,
+		},
+		{
+			name:        "invalid pair number 7",
+			dayIdx:      0,
+			lastSubject: 7,
+			wantOK:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotTime, gotOK := GetDayEndTime(tt.dayIdx, tt.lastSubject, minskLoc)
+			if gotOK != tt.wantOK {
+				t.Fatalf("GetDayEndTime() ok = %v, want %v", gotOK, tt.wantOK)
+			}
+			if tt.wantOK {
+				if gotTime.Hour() != tt.wantHour || gotTime.Minute() != tt.wantMin {
+					t.Errorf("GetDayEndTime() = %02d:%02d, want %02d:%02d",
+						gotTime.Hour(), gotTime.Minute(), tt.wantHour, tt.wantMin)
+				}
+			}
+		})
 	}
 }
