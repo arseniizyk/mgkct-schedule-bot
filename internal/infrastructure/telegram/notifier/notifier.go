@@ -33,15 +33,19 @@ type TeacherProvider interface {
 	GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error)
 }
 
+type BotSender interface {
+	Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error)
+}
+
 type Notifier struct {
 	log         *slog.Logger
-	bot         *tele.Bot
+	bot         BotSender
 	userStore   UserStore
 	adminChatID int64
 	throttle    <-chan time.Time
 }
 
-func New(log *slog.Logger, bot *tele.Bot, userStore UserStore, adminChatID int64) *Notifier {
+func New(log *slog.Logger, bot BotSender, userStore UserStore, adminChatID int64) *Notifier {
 	// Лимит Telegram: около 30 сообщений в секунду.
 	// Используем тикер на 40ms (25 сообщений в секунду) для гарантированной защиты от 429 Too Many Requests.
 	ticker := time.NewTicker(40 * time.Millisecond)
@@ -93,7 +97,7 @@ func (n *Notifier) HandleNewWeek(ctx context.Context, week time.Time) error {
 }
 
 // HandleGroupScheduleUpdate рассылает обновленное расписание студентам конкретной группы.
-func (n *Notifier) HandleGroupScheduleUpdate(ctx context.Context, group *entities.Group) error {
+func (n *Notifier) HandleGroupScheduleUpdate(ctx context.Context, group *entities.Group, diff *entities.ScheduleDiff) error {
 	log := n.log.With("operation", "notifier.Notifier.HandleGroupScheduleUpdate", "group_id", group.ID)
 
 	userIDs, err := n.userStore.UserIDsByGroupID(ctx, int(group.ID))
@@ -106,17 +110,38 @@ func (n *Notifier) HandleGroupScheduleUpdate(ctx context.Context, group *entitie
 		return nil
 	}
 
-	body := formatter.FormatScheduleWeek(group)
-	msgText := fmt.Sprintf("%s\n%s", messages.ScheduleUpdatedTitle, body)
+	var msgText string
+	var parseMode string
+	if diff != nil {
+		msgText = formatter.FormatGroupScheduleDiff(diff)
+		parseMode = tele.ModeHTML
+	} else {
+		body := formatter.FormatScheduleWeek(group)
+		msgText = fmt.Sprintf("%s\n%s", messages.ScheduleUpdatedTitle, body)
+		parseMode = tele.ModeMarkdown
+	}
+
+	if msgText == "" {
+		return nil
+	}
+
 	chunks := formatter.SplitMessage(msgText, 4096)
+	kbd := keyboard.InlineScheduleKeyboard(int(group.ID))
 
 	for _, chatID := range userIDs {
-		for _, chunk := range chunks {
+		for i, chunk := range chunks {
+			isLast := i == len(chunks)-1
+			var sendOpts []any
+			sendOpts = append(sendOpts, parseMode)
+			if isLast && kbd != nil {
+				sendOpts = append(sendOpts, kbd)
+			}
+
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-n.throttle:
-				_, err := n.bot.Send(tele.ChatID(chatID), chunk, tele.ModeMarkdown)
+				_, err := n.bot.Send(tele.ChatID(chatID), chunk, sendOpts...)
 				if err != nil {
 					log.WarnContext(ctx, "failed sending group update to user", "chat_id", chatID, "error", err)
 				}
@@ -128,7 +153,7 @@ func (n *Notifier) HandleGroupScheduleUpdate(ctx context.Context, group *entitie
 }
 
 // HandleTeacherScheduleUpdate рассылает обновленное расписание подписчикам преподавателя.
-func (n *Notifier) HandleTeacherScheduleUpdate(ctx context.Context, teacher *entities.Teacher) error {
+func (n *Notifier) HandleTeacherScheduleUpdate(ctx context.Context, teacher *entities.Teacher, diff *entities.ScheduleDiff) error {
 	log := n.log.With("operation", "notifier.Notifier.HandleTeacherScheduleUpdate", "name", teacher.Name)
 
 	userIDs, err := n.userStore.UserIDsByTeacherName(ctx, teacher.Name)
@@ -141,17 +166,38 @@ func (n *Notifier) HandleTeacherScheduleUpdate(ctx context.Context, teacher *ent
 		return nil
 	}
 
-	body := formatter.FormatTeacherScheduleWeek(teacher)
-	msgText := fmt.Sprintf("%s\n%s", messages.ScheduleUpdatedTitle, body)
+	var msgText string
+	var parseMode string
+	if diff != nil {
+		msgText = formatter.FormatTeacherScheduleDiff(diff)
+		parseMode = tele.ModeHTML
+	} else {
+		body := formatter.FormatTeacherScheduleWeek(teacher)
+		msgText = fmt.Sprintf("%s\n%s", messages.ScheduleUpdatedTitle, body)
+		parseMode = tele.ModeMarkdown
+	}
+
+	if msgText == "" {
+		return nil
+	}
+
 	chunks := formatter.SplitMessage(msgText, 4096)
+	kbd := keyboard.InlineTeacherScheduleKeyboard(teacher.Name)
 
 	for _, chatID := range userIDs {
-		for _, chunk := range chunks {
+		for i, chunk := range chunks {
+			isLast := i == len(chunks)-1
+			var sendOpts []any
+			sendOpts = append(sendOpts, parseMode)
+			if isLast && kbd != nil {
+				sendOpts = append(sendOpts, kbd)
+			}
+
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-n.throttle:
-				_, err := n.bot.Send(tele.ChatID(chatID), chunk, tele.ModeMarkdown)
+				_, err := n.bot.Send(tele.ChatID(chatID), chunk, sendOpts...)
 				if err != nil {
 					log.WarnContext(ctx, "failed sending teacher update to user", "chat_id", chatID, "error", err)
 				}

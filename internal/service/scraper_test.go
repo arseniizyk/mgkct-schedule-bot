@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
@@ -210,16 +211,38 @@ func TestScraperService_NoSpamWhenUnchanged(t *testing.T) {
 func TestScraperService_EmitsEventOnActualChange(t *testing.T) {
 	ctx := t.Context()
 
-	week1 := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
-	t1w1 := &entities.Teacher{Name: "Иванов И. И.", Week: week1, Days: []*entities.Day{{Name: "Понедельник"}}}
+	futureWeek := service.CurrentWeekMonday(time.Now()).AddDate(0, 0, 7)
+	t1w1 := &entities.Teacher{
+		Name: "Иванов И. И.",
+		Week: futureWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Математика", Group: "101", Class: "204"}}},
+				},
+			},
+		},
+	}
 
 	schedRepo := &mockScheduleRepo{schedules: make(map[time.Time]*entities.Schedule)}
 	teachRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
 
 	_ = teachRepo.Save(ctx, t1w1.Name, t1w1.Week, t1w1)
 
-	// Новый вариант с измененным расписанием
-	t1w1Updated := &entities.Teacher{Name: "Иванов И. И.", Week: week1, Days: []*entities.Day{{Name: "Вторник"}}}
+	// Новый вариант с измененным расписанием (изменилась группа и аудитория)
+	t1w1Updated := &entities.Teacher{
+		Name: "Иванов И. И.",
+		Week: futureWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Математика", Group: "102", Class: "301"}}},
+				},
+			},
+		},
+	}
 
 	studentParser := &mockStudentParser{res: make(map[time.Time]*entities.Schedule)}
 	teacherParser := &mockTeacherParser{res: []*entities.Teacher{t1w1Updated}}
@@ -238,12 +261,15 @@ func TestScraperService_EmitsEventOnActualChange(t *testing.T) {
 	eventCh := make(chan service.Event, 100)
 	go scraperSvc.Start(ctx, eventCh)
 
-	time.Sleep(100 * time.Millisecond)
-
-	assert.Len(t, eventCh, 1, "Скрапер должен отправить ровно 1 событие при реальном изменении")
-	event := <-eventCh
-	assert.Equal(t, service.EventTeacherScheduleUpdated, event.Type)
-	assert.Equal(t, "Иванов И. И.", event.Teacher.Name)
+	select {
+	case event := <-eventCh:
+		assert.Equal(t, service.EventTeacherScheduleUpdated, event.Type)
+		assert.Equal(t, "Иванов И. И.", event.Teacher.Name)
+		assert.NotNil(t, event.Diff, "Event should contain ScheduleDiff")
+		assert.NotEmpty(t, event.Diff.Days)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for event in eventCh")
+	}
 }
 
 type dynamicParser struct {
@@ -337,4 +363,159 @@ func TestScraperService_ErrorAlertAndRecovery(t *testing.T) {
 
 	assert.True(t, gotErrorEvent, "expected EventScraperError")
 	assert.True(t, gotRecoverEvent, "expected EventScraperRecovered")
+}
+
+func TestScraperService_PastChangesSavedToDBWithoutEmittingEvent(t *testing.T) {
+	ctx := t.Context()
+
+	// Изменения за прошедшую неделю
+	pastWeek := time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC)
+	group1 := &entities.Group{
+		ID:   101,
+		Week: pastWeek,
+		Days: []*entities.Day{
+			{Name: "Понедельник", Subjects: []*entities.Subject{{Pairs: []*entities.Pair{{Name: "Старый предмет"}}}}},
+		},
+	}
+
+	schedRepo := &mockScheduleRepo{schedules: map[time.Time]*entities.Schedule{
+		pastWeek: {
+			Groups: map[int32]*entities.Group{
+				101: group1,
+			},
+		},
+	}}
+	teachRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+
+	// Новое расписание на прошедшую неделю (изменение задним числом)
+	group1Updated := &entities.Group{
+		ID:   101,
+		Week: pastWeek,
+		Days: []*entities.Day{
+			{Name: "Понедельник", Subjects: []*entities.Subject{{Pairs: []*entities.Pair{{Name: "Новый предмет"}}}}},
+		},
+	}
+
+	studentParser := &mockStudentParser{res: map[time.Time]*entities.Schedule{
+		pastWeek: {
+			Groups: map[int32]*entities.Group{
+				101: group1Updated,
+			},
+		},
+	}}
+	teacherParser := &mockTeacherParser{res: nil}
+
+	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
+	scraperSvc := service.NewScraperService(
+		slog.Default(),
+		config.ScraperConfig{Interval: time.Hour, PeakInterval: time.Hour, NightInterval: time.Hour},
+		studentParser,
+		teacherParser,
+		schedRepo,
+		teachRepo,
+		schedSvc,
+	)
+
+	// Устанавливаем время на текущую неделю (15.10.2026)
+	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
+	scraperSvc.SetNowFunc(func() time.Time { return now })
+
+	eventCh := make(chan service.Event, 10)
+	go scraperSvc.Start(ctx, eventCh)
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Событий быть НЕ должно, так как изменения задним числом не спамят в Telegram
+	assert.Empty(t, eventCh, "изменения задним числом не должны отправлять уведомления")
+
+	// Но в репозитории данные должны обновиться!
+	saved, err := schedRepo.GetByWeek(ctx, pastWeek)
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	assert.Equal(t, "Новый предмет", saved.Groups[101].Days[0].Subjects[0].Pairs[0].Name)
+}
+
+func TestScraperService_ProcessingOrder_DiffBeforeDBUpdate(t *testing.T) {
+	ctx := t.Context()
+
+	futureWeek := service.CurrentWeekMonday(time.Now()).AddDate(0, 0, 7)
+	gOld := &entities.Group{
+		ID:   102,
+		Week: futureWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Вторник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Информатика", Class: "305"}}},
+				},
+			},
+		},
+	}
+
+	schedRepo := &mockScheduleRepo{schedules: map[time.Time]*entities.Schedule{
+		futureWeek: {
+			Groups: map[int32]*entities.Group{
+				102: gOld,
+			},
+		},
+	}}
+	teachRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+
+	gNew := &entities.Group{
+		ID:   102,
+		Week: futureWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Вторник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Информатика", Class: "102"}}},
+				},
+			},
+		},
+	}
+
+	studentParser := &mockStudentParser{res: map[time.Time]*entities.Schedule{
+		futureWeek: {
+			Groups: map[int32]*entities.Group{
+				102: gNew,
+			},
+		},
+	}}
+	teacherParser := &mockTeacherParser{res: nil}
+
+	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
+	scraperSvc := service.NewScraperService(
+		slog.Default(),
+		config.ScraperConfig{Interval: time.Hour, PeakInterval: time.Hour, NightInterval: time.Hour},
+		studentParser,
+		teacherParser,
+		schedRepo,
+		teachRepo,
+		schedSvc,
+	)
+
+	eventCh := make(chan service.Event, 10)
+	go scraperSvc.Start(ctx, eventCh)
+
+	select {
+	case ev := <-eventCh:
+		assert.Equal(t, service.EventGroupScheduleUpdated, ev.Type)
+		assert.Equal(t, int32(102), ev.Group.ID)
+		require.NotNil(t, ev.Diff)
+		require.Len(t, ev.Diff.Days, 1)
+		require.Len(t, ev.Diff.Days[0].Pairs, 1)
+
+		pDiff := ev.Diff.Days[0].Pairs[0]
+		require.Len(t, pDiff.SubgroupDiffs, 1)
+		// Проверяем, что diff сохранил старое состояние ("305") и новое ("102")
+		assert.Equal(t, "305", pDiff.SubgroupDiffs[0].OldPair.Class)
+		assert.Equal(t, "102", pDiff.SubgroupDiffs[0].NewPair.Class)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for group update event")
+	}
+
+	// Проверяем, что в репозитории обновленное состояние сохранено
+	saved, err := schedRepo.GetByWeek(ctx, futureWeek)
+	require.NoError(t, err)
+	assert.Equal(t, "102", saved.Groups[102].Days[0].Subjects[0].Pairs[0].Class)
 }

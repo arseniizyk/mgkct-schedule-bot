@@ -21,6 +21,7 @@ type Event struct {
 	Week             time.Time
 	Group            *entities.Group
 	Teacher          *entities.Teacher
+	Diff             *entities.ScheduleDiff
 	Err              error
 	ConsecutiveFails int
 }

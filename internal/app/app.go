@@ -231,12 +231,12 @@ func (a *App) listenEvents(ctx context.Context) {
 				}
 			case service.EventGroupScheduleUpdated:
 				log.Info("Received EventGroupScheduleUpdated", "group_id", event.Group.ID)
-				if err := a.notifier.HandleGroupScheduleUpdate(ctx, event.Group); err != nil {
+				if err := a.notifier.HandleGroupScheduleUpdate(ctx, event.Group, event.Diff); err != nil {
 					log.Error("failed broadcasting group update", "group_id", event.Group.ID, "error", err)
 				}
 			case service.EventTeacherScheduleUpdated:
 				log.Info("Received EventTeacherScheduleUpdated", "name", event.Teacher.Name)
-				if err := a.notifier.HandleTeacherScheduleUpdate(ctx, event.Teacher); err != nil {
+				if err := a.notifier.HandleTeacherScheduleUpdate(ctx, event.Teacher, event.Diff); err != nil {
 					log.Error("failed broadcasting teacher update", "name", event.Teacher.Name, "error", err)
 				}
 			case service.EventScraperError:
