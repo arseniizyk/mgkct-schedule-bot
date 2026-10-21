@@ -1,5 +1,8 @@
 # MGKCT Schedule Bot
 
+[![Go CI](https://github.com/arseniizyk/mgkct-schedule-bot/actions/workflows/go.yml/badge.svg)](https://github.com/arseniizyk/mgkct-schedule-bot/actions/workflows/go.yml)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
 **Русский** | [English](README-en.md)
 
 Telegram-бот для удобного просмотра расписания Минского государственного колледжа цифровых технологий (МГКЦТ) для студентов и преподавателей.
