@@ -205,8 +205,11 @@ func TestFormatEndings(t *testing.T) {
 	if !strings.Contains(got, "Окончание пар: Понедельник") {
 		t.Errorf("expected title with day, got %s", got)
 	}
-	if !strings.Contains(got, "После 3 пары") || !strings.Contains(got, "После 4 пары") {
+	if !strings.Contains(got, "*После 3 пары* — 1 гр.:") || !strings.Contains(got, "*После 4 пары* — 1 гр.:") {
 		t.Errorf("expected pairs in message, got %s", got)
+	}
+	if strings.Contains(got, "до ") || strings.Contains(got, "перерыв") {
+		t.Errorf("expected no times in message, got %s", got)
 	}
 	if !strings.Contains(got, "Выходной") || !strings.Contains(got, "103") {
 		t.Errorf("expected day off info, got %s", got)

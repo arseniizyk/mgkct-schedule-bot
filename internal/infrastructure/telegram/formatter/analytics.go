@@ -8,15 +8,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
 
-var pairEndTimes = map[int]string{
-	1: "до 10:00 (перерыв до 10:40)",
-	2: "до 12:00 (перерыв до 12:40)",
-	3: "до 14:00 (перерыв до 14:40)",
-	4: "до 16:30 (перерыв до 16:40)",
-	5: "до 18:20 (перерыв до 18:30)",
-	6: "до 20:10",
-}
-
 // FormatCabinetDay форматирует расписание занятости кабинета на один день
 func FormatCabinetDay(cs *entities.CabinetSchedule, dayIdx int) string {
 	if cs == nil || len(cs.Days) == 0 {
@@ -93,12 +84,7 @@ func FormatEndings(stat *entities.EndingsStat) string {
 			continue
 		}
 
-		timeNote := pairEndTimes[pairNum]
-		if timeNote != "" {
-			fmt.Fprintf(&sb, "🔔 *После %d пары* (%s) — %d гр.:\n", pairNum, timeNote, len(groups))
-		} else {
-			fmt.Fprintf(&sb, "🔔 *После %d пары* — %d гр.:\n", pairNum, len(groups))
-		}
+		fmt.Fprintf(&sb, "🔔 *После %d пары* — %d гр.:\n", pairNum, len(groups))
 
 		groupStrs := make([]string, 0, len(groups))
 		for _, g := range groups {
