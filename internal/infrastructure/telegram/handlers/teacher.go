@@ -31,10 +31,7 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) 
 			query := strings.Join(args, " ")
 			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
 			if !ok {
-				if len(candidates) > 0 {
-					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
-				}
-				return c.Send(messages.TeacherNotFound)
+				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, query, candidates)
 			}
 			teacherName = matched
 		} else {
@@ -78,10 +75,7 @@ func TeacherWeek(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo)
 			query := strings.Join(args, " ")
 			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
 			if !ok {
-				if len(candidates) > 0 {
-					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
-				}
-				return c.Send(messages.TeacherNotFound)
+				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, query, candidates)
 			}
 			teacherName = matched
 		} else {
@@ -131,10 +125,7 @@ func Teachers(log *slog.Logger, teacherSvc TeacherService, sm StateManager) tele
 		teacherQuery := strings.Join(args, " ")
 		matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
 		if !ok {
-			if len(candidates) > 0 {
-				return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
-			}
-			return c.Send(messages.TeacherNotFound)
+			return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
 		}
 
 		teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, matched)
@@ -177,10 +168,7 @@ func SetTeacher(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 		teacherQuery := strings.Join(args, " ")
 		matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
 		if !ok {
-			if len(candidates) > 0 {
-				return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
-			}
-			return c.Send(messages.TeacherNotFound)
+			return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
 		}
 
 		if err := userRepo.SetTeacher(ctx, c.Chat().ID, matched); err != nil {
@@ -201,4 +189,20 @@ func formatCandidates(candidates []string) string {
 		sb.WriteString("- " + c)
 	}
 	return sb.String()
+}
+
+func sendTeacherNotFoundOrSuggestions(ctx context.Context, c tele.Context, teacherSvc TeacherService, query string, candidates []string) error {
+	if len(candidates) > 0 {
+		return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
+	}
+
+	suggestions, err := teacherSvc.FindSimilarTeachers(ctx, query, 3)
+	if err == nil && len(suggestions) > 0 {
+		return c.Send(
+			messages.TeacherNotFoundSuggestions,
+			keyboard.InlineTeacherSuggestionsKeyboard(suggestions),
+		)
+	}
+
+	return c.Send(messages.TeacherNotFound)
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"time"
@@ -59,14 +60,26 @@ func SetGroup(log *slog.Logger, userRepo UserRepo, sm StateManager) tele.Handler
 			return c.Send(messages.OnlyNumbers)
 		}
 
+		if len(args) == 1 {
+			return c.Send(fmt.Sprintf(messages.SelectSubgroup, groupID), keyboard.InlineSubgroupKeyboard(groupID))
+		}
+
+		subgroup, err := strconv.Atoi(args[1])
+		if err != nil || subgroup < 0 || subgroup > 2 {
+			return c.Send(fmt.Sprintf(messages.SelectSubgroup, groupID), keyboard.InlineSubgroupKeyboard(groupID))
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		if err := userRepo.SetUserGroup(ctx, c.Chat().ID, groupID); err != nil {
+		if err := userRepo.SetUserGroup(ctx, c.Chat().ID, groupID, subgroup); err != nil {
 			log.Error("failed saving user group", "error", err)
 			return c.Send(messages.Internal)
 		}
 
+		if subgroup > 0 {
+			return c.Send(fmt.Sprintf(messages.GroupWithSubgroupSaved, groupID, subgroup), keyboard.ReplyScheduleKeyboard)
+		}
 		return c.Send(messages.GroupSaved, keyboard.ReplyScheduleKeyboard)
 	}
 }

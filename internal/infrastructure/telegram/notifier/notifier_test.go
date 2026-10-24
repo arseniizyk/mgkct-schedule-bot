@@ -9,6 +9,9 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
 
@@ -195,6 +198,48 @@ func TestFormatNextDayDigest_GroupSuccess(t *testing.T) {
 	if !strings.Contains(msg, "Математика") {
 		t.Errorf("expected subject in message, got %s", msg)
 	}
+}
+
+func TestFormatNextDayDigest_GroupSubgroupFiltering(t *testing.T) {
+	ctx := context.Background()
+	minskLoc := time.FixedZone("MSK", 3*3600)
+	targetDate := time.Date(2026, 10, 13, 12, 0, 0, 0, minskLoc)
+	targetMonday := time.Date(2026, 10, 12, 0, 0, 0, 0, minskLoc)
+
+	schedProv := &mockSchedProvider{
+		byWeekFunc: func(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
+			return &entities.Group{
+				ID:   groupID,
+				Week: targetMonday,
+				Days: []*entities.Day{
+					{Name: "Понедельник"},
+					{
+						Name: "Вторник",
+						Subjects: []*entities.Subject{
+							{
+								Pairs: []*entities.Pair{
+									{Name: "1. Программирование", Class: "305"},
+									{Name: "2. Электротехника", Class: "102"},
+								},
+							},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	userSg1 := entities.User{ChatID: 12345, Group: 101, Subgroup: 1}
+	msg1, err := FormatNextDayDigest(ctx, userSg1, targetDate, 1, schedProv, nil)
+	require.NoError(t, err)
+	assert.Contains(t, msg1, "1. Программирование")
+	assert.NotContains(t, msg1, "2. Электротехника")
+
+	userSg2 := entities.User{ChatID: 12346, Group: 101, Subgroup: 2}
+	msg2, err := FormatNextDayDigest(ctx, userSg2, targetDate, 1, schedProv, nil)
+	require.NoError(t, err)
+	assert.NotContains(t, msg2, "1. Программирование")
+	assert.Contains(t, msg2, "2. Электротехника")
 }
 
 func TestFormatNextDayDigest_TeacherSuccess(t *testing.T) {

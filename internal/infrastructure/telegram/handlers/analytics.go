@@ -110,7 +110,7 @@ func Endings(log *slog.Logger, analyticsSvc AnalyticsService) tele.HandlerFunc {
 			}
 		}
 
-		stat, err := analyticsSvc.GetEndings(ctx, dayIdx)
+		stat, err := analyticsSvc.GetEndings(ctx, dayIdx, time.Time{})
 		if err != nil {
 			log.Error("failed getting endings stat", "error", err)
 			return c.Send("Не удалось получить аналитику окончания пар.", keyboard.ReplyScheduleKeyboard)
