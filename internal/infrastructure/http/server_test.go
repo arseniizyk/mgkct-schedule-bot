@@ -360,7 +360,7 @@ func TestHandleEndings(t *testing.T) {
 	if res.DayIndex != 0 {
 		t.Fatalf("expected day_index 0, got %d", res.DayIndex)
 	}
-	if res.Endings == nil || len(res.Endings.Pairs[1]) == 0 || res.Endings.Pairs[1][0] != 101 {
+	if res.Endings == nil || len(res.Endings.Pairs[1]) == 0 || res.Endings.Pairs[1][0].GroupID != 101 {
 		t.Fatalf("expected group 101 in endings pairs, got %+v", res.Endings)
 	}
 }

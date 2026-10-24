@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
@@ -190,8 +191,8 @@ func (s *AnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time
 
 	stat := &entities.EndingsStat{
 		DayIndex: dayIdx,
-		Pairs:    make(map[int][]int32),
-		DayOff:   make([]int32, 0),
+		Pairs:    make(map[int][]entities.GroupEnding),
+		DayOff:   make([]entities.GroupEnding, 0),
 		Total:    len(sch.Groups),
 	}
 
@@ -203,19 +204,33 @@ func (s *AnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time
 			stat.DayName = grp.Days[dayIdx].Name
 		}
 
-		lastPair := findLastSubjectInDay(grp.Days[dayIdx].Subjects)
-		if lastPair == -1 {
-			stat.DayOff = append(stat.DayOff, grp.ID)
-		} else {
-			pairNum := lastPair + 1
-			stat.Pairs[pairNum] = append(stat.Pairs[pairNum], grp.ID)
+		endings := calculateGroupDayEndings(grp.Days[dayIdx].Subjects)
+		for sg, pairNum := range endings {
+			item := entities.GroupEnding{
+				GroupID:  grp.ID,
+				Subgroup: sg,
+			}
+			if pairNum == 0 {
+				stat.DayOff = append(stat.DayOff, item)
+			} else {
+				stat.Pairs[pairNum] = append(stat.Pairs[pairNum], item)
+			}
 		}
 	}
 
+	sortGroupEndings := func(slice []entities.GroupEnding) {
+		sort.Slice(slice, func(i, j int) bool {
+			if slice[i].GroupID != slice[j].GroupID {
+				return slice[i].GroupID < slice[j].GroupID
+			}
+			return slice[i].Subgroup < slice[j].Subgroup
+		})
+	}
+
 	// Сортировка списков групп для детерминированного вывода
-	slices.Sort(stat.DayOff)
+	sortGroupEndings(stat.DayOff)
 	for k := range stat.Pairs {
-		slices.Sort(stat.Pairs[k])
+		sortGroupEndings(stat.Pairs[k])
 	}
 
 	return stat, nil
@@ -428,6 +443,117 @@ func findLastSubjectInDay(subjects []*entities.Subject) int {
 		}
 	}
 	return -1
+}
+
+// parsePairSubgroup извлекает номер подгруппы (1, 2, 3...) из названия пары или поля group.
+// Возвращает 0, если пара общая для всей группы.
+func parsePairSubgroup(name, groupField string) int {
+	name = strings.TrimSpace(name)
+	if len(name) >= 2 && unicode.IsDigit(rune(name[0])) && name[1] == '.' {
+		return int(name[0] - '0')
+	}
+
+	lower := strings.ToLower(groupField)
+	if strings.Contains(lower, "1 п/г") || strings.Contains(lower, "1 п/гр") || strings.TrimSpace(groupField) == "1" {
+		return 1
+	}
+	if strings.Contains(lower, "2 п/г") || strings.Contains(lower, "2 п/гр") || strings.TrimSpace(groupField) == "2" {
+		return 2
+	}
+	if strings.Contains(lower, "3 п/г") || strings.Contains(lower, "3 п/гр") || strings.TrimSpace(groupField) == "3" {
+		return 3
+	}
+
+	return 0
+}
+
+// calculateGroupDayEndings определяет номера последних пар (1-based, 0 для выходного) для подгрупп группы.
+// Если группа не делится на подгруппы (или все подгруппы заканчивают одинаково), возвращается map[int]int{0: pairNum}.
+// Если подгруппы заканчивают в разное время (например, 1-я в 5, 2-я в 3), возвращается map[int]int{1: 5, 2: 3}.
+func calculateGroupDayEndings(subjects []*entities.Subject) map[int]int {
+	maxSubgroup := 0
+
+	for _, subj := range subjects {
+		if subj == nil || subj.IsEmpty {
+			continue
+		}
+		for _, p := range subj.Pairs {
+			if p == nil {
+				continue
+			}
+			name := strings.TrimSpace(p.Name)
+			if name == "" && p.Group == "" {
+				continue
+			}
+			sg := parsePairSubgroup(name, p.Group)
+			if sg > maxSubgroup {
+				maxSubgroup = sg
+			}
+		}
+	}
+
+	if maxSubgroup == 0 {
+		lastPair := findLastSubjectInDay(subjects)
+		if lastPair == -1 {
+			return map[int]int{0: 0}
+		}
+		return map[int]int{0: lastPair + 1}
+	}
+
+	numSubgroups := max(2, maxSubgroup)
+
+	endings := make(map[int]int, numSubgroups)
+	for sg := 1; sg <= numSubgroups; sg++ {
+		lastPair := -1
+		for i, subj := range slices.Backward(subjects) {
+			if subj == nil || subj.IsEmpty || len(subj.Pairs) == 0 {
+				continue
+			}
+
+			hasPairForSg := false
+			for _, p := range subj.Pairs {
+				if p == nil {
+					continue
+				}
+				name := strings.TrimSpace(p.Name)
+				if name == "" && p.Group == "" {
+					continue
+				}
+
+				pairSg := parsePairSubgroup(name, p.Group)
+				if pairSg == sg || pairSg == 0 {
+					hasPairForSg = true
+					break
+				}
+			}
+
+			if hasPairForSg {
+				lastPair = i
+				break
+			}
+		}
+
+		if lastPair == -1 {
+			endings[sg] = 0
+		} else {
+			endings[sg] = lastPair + 1
+		}
+	}
+
+	firstEnding := endings[1]
+	allSame := true
+	for sg := 2; sg <= numSubgroups; sg++ {
+		if endings[sg] != firstEnding {
+			allSame = false
+			break
+		}
+	}
+
+	if allSame {
+		return map[int]int{0: firstEnding}
+	}
+
+	return endings
 }
 
 // EffectiveEndingsWeek возвращает дату понедельника недели для показа окончаний пар

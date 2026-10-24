@@ -126,11 +126,11 @@ func TestAnalyticsService_GetEndings(t *testing.T) {
 	require.NotNil(t, stat)
 
 	// Группа 101 заканчивает после 3 пары
-	assert.Equal(t, []int32{101}, stat.Pairs[3])
+	assert.Equal(t, []entities.GroupEnding{{GroupID: 101}}, stat.Pairs[3])
 	// Группа 102 заканчивает после 2 пары
-	assert.Equal(t, []int32{102}, stat.Pairs[2])
+	assert.Equal(t, []entities.GroupEnding{{GroupID: 102}}, stat.Pairs[2])
 	// Группа 103 выходной
-	assert.Equal(t, []int32{103}, stat.DayOff)
+	assert.Equal(t, []entities.GroupEnding{{GroupID: 103}}, stat.DayOff)
 }
 
 func TestAnalyticsService_GetEndings_SaturdayCurrentWeekVsNextWeek(t *testing.T) {
@@ -213,7 +213,7 @@ func TestAnalyticsService_GetEndings_SaturdayCurrentWeekVsNextWeek(t *testing.T)
 	stat, err := svc.GetEndings(ctx, dayIdx, time.Time{})
 	require.NoError(t, err)
 	assert.Equal(t, "Суббота", stat.DayName)
-	assert.Equal(t, []int32{101}, stat.Pairs[2], "в субботу утром должно показываться расписание текущей недели (2 пары), а не следующей (4 пары)")
+	assert.Equal(t, []entities.GroupEnding{{GroupID: 101}}, stat.Pairs[2], "в субботу утром должно показываться расписание текущей недели (2 пары), а не следующей (4 пары)")
 	assert.Empty(t, stat.Pairs[4])
 
 	// 2. Суббота 20:00 (Минск) — вечер, учебная неделя кончилась
@@ -226,7 +226,7 @@ func TestAnalyticsService_GetEndings_SaturdayCurrentWeekVsNextWeek(t *testing.T)
 	stat, err = svc.GetEndings(ctx, dayIdx, time.Time{})
 	require.NoError(t, err)
 	assert.Equal(t, "Понедельник", stat.DayName)
-	assert.Equal(t, []int32{101}, stat.Pairs[3], "в субботу вечером должен показываться понедельник следующей недели (3 пары)")
+	assert.Equal(t, []entities.GroupEnding{{GroupID: 101}}, stat.Pairs[3], "в субботу вечером должен показываться понедельник следующей недели (3 пары)")
 
 	// 3. Воскресенье 12:00 (Минск)
 	sundayNoon := time.Date(2026, 10, 25, 12, 0, 0, 0, minskLoc)
@@ -238,7 +238,103 @@ func TestAnalyticsService_GetEndings_SaturdayCurrentWeekVsNextWeek(t *testing.T)
 	stat, err = svc.GetEndings(ctx, dayIdx, time.Time{})
 	require.NoError(t, err)
 	assert.Equal(t, "Понедельник", stat.DayName)
-	assert.Equal(t, []int32{101}, stat.Pairs[3], "в воскресенье должен показываться понедельник следующей недели")
+	assert.Equal(t, []entities.GroupEnding{{GroupID: 101}}, stat.Pairs[3], "в воскресенье должен показываться понедельник следующей недели")
+}
+
+func TestAnalyticsService_GetEndings_SubgroupsSplit(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	// Группа 100: 1-я подгруппа заканчивает к 5 паре, 2-я подгруппа заканчивает к 3 паре.
+	// Группа 101: без подгрупп, заканчивает к 4 паре.
+	// Группа 102: подгруппы есть, но обе заканчивают к 3 паре.
+	sch := &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			100: {
+				ID:   100,
+				Week: now,
+				Days: []*entities.Day{
+					{
+						Name: "Понедельник",
+						Subjects: []*entities.Subject{
+							{Pairs: []*entities.Pair{{Name: "ТОЭ", Type: "Лек"}}},                // 1 пара: общая
+							{Pairs: []*entities.Pair{{Name: "ЭлИз", Type: "Лек"}}},               // 2 пара: общая
+							{Pairs: []*entities.Pair{{Name: "2. Основы инж гр", Type: "ЛР"}}},    // 3 пара: 2-я подгруппа (для нее последняя!)
+							{Pairs: []*entities.Pair{{Name: "1. Программирование", Type: "ЛР"}}}, // 4 пара: 1-я подгруппа
+							{Pairs: []*entities.Pair{{Name: "1. Программирование", Type: "ЛР"}}}, // 5 пара: 1-я подгруппа (для нее последняя!)
+						},
+					},
+				},
+			},
+			101: {
+				ID:   101,
+				Week: now,
+				Days: []*entities.Day{
+					{
+						Name: "Понедельник",
+						Subjects: []*entities.Subject{
+							{Pairs: []*entities.Pair{{Name: "История"}}},
+							{Pairs: []*entities.Pair{{Name: "Математика"}}},
+							{Pairs: []*entities.Pair{{Name: "Физика"}}},
+							{Pairs: []*entities.Pair{{Name: "Английский"}}}, // 4 пара
+						},
+					},
+				},
+			},
+			102: {
+				ID:   102,
+				Week: now,
+				Days: []*entities.Day{
+					{
+						Name: "Понедельник",
+						Subjects: []*entities.Subject{
+							{Pairs: []*entities.Pair{{Name: "История"}}},
+							{Pairs: []*entities.Pair{{Name: "Математика"}}},
+							{Pairs: []*entities.Pair{
+								{Name: "1. Ин Яз"},
+								{Name: "2. Ин Яз"},
+							}}, // 3 пара: обе подгруппы заканчивают в одно время
+						},
+					},
+				},
+			},
+		},
+	}
+
+	schedRepo := &mockScheduleRepo{schedules: map[time.Time]*entities.Schedule{now: sch}}
+	svc := service.NewAnalyticsService(slog.Default(), schedRepo, nil, nil)
+
+	stat, err := svc.GetEndings(ctx, 0, now)
+	require.NoError(t, err)
+	require.NotNil(t, stat)
+
+	// 1. Проверяем 3-ю пару:
+	// Группа 100 должна быть представлена только 2-й подгруппой (Subgroup = 2)
+	// Группа 102 не разбита (Subgroup = 0)
+	expectedPair3 := []entities.GroupEnding{
+		{GroupID: 100, Subgroup: 2},
+		{GroupID: 102, Subgroup: 0},
+	}
+	assert.Equal(t, expectedPair3, stat.Pairs[3])
+
+	// 2. Проверяем 4-ю пару:
+	// Группа 101 не разбита (Subgroup = 0)
+	expectedPair4 := []entities.GroupEnding{
+		{GroupID: 101, Subgroup: 0},
+	}
+	assert.Equal(t, expectedPair4, stat.Pairs[4])
+
+	// 3. Проверяем 5-ю пару:
+	// Группа 100 должна быть представлена только 1-й подгруппой (Subgroup = 1)
+	expectedPair5 := []entities.GroupEnding{
+		{GroupID: 100, Subgroup: 1},
+	}
+	assert.Equal(t, expectedPair5, stat.Pairs[5])
+
+	// Проверяем форматирование
+	assert.Equal(t, "100 (2 п/г)", stat.Pairs[3][0].String())
+	assert.Equal(t, "102", stat.Pairs[3][1].String())
+	assert.Equal(t, "100 (1 п/г)", stat.Pairs[5][0].String())
 }
 
 func TestAnalyticsService_GetGroupStats(t *testing.T) {
