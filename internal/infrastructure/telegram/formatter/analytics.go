@@ -2,7 +2,6 @@ package formatter
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
@@ -78,7 +77,14 @@ func FormatEndings(stat *entities.EndingsStat) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "⏰ *Окончание пар: %s*\n_Всего групп в расписании: %d_\n\n", escapeMD(stat.DayName), stat.Total)
 
-	for pairNum := 1; pairNum <= 6; pairNum++ {
+	maxPairNum := 6
+	for k := range stat.Pairs {
+		if k > maxPairNum {
+			maxPairNum = k
+		}
+	}
+
+	for pairNum := 1; pairNum <= maxPairNum; pairNum++ {
 		groups, ok := stat.Pairs[pairNum]
 		if !ok || len(groups) == 0 {
 			continue
@@ -88,7 +94,7 @@ func FormatEndings(stat *entities.EndingsStat) string {
 
 		groupStrs := make([]string, 0, len(groups))
 		for _, g := range groups {
-			groupStrs = append(groupStrs, strconv.Itoa(int(g)))
+			groupStrs = append(groupStrs, escapeMD(g.String()))
 		}
 		fmt.Fprintf(&sb, "└ %s\n\n", strings.Join(groupStrs, ", "))
 	}
@@ -96,7 +102,7 @@ func FormatEndings(stat *entities.EndingsStat) string {
 	if len(stat.DayOff) > 0 {
 		groupStrs := make([]string, 0, len(stat.DayOff))
 		for _, g := range stat.DayOff {
-			groupStrs = append(groupStrs, strconv.Itoa(int(g)))
+			groupStrs = append(groupStrs, escapeMD(g.String()))
 		}
 		fmt.Fprintf(&sb, "🏖 *Выходной (0 пар)* — %d гр.:\n└ %s\n\n", len(stat.DayOff), strings.Join(groupStrs, ", "))
 	}

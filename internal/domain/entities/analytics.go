@@ -1,6 +1,10 @@
 package entities
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"time"
+)
 
 type CabinetBooking struct {
 	DayIndex    int    `json:"day_index"`
@@ -26,12 +30,25 @@ type CabinetSchedule struct {
 	Days    []*CabinetDaySchedule `json:"days"`
 }
 
+type GroupEnding struct {
+	GroupID  int32 `json:"group_id"`
+	Subgroup int   `json:"subgroup,omitempty"` // 0 - вся группа, 1 - 1-я п/г, 2 - 2-я п/г
+}
+
+func (g GroupEnding) String() string {
+	if g.Subgroup > 0 {
+		return fmt.Sprintf("%d (%d п/г)", g.GroupID, g.Subgroup)
+	}
+	return strconv.Itoa(int(g.GroupID))
+}
+
 type EndingsStat struct {
-	DayIndex int             `json:"day_index"`
-	DayName  string          `json:"day_name"`
-	Pairs    map[int][]int32 `json:"pairs"`   // пара (1..6) -> список ID групп
-	DayOff   []int32         `json:"day_off"` // группы без занятий
-	Total    int             `json:"total"`   // всего групп
+	DayIndex int                   `json:"day_index"`
+	DayName  string                `json:"day_name"`
+	Week     time.Time             `json:"week"`
+	Pairs    map[int][]GroupEnding `json:"pairs"`   // пара -> список групп/подгрупп
+	DayOff   []GroupEnding         `json:"day_off"` // группы без занятий
+	Total    int                   `json:"total"`   // всего групп
 }
 
 type SubjectStat struct {

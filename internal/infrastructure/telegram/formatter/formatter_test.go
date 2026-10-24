@@ -193,11 +193,11 @@ func TestFormatEndings(t *testing.T) {
 	endings := &entities.EndingsStat{
 		DayIndex: 0,
 		DayName:  "Понедельник",
-		Pairs: map[int][]int32{
-			3: {102},
-			4: {101},
+		Pairs: map[int][]entities.GroupEnding{
+			3: {{GroupID: 102}},
+			4: {{GroupID: 101, Subgroup: 1}},
 		},
-		DayOff: []int32{103},
+		DayOff: []entities.GroupEnding{{GroupID: 103}},
 		Total:  3,
 	}
 
@@ -207,6 +207,9 @@ func TestFormatEndings(t *testing.T) {
 	}
 	if !strings.Contains(got, "*После 3 пары* — 1 гр.:") || !strings.Contains(got, "*После 4 пары* — 1 гр.:") {
 		t.Errorf("expected pairs in message, got %s", got)
+	}
+	if !strings.Contains(got, "101 (1 п/г)") {
+		t.Errorf("expected subgroup 101 (1 п/г) in message, got %s", got)
 	}
 	if strings.Contains(got, "до ") || strings.Contains(got, "перерыв") {
 		t.Errorf("expected no times in message, got %s", got)
