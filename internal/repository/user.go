@@ -47,7 +47,7 @@ func (r *UserRepository) SaveUser(ctx context.Context, u entities.User) error {
 func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) {
 	const op = "repository.UserRepository.AllUsers"
 
-	query := r.sb.Select("chat_id, group_id, teacher_name").From("users")
+	query := r.sb.Select("chat_id, group_id, subgroup, teacher_name").From("users")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -66,16 +66,22 @@ func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) 
 		var (
 			chatID      int64
 			groupID     sql.NullInt64
+			subgroup    sql.NullInt64
 			teacherName sql.NullString
 		)
 
-		if err := rows.Scan(&chatID, &groupID, &teacherName); err != nil {
-			return nil, fmt.Errorf("%s: failed scanning chat_id, group_id, teacher_name: %w", op, err)
+		if err := rows.Scan(&chatID, &groupID, &subgroup, &teacherName); err != nil {
+			return nil, fmt.Errorf("%s: failed scanning chat_id, group_id, subgroup, teacher_name: %w", op, err)
 		}
 
 		group := 0
 		if groupID.Valid {
 			group = int(groupID.Int64)
+		}
+
+		sg := 0
+		if subgroup.Valid {
+			sg = int(subgroup.Int64)
 		}
 
 		tn := ""
@@ -86,6 +92,7 @@ func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) 
 		users = append(users, entities.User{
 			ChatID:      chatID,
 			Group:       group,
+			Subgroup:    sg,
 			TeacherName: tn,
 		})
 	}
@@ -122,6 +129,64 @@ func (r *UserRepository) GroupByChatID(ctx context.Context, chatID int64) (int, 
 	return int(groupID.Int64), nil
 }
 
+func (r *UserRepository) SubgroupByChatID(ctx context.Context, chatID int64) (int, error) {
+	const op = "repository.UserRepository.SubgroupByChatID"
+
+	query := r.sb.Select("subgroup").From("users").Where(sq.Eq{"chat_id": chatID})
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to build sql query: %w", op, err)
+	}
+
+	var subgroup sql.NullInt64
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&subgroup); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
+	}
+
+	if !subgroup.Valid {
+		return 0, nil
+	}
+
+	return int(subgroup.Int64), nil
+}
+
+func (r *UserRepository) GroupAndSubgroupByChatID(ctx context.Context, chatID int64) (int, int, error) {
+	const op = "repository.UserRepository.GroupAndSubgroupByChatID"
+
+	query := r.sb.Select("group_id, subgroup").From("users").Where(sq.Eq{"chat_id": chatID})
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return 0, 0, fmt.Errorf("%s: failed to build sql query: %w", op, err)
+	}
+
+	var (
+		groupID  sql.NullInt64
+		subgroup sql.NullInt64
+	)
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&groupID, &subgroup); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, 0, domainerr.ErrUserNoGroup
+		}
+		return 0, 0, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
+	}
+
+	if !groupID.Valid {
+		return 0, 0, domainerr.ErrUserNoGroup
+	}
+
+	sg := 0
+	if subgroup.Valid {
+		sg = int(subgroup.Int64)
+	}
+
+	return int(groupID.Int64), sg, nil
+}
+
 func (r *UserRepository) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {
 	const op = "repository.UserRepository.UserIDsByGroupID"
 
@@ -154,13 +219,33 @@ func (r *UserRepository) UserIDsByGroupID(ctx context.Context, groupID int) ([]i
 	return usersID, nil
 }
 
-func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID int) error {
+func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID int, subgroup int) error {
 	const op = "repository.UserRepository.SetUserGroup"
 
 	query := r.sb.Insert("users").
-		Columns("chat_id", "group_id", "teacher_name").
-		Values(chatID, groupID, nil).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET group_id = excluded.group_id, teacher_name = NULL")
+		Columns("chat_id", "group_id", "subgroup", "teacher_name").
+		Values(chatID, groupID, subgroup, nil).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET group_id = excluded.group_id, subgroup = excluded.subgroup, teacher_name = NULL")
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return fmt.Errorf("%s: failed to build sql query: %w", op, err)
+	}
+
+	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
+		return fmt.Errorf("%s: failed to execute sql query: %w", op, err)
+	}
+
+	return nil
+}
+
+func (r *UserRepository) SetUserSubgroup(ctx context.Context, chatID int64, subgroup int) error {
+	const op = "repository.UserRepository.SetUserSubgroup"
+
+	query := r.sb.Insert("users").
+		Columns("chat_id", "subgroup").
+		Values(chatID, subgroup).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET subgroup = excluded.subgroup")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -178,9 +263,9 @@ func (r *UserRepository) SetTeacher(ctx context.Context, chatID int64, teacherNa
 	const op = "repository.UserRepository.SetTeacher"
 
 	query := r.sb.Insert("users").
-		Columns("chat_id", "teacher_name", "group_id").
-		Values(chatID, teacherName, nil).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET teacher_name = excluded.teacher_name, group_id = NULL")
+		Columns("chat_id", "teacher_name", "group_id", "subgroup").
+		Values(chatID, teacherName, nil, 0).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET teacher_name = excluded.teacher_name, group_id = NULL, subgroup = 0")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -347,7 +432,7 @@ func (r *UserRepository) GetNotifyEvening(ctx context.Context, chatID int64) (bo
 func (r *UserRepository) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
 	const op = "repository.UserRepository.UsersForEveningNotification"
 
-	query := r.sb.Select("chat_id, group_id, teacher_name").
+	query := r.sb.Select("chat_id, group_id, subgroup, teacher_name").
 		From("users").
 		Where(sq.Eq{"notify_evening": 1}).
 		Where(sq.Or{
@@ -371,14 +456,19 @@ func (r *UserRepository) UsersForEveningNotification(ctx context.Context) ([]ent
 		var (
 			chatID      int64
 			groupID     sql.NullInt64
+			subgroup    sql.NullInt64
 			teacherName sql.NullString
 		)
-		if err := rows.Scan(&chatID, &groupID, &teacherName); err != nil {
+		if err := rows.Scan(&chatID, &groupID, &subgroup, &teacherName); err != nil {
 			return nil, fmt.Errorf("%s: scan row: %w", op, err)
 		}
 		var g int
 		if groupID.Valid {
 			g = int(groupID.Int64)
+		}
+		var sg int
+		if subgroup.Valid {
+			sg = int(subgroup.Int64)
 		}
 		var tn string
 		if teacherName.Valid {
@@ -387,6 +477,7 @@ func (r *UserRepository) UsersForEveningNotification(ctx context.Context) ([]ent
 		users = append(users, entities.User{
 			ChatID:        chatID,
 			Group:         g,
+			Subgroup:      sg,
 			TeacherName:   tn,
 			NotifyEvening: true,
 		})

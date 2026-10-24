@@ -124,8 +124,10 @@ func setupTestServer(t *testing.T) (*Server, *sql.DB) {
 		chat_id INTEGER UNIQUE NOT NULL,
 		username TEXT,
 		group_id INTEGER,
+		subgroup INTEGER NOT NULL DEFAULT 0,
 		teacher_name TEXT,
-		state TEXT NOT NULL DEFAULT ''
+		state TEXT NOT NULL DEFAULT '',
+		notify_evening INTEGER NOT NULL DEFAULT 1
 	);`)
 	if err != nil {
 		t.Fatalf("failed to create users table: %v", err)

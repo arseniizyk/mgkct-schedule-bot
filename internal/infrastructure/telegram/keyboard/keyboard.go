@@ -33,8 +33,9 @@ const (
 	CabinetPrevDay     = "cab_prevday"
 	CabinetNextDay     = "cab_nextday"
 
-	ArchiveSelect = "arch_sel"
-	NotifyToggle  = "notify_toggle"
+	ArchiveSelect  = "arch_sel"
+	NotifyToggle   = "notify_toggle"
+	SubgroupSelect = "subgroup_set"
 
 	btnCurrentWeek = "📆 Неделя"
 	btnPrev        = "◀️"
@@ -185,6 +186,21 @@ func InlineTeacherScheduleKeyboard(teacherName string) *tele.ReplyMarkup {
 	return markup
 }
 
+func InlineTeacherSuggestionsKeyboard(teachers []string) *tele.ReplyMarkup {
+	if len(teachers) == 0 {
+		return nil
+	}
+
+	markup := &tele.ReplyMarkup{}
+	var rows []tele.Row
+	for _, t := range teachers {
+		btn := markup.Data(t, TeacherCurrentWeek, t)
+		rows = append(rows, markup.Row(btn))
+	}
+	markup.Inline(rows...)
+	return markup
+}
+
 func InlineCabinetDayKeyboard(cabinet string, dayIdx, dayCount int) *tele.ReplyMarkup {
 	if dayCount <= 1 {
 		return nil
@@ -256,5 +272,19 @@ func InlineNotifyKeyboard(enabled bool) *tele.ReplyMarkup {
 		btn = markup.Data("🔔 Включить вечернюю рассылку", NotifyToggle, "on")
 	}
 	markup.Inline(markup.Row(btn))
+	return markup
+}
+
+func InlineSubgroupKeyboard(groupID int) *tele.ReplyMarkup {
+	markup := &tele.ReplyMarkup{}
+	markup.Inline(
+		markup.Row(
+			markup.Data("1 подгруппа", SubgroupSelect, fmt.Sprintf("%d:1", groupID)),
+			markup.Data("2 подгруппа", SubgroupSelect, fmt.Sprintf("%d:2", groupID)),
+		),
+		markup.Row(
+			markup.Data("Вся группа", SubgroupSelect, fmt.Sprintf("%d:0", groupID)),
+		),
+	)
 	return markup
 }

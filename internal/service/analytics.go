@@ -190,13 +190,18 @@ func (s *AnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time
 	}
 
 	stat := &entities.EndingsStat{
-		DayIndex: dayIdx,
-		Pairs:    make(map[int][]entities.GroupEnding),
-		DayOff:   make([]entities.GroupEnding, 0),
-		Total:    len(sch.Groups),
+		DayIndex:               dayIdx,
+		Pairs:                  make(map[int][]entities.GroupEnding),
+		DayOff:                 make([]entities.GroupEnding, 0),
+		Total:                  len(sch.Groups),
+		StudentsByPair:         make(map[int]int),
+		KazintsaStudentsByPair: make(map[int]int),
+		KnorinaStudentsByPair:  make(map[int]int),
 	}
 
 	for _, grp := range sch.Groups {
+		stat.TotalStudents += entities.CalculateSubgroupStudents(grp.ID, 0)
+
 		if dayIdx < 0 || dayIdx >= len(grp.Days) {
 			continue
 		}
@@ -206,14 +211,26 @@ func (s *AnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time
 
 		endings := calculateGroupDayEndings(grp.Days[dayIdx].Subjects)
 		for sg, pairNum := range endings {
+			campus := resolveEndingCampus(grp, dayIdx, sg)
 			item := entities.GroupEnding{
 				GroupID:  grp.ID,
 				Subgroup: sg,
+				Campus:   campus,
 			}
+			students := entities.CalculateSubgroupStudents(grp.ID, sg)
 			if pairNum == 0 {
 				stat.DayOff = append(stat.DayOff, item)
+				stat.DayOffStudents += students
 			} else {
 				stat.Pairs[pairNum] = append(stat.Pairs[pairNum], item)
+				stat.StudentsByPair[pairNum] += students
+				if campus == entities.CampusKnorina {
+					stat.KnorinaTotalStudents += students
+					stat.KnorinaStudentsByPair[pairNum] += students
+				} else {
+					stat.KazintsaTotalStudents += students
+					stat.KazintsaStudentsByPair[pairNum] += students
+				}
 			}
 		}
 	}
@@ -445,12 +462,16 @@ func findLastSubjectInDay(subjects []*entities.Subject) int {
 	return -1
 }
 
-// parsePairSubgroup извлекает номер подгруппы (1, 2, 3...) из названия пары или поля group.
-// Возвращает 0, если пара общая для всей группы.
+// parsePairSubgroup извлекает номер подгруппы (1 или 2) из названия пары или поля group.
+// Возвращает 0, если пара общая для всей группы (или спецгруппа вроде 3. ФЗКиЗ).
 func parsePairSubgroup(name, groupField string) int {
 	name = strings.TrimSpace(name)
 	if len(name) >= 2 && unicode.IsDigit(rune(name[0])) && name[1] == '.' {
-		return int(name[0] - '0')
+		sg := int(name[0] - '0')
+		if sg == 1 || sg == 2 {
+			return sg
+		}
+		return 0
 	}
 
 	lower := strings.ToLower(groupField)
@@ -460,11 +481,96 @@ func parsePairSubgroup(name, groupField string) int {
 	if strings.Contains(lower, "2 п/г") || strings.Contains(lower, "2 п/гр") || strings.TrimSpace(groupField) == "2" {
 		return 2
 	}
-	if strings.Contains(lower, "3 п/г") || strings.Contains(lower, "3 п/гр") || strings.TrimSpace(groupField) == "3" {
-		return 3
-	}
 
 	return 0
+}
+
+// IsKnorinaCabinet проверяет, относится ли кабинет к корпусу на ул. Кнорина (префикс "Кн-", "Кн.", "Кн ").
+func IsKnorinaCabinet(cabinet string) bool {
+	c := strings.ToLower(strings.TrimSpace(cabinet))
+	return strings.HasPrefix(c, "кн")
+}
+
+// resolveEndingCampus определяет корпус (Казинца или Кнорина) для группы/подгруппы на указанный день
+func resolveEndingCampus(grp *entities.Group, dayIdx int, sg int) string {
+	if grp == nil || dayIdx < 0 || dayIdx >= len(grp.Days) {
+		return entities.CampusKazintsa
+	}
+	day := grp.Days[dayIdx]
+
+	var sgCabinets []string
+	var dayCabinets []string
+
+	for _, subj := range day.Subjects {
+		if subj == nil || subj.IsEmpty {
+			continue
+		}
+		for _, p := range subj.Pairs {
+			if p == nil {
+				continue
+			}
+			cab := strings.TrimSpace(p.Class)
+			if cab == "" || cab == "-" {
+				continue
+			}
+			dayCabinets = append(dayCabinets, cab)
+			name := strings.TrimSpace(p.Name)
+			pairSg := parsePairSubgroup(name, p.Group)
+			if sg == 0 || pairSg == 0 || pairSg == sg {
+				sgCabinets = append(sgCabinets, cab)
+			}
+		}
+	}
+
+	if slices.ContainsFunc(sgCabinets, IsKnorinaCabinet) {
+		return entities.CampusKnorina
+	}
+	if len(sgCabinets) > 0 {
+		return entities.CampusKazintsa
+	}
+
+	if slices.ContainsFunc(dayCabinets, IsKnorinaCabinet) {
+		return entities.CampusKnorina
+	}
+	if len(dayCabinets) > 0 {
+		return entities.CampusKazintsa
+	}
+
+	return resolveGroupWeekCampus(grp)
+}
+
+func resolveGroupWeekCampus(grp *entities.Group) string {
+	knCnt := 0
+	kazCnt := 0
+	for _, d := range grp.Days {
+		if d == nil {
+			continue
+		}
+		for _, subj := range d.Subjects {
+			if subj == nil || subj.IsEmpty {
+				continue
+			}
+			for _, p := range subj.Pairs {
+				if p == nil {
+					continue
+				}
+				cab := strings.TrimSpace(p.Class)
+				if cab == "" || cab == "-" {
+					continue
+				}
+				if IsKnorinaCabinet(cab) {
+					knCnt++
+				} else {
+					kazCnt++
+				}
+			}
+		}
+	}
+
+	if knCnt > kazCnt {
+		return entities.CampusKnorina
+	}
+	return entities.CampusKazintsa
 }
 
 // calculateGroupDayEndings определяет номера последних пар (1-based, 0 для выходного) для подгрупп группы.
@@ -558,15 +664,7 @@ func calculateGroupDayEndings(subjects []*entities.Subject) map[int]int {
 
 // EffectiveEndingsWeek возвращает дату понедельника недели для показа окончаний пар
 func EffectiveEndingsWeek(now time.Time) time.Time {
-	localNow := now.In(minskLoc)
-	today := (int(localNow.Weekday()) + 6) % 7 // Пн=0..Вс=6
-	currentMonday := CurrentWeekMonday(localNow)
-
-	if today > 5 || (today == 5 && localNow.Hour() >= 19) {
-		return currentMonday.AddDate(0, 0, 7)
-	}
-
-	return currentMonday
+	return EffectiveScheduleWeek(now)
 }
 
 // EffectiveEndingsDayIndexAt вычисляет индекс дня для показа окончаний пар для указанного времени

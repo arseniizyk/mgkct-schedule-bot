@@ -2,11 +2,13 @@ package formatter
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
@@ -194,19 +196,35 @@ func TestFormatEndings(t *testing.T) {
 		DayIndex: 0,
 		DayName:  "Понедельник",
 		Pairs: map[int][]entities.GroupEnding{
-			3: {{GroupID: 102}},
-			4: {{GroupID: 101, Subgroup: 1}},
+			3: {{GroupID: 102, Campus: entities.CampusKnorina}},
+			4: {{GroupID: 101, Subgroup: 1, Campus: entities.CampusKazintsa}},
 		},
-		DayOff: []entities.GroupEnding{{GroupID: 103}},
-		Total:  3,
+		DayOff:                 []entities.GroupEnding{{GroupID: 103, Campus: entities.CampusKazintsa}},
+		Total:                  3,
+		TotalStudents:          61,
+		StudentsByPair:         map[int]int{3: 25, 4: 11},
+		DayOffStudents:         25,
+		KazintsaTotalStudents:  11,
+		KnorinaTotalStudents:   25,
+		KazintsaStudentsByPair: map[int]int{4: 11},
+		KnorinaStudentsByPair:  map[int]int{3: 25},
 	}
 
 	got := FormatEndings(endings)
 	if !strings.Contains(got, "Окончание пар: Понедельник") {
 		t.Errorf("expected title with day, got %s", got)
 	}
-	if !strings.Contains(got, "*После 3 пары* — 1 гр.:") || !strings.Contains(got, "*После 4 пары* — 1 гр.:") {
-		t.Errorf("expected pairs in message, got %s", got)
+	if strings.Contains(got, "Всего в расписании") || strings.Contains(got, "*Казинца:*") || strings.Contains(got, "*Кнорина:*") {
+		t.Errorf("expected no total or campus student summary in header, got %s", got)
+	}
+	if strings.Contains(got, "Корпус Казинца (") || strings.Contains(got, "Корпус Кнорина (") {
+		t.Errorf("expected no total students in campus header, got %s", got)
+	}
+	if !strings.Contains(got, "Корпус Казинца") || !strings.Contains(got, "Корпус Кнорина") {
+		t.Errorf("expected campus sections in message, got %s", got)
+	}
+	if !strings.Contains(got, "*После 3 пары* — 1 гр. (25 чел.):") || !strings.Contains(got, "*После 4 пары* — 1 гр. (11 чел.):") {
+		t.Errorf("expected pairs and students in message, got %s", got)
 	}
 	if !strings.Contains(got, "101 (1 п/г)") {
 		t.Errorf("expected subgroup 101 (1 п/г) in message, got %s", got)
@@ -534,4 +552,200 @@ func TestSplitMessage_WithDiffHTML(t *testing.T) {
 		assert.NotEmpty(t, chunk)
 		assert.LessOrEqual(t, len([]rune(chunk)), 60)
 	}
+}
+
+func TestParsePairSubgroup(t *testing.T) {
+	tests := []struct {
+		name string
+		pair *entities.Pair
+		want int
+	}{
+		{name: "nil pair", pair: nil, want: 0},
+		{name: "subgroup 1 prefix dot", pair: &entities.Pair{Name: "1. Информатика"}, want: 1},
+		{name: "subgroup 2 prefix dot", pair: &entities.Pair{Name: "2. Информатика"}, want: 2},
+		{name: "subgroup 3 prefix dot", pair: &entities.Pair{Name: "3. Немецкий язык"}, want: 3},
+		{name: "subgroup 1 in group field", pair: &entities.Pair{Name: "Физика", Group: "1 п/г"}, want: 1},
+		{name: "subgroup 2 in group field", pair: &entities.Pair{Name: "Физика", Group: "2 п/гр"}, want: 2},
+		{name: "subgroup 3 in group field", pair: &entities.Pair{Name: "Физика", Group: "3 п/г"}, want: 3},
+		{name: "subgroup single digit group field", pair: &entities.Pair{Name: "Химия", Group: "1"}, want: 1},
+		{name: "general pair", pair: &entities.Pair{Name: "Математика", Group: "Иванов И. И."}, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParsePairSubgroup(tt.pair)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFilterGroupForSubgroup_TwoSubgroups(t *testing.T) {
+	group := &entities.Group{
+		ID: 101,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{
+						// Пара 1: деление на 2 подгруппы
+						Pairs: []*entities.Pair{
+							{Name: "1. Программирование", Type: "лб", Class: "305"},
+							{Name: "2. Электротехника", Type: "лб", Class: "102"},
+						},
+					},
+					{
+						// Пара 2: общая пара
+						Pairs: []*entities.Pair{
+							{Name: "Высшая математика", Type: "лк", Class: "301"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("subgroup 1 receives only its pair", func(t *testing.T) {
+		filtered := FilterGroupForSubgroup(group, 1)
+		day := filtered.Days[0]
+		require.Len(t, day.Subjects, 2)
+
+		// Пара 1 должна содержать только пару 1-й подгруппы
+		require.False(t, day.Subjects[0].IsEmpty)
+		require.Len(t, day.Subjects[0].Pairs, 1)
+		assert.Equal(t, "1. Программирование", day.Subjects[0].Pairs[0].Name)
+
+		// Пара 2 общая — должна остаться
+		require.False(t, day.Subjects[1].IsEmpty)
+		require.Len(t, day.Subjects[1].Pairs, 1)
+		assert.Equal(t, "Высшая математика", day.Subjects[1].Pairs[0].Name)
+
+		msg := FormatScheduleDayForSubgroup(group, 1)
+		assert.Contains(t, msg, "1. Программирование")
+		assert.NotContains(t, msg, "2. Электротехника")
+		assert.Contains(t, msg, "Высшая математика")
+	})
+
+	t.Run("subgroup 2 receives only its pair", func(t *testing.T) {
+		filtered := FilterGroupForSubgroup(group, 2)
+		day := filtered.Days[0]
+		require.Len(t, day.Subjects, 2)
+
+		// Пара 1 должна содержать только пару 2-й подгруппы
+		require.False(t, day.Subjects[0].IsEmpty)
+		require.Len(t, day.Subjects[0].Pairs, 1)
+		assert.Equal(t, "2. Электротехника", day.Subjects[0].Pairs[0].Name)
+
+		// Пара 2 общая — должна остаться
+		require.False(t, day.Subjects[1].IsEmpty)
+		require.Len(t, day.Subjects[1].Pairs, 1)
+		assert.Equal(t, "Высшая математика", day.Subjects[1].Pairs[0].Name)
+
+		msg := FormatScheduleDayForSubgroup(group, 2)
+		assert.NotContains(t, msg, "1. Программирование")
+		assert.Contains(t, msg, "2. Электротехника")
+		assert.Contains(t, msg, "Высшая математика")
+	})
+
+	t.Run("subgroup 0 receives all pairs", func(t *testing.T) {
+		filtered := FilterGroupForSubgroup(group, 0)
+		day := filtered.Days[0]
+		require.Len(t, day.Subjects[0].Pairs, 2)
+
+		msg := FormatScheduleDayForSubgroup(group, 0)
+		assert.Contains(t, msg, "1. Программирование")
+		assert.Contains(t, msg, "2. Электротехника")
+		assert.Contains(t, msg, "Высшая математика")
+	})
+}
+
+func TestFilterGroupForSubgroup_ThreeSubgroupsException(t *testing.T) {
+	group := &entities.Group{
+		ID: 101,
+		Days: []*entities.Day{
+			{
+				Name: "Вторник",
+				Subjects: []*entities.Subject{
+					{
+						// Пара с 3 подгруппами (иностранные языки / спецпредметы)
+						Pairs: []*entities.Pair{
+							{Name: "1. Английский язык", Type: "пз", Class: "201"},
+							{Name: "2. Немецкий язык", Type: "пз", Class: "202"},
+							{Name: "3. Французский язык", Type: "пз", Class: "203"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Для пар с 3 подгруппами исключение: выводить расписание для всех!
+	for _, sg := range []int{1, 2} {
+		t.Run(fmt.Sprintf("subgroup %d sees all 3 subgroups", sg), func(t *testing.T) {
+			filtered := FilterGroupForSubgroup(group, sg)
+			require.Len(t, filtered.Days[0].Subjects[0].Pairs, 3)
+
+			got, err := FormatScheduleDayAtForSubgroup(group, 0, sg)
+			require.NoError(t, err)
+			assert.Contains(t, got, "1. Английский язык")
+			assert.Contains(t, got, "2. Немецкий язык")
+			assert.Contains(t, got, "3. Французский язык")
+		})
+	}
+}
+
+func TestFilterGroupForSubgroup_SingleSubgroupInSlot(t *testing.T) {
+	group := &entities.Group{
+		ID: 101,
+		Days: []*entities.Day{
+			{
+				Name: "Среда",
+				Subjects: []*entities.Subject{
+					{
+						// 1 пара: только у 1-й подгруппы
+						Pairs: []*entities.Pair{
+							{Name: "1. Лабораторная", Type: "лб", Class: "305"},
+						},
+					},
+					{
+						// 2 пара: только у 2-й подгруппы
+						Pairs: []*entities.Pair{
+							{Name: "2. Лабораторная", Type: "лб", Class: "305"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("subgroup 1 has pair 1 and window on pair 2", func(t *testing.T) {
+		filtered := FilterGroupForSubgroup(group, 1)
+		day := filtered.Days[0]
+
+		require.False(t, day.Subjects[0].IsEmpty)
+		assert.Equal(t, "1. Лабораторная", day.Subjects[0].Pairs[0].Name)
+
+		// У 1-й подгруппы во 2-й паре окно
+		assert.True(t, day.Subjects[1].IsEmpty)
+
+		msg, err := FormatScheduleDayAtForSubgroup(group, 0, 1)
+		require.NoError(t, err)
+		assert.Contains(t, msg, "1. Лабораторная")
+		assert.NotContains(t, msg, "2. Лабораторная")
+	})
+
+	t.Run("subgroup 2 has window on pair 1 and pair 2", func(t *testing.T) {
+		filtered := FilterGroupForSubgroup(group, 2)
+		day := filtered.Days[0]
+
+		// У 2-й подгруппы в 1-й паре окно
+		assert.True(t, day.Subjects[0].IsEmpty)
+
+		require.False(t, day.Subjects[1].IsEmpty)
+		assert.Equal(t, "2. Лабораторная", day.Subjects[1].Pairs[0].Name)
+
+		msg, err := FormatScheduleDayAtForSubgroup(group, 0, 2)
+		require.NoError(t, err)
+		assert.NotContains(t, msg, "1. Лабораторная")
+		assert.Contains(t, msg, "2. Лабораторная")
+	})
 }

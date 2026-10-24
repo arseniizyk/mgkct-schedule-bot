@@ -68,14 +68,15 @@ func FormatCabinetWeek(cs *entities.CabinetSchedule) string {
 	return sb.String()
 }
 
-// FormatEndings форматирует аналитику окончания пар по группам
+// FormatEndings форматирует аналитику окончания пар по группам с разбивкой по корпусам
 func FormatEndings(stat *entities.EndingsStat) string {
 	if stat == nil {
 		return "Данные об окончании пар отсутствуют."
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "⏰ *Окончание пар: %s*\n_Всего групп в расписании: %d_\n\n", escapeMD(stat.DayName), stat.Total)
+	dayTitle := escapeMD(stat.DayName)
+	fmt.Fprintf(&sb, "⏰ *Окончание пар: %s*\n\n", dayTitle)
 
 	maxPairNum := 6
 	for k := range stat.Pairs {
@@ -84,19 +85,32 @@ func FormatEndings(stat *entities.EndingsStat) string {
 		}
 	}
 
-	for pairNum := 1; pairNum <= maxPairNum; pairNum++ {
-		groups, ok := stat.Pairs[pairNum]
-		if !ok || len(groups) == 0 {
-			continue
+	hasCampuses := stat.KazintsaTotalStudents > 0 || stat.KnorinaTotalStudents > 0
+	if !hasCampuses {
+		for _, groups := range stat.Pairs {
+			for _, g := range groups {
+				if g.Campus != "" {
+					hasCampuses = true
+					break
+				}
+			}
+			if hasCampuses {
+				break
+			}
 		}
+	}
 
-		fmt.Fprintf(&sb, "🔔 *После %d пары* — %d гр.:\n", pairNum, len(groups))
-
-		groupStrs := make([]string, 0, len(groups))
-		for _, g := range groups {
-			groupStrs = append(groupStrs, escapeMD(g.String()))
+	if hasCampuses {
+		renderCampusEndings(&sb, stat, entities.CampusKazintsa, "🏛", "Казинца", stat.KazintsaStudentsByPair, maxPairNum)
+		renderCampusEndings(&sb, stat, entities.CampusKnorina, "🌲", "Кнорина", stat.KnorinaStudentsByPair, maxPairNum)
+	} else {
+		for pairNum := 1; pairNum <= maxPairNum; pairNum++ {
+			groups := stat.Pairs[pairNum]
+			if len(groups) == 0 {
+				continue
+			}
+			formatEndingPair(&sb, pairNum, len(groups), stat.StudentsByPair[pairNum], groups)
 		}
-		fmt.Fprintf(&sb, "└ %s\n\n", strings.Join(groupStrs, ", "))
 	}
 
 	if len(stat.DayOff) > 0 {
@@ -104,10 +118,71 @@ func FormatEndings(stat *entities.EndingsStat) string {
 		for _, g := range stat.DayOff {
 			groupStrs = append(groupStrs, escapeMD(g.String()))
 		}
-		fmt.Fprintf(&sb, "🏖 *Выходной (0 пар)* — %d гр.:\n└ %s\n\n", len(stat.DayOff), strings.Join(groupStrs, ", "))
+		if stat.DayOffStudents > 0 {
+			fmt.Fprintf(&sb, "🏖 *Выходной (0 пар)* — %d гр. (%d чел.):\n└ %s\n\n", len(stat.DayOff), stat.DayOffStudents, strings.Join(groupStrs, ", "))
+		} else {
+			fmt.Fprintf(&sb, "🏖 *Выходной (0 пар)* — %d гр.:\n└ %s\n\n", len(stat.DayOff), strings.Join(groupStrs, ", "))
+		}
 	}
 
-	return sb.String()
+	return strings.TrimSpace(sb.String())
+}
+
+func renderCampusEndings(sb *strings.Builder, stat *entities.EndingsStat, campusName, emoji, title string, studentsByPair map[int]int, maxPairNum int) {
+	hasPairs := false
+	for p := 1; p <= maxPairNum; p++ {
+		for _, g := range stat.Pairs[p] {
+			camp := g.Campus
+			if camp == "" {
+				camp = entities.CampusKazintsa
+			}
+			if camp == campusName {
+				hasPairs = true
+				break
+			}
+		}
+		if hasPairs {
+			break
+		}
+	}
+	if !hasPairs {
+		return
+	}
+
+	fmt.Fprintf(sb, "%s *Корпус %s:*\n\n", emoji, title)
+
+	for pairNum := 1; pairNum <= maxPairNum; pairNum++ {
+		var groups []entities.GroupEnding
+		for _, g := range stat.Pairs[pairNum] {
+			camp := g.Campus
+			if camp == "" {
+				camp = entities.CampusKazintsa
+			}
+			if camp == campusName {
+				groups = append(groups, g)
+			}
+		}
+		if len(groups) == 0 {
+			continue
+		}
+
+		studentsCount := studentsByPair[pairNum]
+		formatEndingPair(sb, pairNum, len(groups), studentsCount, groups)
+	}
+}
+
+func formatEndingPair(sb *strings.Builder, pairNum, groupCount, studentsCount int, groups []entities.GroupEnding) {
+	if studentsCount > 0 {
+		fmt.Fprintf(sb, "🔔 *После %d пары* — %d гр. (%d чел.):\n", pairNum, groupCount, studentsCount)
+	} else {
+		fmt.Fprintf(sb, "🔔 *После %d пары* — %d гр.:\n", pairNum, groupCount)
+	}
+
+	groupStrs := make([]string, 0, len(groups))
+	for _, g := range groups {
+		groupStrs = append(groupStrs, escapeMD(g.String()))
+	}
+	fmt.Fprintf(sb, "└ %s\n\n", strings.Join(groupStrs, ", "))
 }
 
 // FormatStats форматирует статистику нагрузки пар
