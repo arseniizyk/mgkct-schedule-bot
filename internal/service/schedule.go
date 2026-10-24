@@ -26,8 +26,9 @@ type ScheduleService struct {
 	log          *slog.Logger
 	scheduleRepo ScheduleRepository
 
-	mu    sync.RWMutex
-	cache *entities.Schedule
+	mu      sync.RWMutex
+	cache   *entities.Schedule
+	nowFunc func() time.Time
 }
 
 func NewScheduleService(log *slog.Logger, scheduleRepo ScheduleRepository) *ScheduleService {
@@ -37,29 +38,47 @@ func NewScheduleService(log *slog.Logger, scheduleRepo ScheduleRepository) *Sche
 	}
 }
 
+func (s *ScheduleService) now() time.Time {
+	if s.nowFunc != nil {
+		return s.nowFunc()
+	}
+	return time.Now()
+}
+
+func (s *ScheduleService) SetNowFunc(fn func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nowFunc = fn
+}
+
 func (s *ScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*entities.Group, error) {
 	const op = "service.ScheduleService.GetGroupLatestSchedule"
 	log := s.log.With("operation", op, "group_id", groupID)
 
+	targetWeek := EffectiveScheduleWeek(s.now())
+
 	s.mu.RLock()
 	if s.cache != nil {
 		group, ok := s.cache.Groups[groupID]
-		s.mu.RUnlock()
-		if ok {
+		if ok && CurrentWeekMonday(group.Week).Equal(CurrentWeekMonday(targetWeek)) {
+			s.mu.RUnlock()
 			return group, nil
 		}
-	} else {
-		s.mu.RUnlock()
 	}
+	s.mu.RUnlock()
 
-	sch, err := s.scheduleRepo.GetLatest(ctx)
-	if err != nil {
-		if errors.Is(err, domainerr.ErrScheduleNotFound) {
-			log.WarnContext(ctx, "schedule not found in repository")
-			return nil, err
+	sch, err := s.scheduleRepo.GetByWeek(ctx, targetWeek)
+	if err != nil || sch == nil {
+		// Fallback к последней сохраненной неделе, если targetWeek еще не существует
+		sch, err = s.scheduleRepo.GetLatest(ctx)
+		if err != nil {
+			if errors.Is(err, domainerr.ErrScheduleNotFound) {
+				log.WarnContext(ctx, "schedule not found in repository")
+				return nil, err
+			}
+			log.ErrorContext(ctx, "failed get by latest", "error", err)
+			return nil, fmt.Errorf("%s: %w", op, err)
 		}
-		log.ErrorContext(ctx, "failed get by latest", "error", err)
-		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	s.SetCache(sch)

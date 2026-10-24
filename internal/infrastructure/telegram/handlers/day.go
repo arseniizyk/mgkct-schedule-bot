@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
 
 func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) tele.HandlerFunc {
@@ -47,10 +45,7 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 			query := strings.Join(args, " ")
 			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
 			if !ok {
-				if len(candidates) > 0 {
-					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
-				}
-				return c.Send(messages.TeacherNotFound)
+				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, query, candidates)
 			}
 
 			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, matched)
@@ -91,7 +86,7 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 		}
 
 		// Иначе запрашиваем группу студента
-		groupID, err := userRepo.GroupByChatID(ctx, c.Chat().ID)
+		groupID, subgroup, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID)
 		if err != nil {
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
@@ -102,8 +97,9 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		msg := formatter.FormatScheduleDay(group)
-		dayIdx := formatter.EffectiveDayIndex(group)
+		filtered := formatter.FilterGroupForSubgroup(group, subgroup)
+		msg := formatter.FormatScheduleDay(filtered)
+		dayIdx := formatter.EffectiveDayIndex(filtered)
 
 		return c.Send(
 			msg,
@@ -149,10 +145,7 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 			query := strings.Join(args, " ")
 			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
 			if !ok {
-				if len(candidates) > 0 {
-					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
-				}
-				return c.Send(messages.TeacherNotFound)
+				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, query, candidates)
 			}
 
 			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, matched)
@@ -201,7 +194,7 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 		}
 
 		// Иначе запрашиваем группу студента
-		groupID, err := userRepo.GroupByChatID(ctx, c.Chat().ID)
+		groupID, subgroup, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID)
 		if err != nil {
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
@@ -212,7 +205,7 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		msg := formatter.FormatScheduleWeek(group)
+		msg := formatter.FormatScheduleWeekForSubgroup(group, subgroup)
 		weeks, err := schedSvc.GetAvailableWeeks(ctx, group.Week)
 		if err != nil {
 			weeks = entities.WeekNavigation{}

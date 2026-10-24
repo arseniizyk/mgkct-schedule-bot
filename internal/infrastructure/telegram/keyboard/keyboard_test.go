@@ -169,3 +169,69 @@ func TestInlineNotifyKeyboard(t *testing.T) {
 		}
 	})
 }
+
+func TestInlineSubgroupKeyboard(t *testing.T) {
+	m := InlineSubgroupKeyboard(101)
+	if m == nil {
+		t.Fatal("expected non-nil keyboard")
+	}
+
+	if len(m.InlineKeyboard) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(m.InlineKeyboard))
+	}
+
+	row1 := m.InlineKeyboard[0]
+	if len(row1) != 2 {
+		t.Fatalf("expected 2 buttons in row 1, got %d", len(row1))
+	}
+	if row1[0].Data != "101:1" || !strings.Contains(row1[0].Text, "1 подгруппа") {
+		t.Errorf("button 1 mismatch: data=%s text=%s", row1[0].Data, row1[0].Text)
+	}
+	if row1[1].Data != "101:2" || !strings.Contains(row1[1].Text, "2 подгруппа") {
+		t.Errorf("button 2 mismatch: data=%s text=%s", row1[1].Data, row1[1].Text)
+	}
+
+	row2 := m.InlineKeyboard[1]
+	if len(row2) != 1 {
+		t.Fatalf("expected 1 button in row 2, got %d", len(row2))
+	}
+	if row2[0].Data != "101:0" || !strings.Contains(row2[0].Text, "Вся группа") {
+		t.Errorf("button all mismatch: data=%s text=%s", row2[0].Data, row2[0].Text)
+	}
+}
+
+func TestInlineTeacherSuggestionsKeyboard(t *testing.T) {
+	if got := InlineTeacherSuggestionsKeyboard(nil); got != nil {
+		t.Errorf("InlineTeacherSuggestionsKeyboard(nil) = %v, want nil", got)
+	}
+	if got := InlineTeacherSuggestionsKeyboard([]string{}); got != nil {
+		t.Errorf("InlineTeacherSuggestionsKeyboard(empty) = %v, want nil", got)
+	}
+
+	teachers := []string{"Анципов Е. Ю.", "Иванов И. И.", "Калитеня И. И."}
+	m := InlineTeacherSuggestionsKeyboard(teachers)
+	if m == nil {
+		t.Fatal("expected non-nil keyboard")
+	}
+
+	if len(m.InlineKeyboard) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(m.InlineKeyboard))
+	}
+
+	for i, name := range teachers {
+		row := m.InlineKeyboard[i]
+		if len(row) != 1 {
+			t.Fatalf("row %d: expected 1 button, got %d", i, len(row))
+		}
+		btn := row[0]
+		if btn.Text != name {
+			t.Errorf("row %d: btn.Text = %q, want %q", i, btn.Text, name)
+		}
+		if btn.Unique != TeacherCurrentWeek {
+			t.Errorf("row %d: btn.Unique = %q, want %q", i, btn.Unique, TeacherCurrentWeek)
+		}
+		if btn.Data != name {
+			t.Errorf("row %d: btn.Data = %q, want %q", i, btn.Data, name)
+		}
+	}
+}

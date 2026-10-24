@@ -301,7 +301,7 @@ func FormatNextDayDigest(
 			return "", fmt.Errorf("dayIdx %d out of range", dayIdx)
 		}
 
-		dayMsg, err := formatter.FormatScheduleDayAt(grp, dayIdx)
+		dayMsg, err := formatter.FormatScheduleDayAtForSubgroup(grp, dayIdx, user.Subgroup)
 		if err != nil {
 			return "", err
 		}

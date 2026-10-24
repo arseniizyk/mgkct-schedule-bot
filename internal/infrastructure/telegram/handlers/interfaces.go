@@ -24,13 +24,16 @@ type TeacherService interface {
 	GetAllWeeks(ctx context.Context, name string) ([]time.Time, error)
 	GetTeacherArchiveSchedule(ctx context.Context, name string, targetDate time.Time) (*entities.Teacher, error)
 	ValidateTeacher(ctx context.Context, name string) (string, []string, bool)
+	FindSimilarTeachers(ctx context.Context, name string, limit int) ([]string, error)
 	GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error)
 }
 
 type UserRepo interface {
 	SaveUser(ctx context.Context, u entities.User) error
 	GroupByChatID(ctx context.Context, chatID int64) (int, error)
-	SetUserGroup(ctx context.Context, chatID int64, groupID int) error
+	SubgroupByChatID(ctx context.Context, chatID int64) (int, error)
+	GroupAndSubgroupByChatID(ctx context.Context, chatID int64) (int, int, error)
+	SetUserGroup(ctx context.Context, chatID int64, groupID int, subgroup int) error
 	GetTeacher(ctx context.Context, chatID int64) (string, error)
 	SetTeacher(ctx context.Context, chatID int64, teacherName string) error
 	SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error

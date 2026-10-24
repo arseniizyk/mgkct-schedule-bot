@@ -507,17 +507,20 @@ func (s *Server) handleGetUserProfile(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	groupID, _ := s.userRepo.GroupByChatID(ctx, user.ID)
+	subgroup, _ := s.userRepo.SubgroupByChatID(ctx, user.ID)
 	teacherName, _ := s.userRepo.GetTeacher(ctx, user.ID)
 
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"chat_id":      user.ID,
 		"group_id":     groupID,
+		"subgroup":     subgroup,
 		"teacher_name": teacherName,
 	})
 }
 
 type SetProfileRequest struct {
 	GroupID     int    `json:"group_id"`
+	Subgroup    int    `json:"subgroup"`
 	TeacherName string `json:"teacher_name"`
 }
 
@@ -543,7 +546,7 @@ func (s *Server) handleSetUserProfile(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	if req.GroupID > 0 {
-		if err := s.userRepo.SetUserGroup(ctx, user.ID, req.GroupID); err != nil {
+		if err := s.userRepo.SetUserGroup(ctx, user.ID, req.GroupID, req.Subgroup); err != nil {
 			s.log.Error("failed setting user group from webapp", "error", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return

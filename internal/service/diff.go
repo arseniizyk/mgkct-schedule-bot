@@ -32,6 +32,21 @@ func CurrentWeekMonday(now time.Time) time.Time {
 	return time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
 }
 
+// EffectiveScheduleWeek возвращает дату понедельника недели для отображения актуального расписания.
+// До 19:00 субботы возвращается текущая неделя.
+// Начиная с 19:00 субботы и в воскресенье возвращается следующая неделя.
+func EffectiveScheduleWeek(now time.Time) time.Time {
+	localNow := now.In(minskLoc)
+	today := (int(localNow.Weekday()) + 6) % 7 // Пн=0..Вс=6
+	currentMonday := CurrentWeekMonday(localNow)
+
+	if today > 5 || (today == 5 && localNow.Hour() >= 19) {
+		return currentMonday.AddDate(0, 0, 7)
+	}
+
+	return currentMonday
+}
+
 // ComputeGroupDiff вычисляет точечные изменения в расписании учебной группы с учетом фильтрации прошедшего времени.
 func ComputeGroupDiff(oldGroup, newGroup *entities.Group, now time.Time) *entities.ScheduleDiff {
 	if newGroup == nil && oldGroup == nil {
