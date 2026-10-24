@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	tele "gopkg.in/telebot.v4"
@@ -30,27 +31,39 @@ func StatesHandler(log *slog.Logger, userRepo UserRepo, sm StateManager, teacher
 
 		switch userState {
 		case state.WaitingGroup:
-			groupID, err := strconv.Atoi(c.Text())
+			fields := strings.Fields(c.Text())
+			if len(fields) == 0 {
+				return c.Send(messages.OnlyNumbers)
+			}
+
+			groupID, err := strconv.Atoi(fields[0])
 			if err != nil || groupID <= 0 {
 				return c.Send(messages.OnlyNumbers)
 			}
 
-			if err := userRepo.SetUserGroup(ctx, chatID, groupID); err != nil {
-				log.Error("failed saving group from state", "group_id", groupID, "error", err)
-				return c.Send(messages.InternalTryWith)
+			if len(fields) >= 2 {
+				subgroup, err := strconv.Atoi(fields[1])
+				if err == nil && (subgroup == 1 || subgroup == 2 || subgroup == 0) {
+					if err := userRepo.SetUserGroup(ctx, chatID, groupID, subgroup); err != nil {
+						log.Error("failed saving group from state", "group_id", groupID, "error", err)
+						return c.Send(messages.InternalTryWith)
+					}
+					_ = sm.Clear(chatID)
+					if subgroup > 0 {
+						return c.Send(fmt.Sprintf(messages.GroupWithSubgroupSaved, groupID, subgroup), keyboard.ReplyScheduleKeyboard)
+					}
+					return c.Send(messages.GroupSaved, keyboard.ReplyScheduleKeyboard)
+				}
 			}
 
 			_ = sm.Clear(chatID)
-			return c.Send(messages.GroupSaved, keyboard.ReplyScheduleKeyboard)
+			return c.Send(fmt.Sprintf(messages.SelectSubgroup, groupID), keyboard.InlineSubgroupKeyboard(groupID))
 
 		case state.WaitingTeacher:
 			teacherQuery := c.Text()
 			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
 			if !ok {
-				if len(candidates) > 0 {
-					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
-				}
-				return c.Send(messages.TeacherNotFound)
+				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
 			}
 
 			if err := userRepo.SetTeacher(ctx, chatID, matched); err != nil {
@@ -65,10 +78,7 @@ func StatesHandler(log *slog.Logger, userRepo UserRepo, sm StateManager, teacher
 			teacherQuery := c.Text()
 			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
 			if !ok {
-				if len(candidates) > 0 {
-					return c.Send(fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)))
-				}
-				return c.Send(messages.TeacherNotFound)
+				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
 			}
 
 			_ = sm.Clear(chatID)

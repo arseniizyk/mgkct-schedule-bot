@@ -124,8 +124,10 @@ func setupTestServer(t *testing.T) (*Server, *sql.DB) {
 		chat_id INTEGER UNIQUE NOT NULL,
 		username TEXT,
 		group_id INTEGER,
+		subgroup INTEGER NOT NULL DEFAULT 0,
 		teacher_name TEXT,
-		state TEXT NOT NULL DEFAULT ''
+		state TEXT NOT NULL DEFAULT '',
+		notify_evening INTEGER NOT NULL DEFAULT 1
 	);`)
 	if err != nil {
 		t.Fatalf("failed to create users table: %v", err)
@@ -360,7 +362,7 @@ func TestHandleEndings(t *testing.T) {
 	if res.DayIndex != 0 {
 		t.Fatalf("expected day_index 0, got %d", res.DayIndex)
 	}
-	if res.Endings == nil || len(res.Endings.Pairs[1]) == 0 || res.Endings.Pairs[1][0] != 101 {
+	if res.Endings == nil || len(res.Endings.Pairs[1]) == 0 || res.Endings.Pairs[1][0].GroupID != 101 {
 		t.Fatalf("expected group 101 in endings pairs, got %+v", res.Endings)
 	}
 }

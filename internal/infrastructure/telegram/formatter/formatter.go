@@ -62,7 +62,20 @@ func findFirstSubject(subjects []*entities.Subject) int {
 }
 
 func EffectiveDayIndex(group *entities.Group) int {
-	today := (int(time.Now().Weekday()) + 6) % 7 // Пн=0 .. Вс=6
+	if group == nil || len(group.Days) == 0 {
+		return 0
+	}
+
+	minskLoc := time.FixedZone("MSK", 3*3600)
+	nowMinsk := time.Now().In(minskLoc)
+	today := (int(nowMinsk.Weekday()) + 6) % 7 // Пн=0 .. Вс=6
+	offset := today
+	currentWeekMonday := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
+
+	// Если расписание относится к будущей или прошедшей неделе (относительно текущей), показываем первый учебный день (понедельник)
+	if !group.Week.IsZero() && !group.Week.Equal(currentWeekMonday) {
+		return 0
+	}
 
 	if today >= len(group.Days) {
 		return 0
@@ -73,7 +86,7 @@ func EffectiveDayIndex(group *entities.Group) int {
 		return nextWorkDayIndex(today)
 	}
 
-	if endTime, ok := getEndTime(today, lastSubject+1); ok && !time.Now().Before(endTime) {
+	if endTime, ok := getEndTime(today, lastSubject+1); ok && !nowMinsk.Before(endTime) {
 		return nextWorkDayIndex(today)
 	}
 
@@ -88,19 +101,151 @@ func nextWorkDayIndex(idx int) int {
 	return next
 }
 
-func FormatScheduleDay(group *entities.Group) string {
-	dayIdx := EffectiveDayIndex(group)
-	if dayIdx >= len(group.Days) {
-		return formatScheduleDay(group.Days[0])
+// ParsePairSubgroup определяет номер подгруппы (1, 2, 3...) из пары.
+// Возвращает 0, если пара общая для всей группы или подгруппа не определена.
+func ParsePairSubgroup(p *entities.Pair) int {
+	if p == nil {
+		return 0
 	}
-	return formatScheduleDay(group.Days[dayIdx])
+	name := strings.TrimSpace(p.Name)
+	if len(name) >= 2 && unicode.IsDigit(rune(name[0])) && name[1] == '.' {
+		return int(name[0] - '0')
+	}
+
+	lower := strings.ToLower(p.Group)
+	if strings.Contains(lower, "1 п/г") || strings.Contains(lower, "1 п/гр") || strings.TrimSpace(p.Group) == "1" {
+		return 1
+	}
+	if strings.Contains(lower, "2 п/г") || strings.Contains(lower, "2 п/гр") || strings.TrimSpace(p.Group) == "2" {
+		return 2
+	}
+	if strings.Contains(lower, "3 п/г") || strings.Contains(lower, "3 п/гр") || strings.TrimSpace(p.Group) == "3" {
+		return 3
+	}
+
+	return 0
+}
+
+// FilterGroupForSubgroup возвращает копию расписания группы, отфильтрованную для указанной подгруппы:
+// - Если subgroup <= 0, возвращается группа без изменений.
+// - Для пар с 2 подгруппами пользователю выводится только его расписание.
+// - Для пар с 3 подгруппами делается исключение: выводится расписание для всех.
+// - Общие пары без деления на подгруппы выводятся всем.
+func FilterGroupForSubgroup(group *entities.Group, subgroup int) *entities.Group {
+	if group == nil || subgroup <= 0 {
+		return group
+	}
+
+	filteredGroup := &entities.Group{
+		ID:   group.ID,
+		Week: group.Week,
+		Days: make([]*entities.Day, len(group.Days)),
+	}
+
+	for dIdx, day := range group.Days {
+		if day == nil {
+			continue
+		}
+
+		filteredDay := &entities.Day{
+			Name:     day.Name,
+			Subjects: make([]*entities.Subject, len(day.Subjects)),
+		}
+
+		for sIdx, subj := range day.Subjects {
+			if subj == nil || subj.IsEmpty || len(subj.Pairs) == 0 {
+				filteredDay.Subjects[sIdx] = &entities.Subject{IsEmpty: true}
+				continue
+			}
+
+			var (
+				nonEmptyPairs []*entities.Pair
+				subgroupsSet  = make(map[int]struct{})
+				hasSubgroups  = false
+			)
+
+			for _, p := range subj.Pairs {
+				if p == nil {
+					continue
+				}
+				name := strings.TrimSpace(p.Name)
+				if name == "" && p.Group == "" {
+					continue
+				}
+				nonEmptyPairs = append(nonEmptyPairs, p)
+				sg := ParsePairSubgroup(p)
+				if sg > 0 {
+					hasSubgroups = true
+					subgroupsSet[sg] = struct{}{}
+				}
+			}
+
+			if len(nonEmptyPairs) == 0 {
+				filteredDay.Subjects[sIdx] = &entities.Subject{IsEmpty: true}
+				continue
+			}
+
+			// Для пар с 3 подгруппами исключение: выводим расписание для всех
+			_, hasSg3 := subgroupsSet[3]
+			if hasSg3 || len(subgroupsSet) >= 3 {
+				filteredDay.Subjects[sIdx] = subj
+				continue
+			}
+
+			// Для пар с 2 подгруппами выводим только расписание указанной подгруппы
+			if hasSubgroups {
+				var userPairs []*entities.Pair
+				for _, p := range nonEmptyPairs {
+					sg := ParsePairSubgroup(p)
+					if sg == subgroup || sg == 0 {
+						userPairs = append(userPairs, p)
+					}
+				}
+
+				if len(userPairs) == 0 {
+					filteredDay.Subjects[sIdx] = &entities.Subject{IsEmpty: true}
+				} else {
+					filteredDay.Subjects[sIdx] = &entities.Subject{
+						Pairs:   userPairs,
+						IsEmpty: pairsAreEmpty(userPairs),
+					}
+				}
+				continue
+			}
+
+			// Общая пара без подгрупп
+			filteredDay.Subjects[sIdx] = subj
+		}
+
+		filteredGroup.Days[dIdx] = filteredDay
+	}
+
+	return filteredGroup
+}
+
+func FormatScheduleDay(group *entities.Group) string {
+	return FormatScheduleDayForSubgroup(group, 0)
+}
+
+func FormatScheduleDayForSubgroup(group *entities.Group, subgroup int) string {
+	filtered := FilterGroupForSubgroup(group, subgroup)
+	dayIdx := EffectiveDayIndex(filtered)
+	if dayIdx >= len(filtered.Days) {
+		return formatScheduleDay(filtered.Days[0])
+	}
+	return formatScheduleDay(filtered.Days[dayIdx])
 }
 
 func FormatScheduleDayAt(group *entities.Group, dayIdx int) (string, error) {
-	if dayIdx < 0 || dayIdx >= len(group.Days) {
-		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(group.Days))
+	return FormatScheduleDayAtForSubgroup(group, dayIdx, 0)
+}
+
+func FormatScheduleDayAtForSubgroup(group *entities.Group, dayIdx int, subgroup int) (string, error) {
+	filtered := FilterGroupForSubgroup(group, subgroup)
+	if dayIdx < 0 || dayIdx >= len(filtered.Days) {
+		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(filtered.Days))
 	}
-	return formatScheduleDay(group.Days[dayIdx]), nil
+	return formatScheduleDay(filtered.Days[dayIdx]), nil
 }
 
 var weekdaysTimeEnd = map[int][2]int{
@@ -149,10 +294,15 @@ func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
 }
 
 func FormatScheduleWeek(group *entities.Group) string {
-	var sb strings.Builder
-	sb.Grow(len(group.Days) * 128)
+	return FormatScheduleWeekForSubgroup(group, 0)
+}
 
-	for _, day := range group.Days {
+func FormatScheduleWeekForSubgroup(group *entities.Group, subgroup int) string {
+	filtered := FilterGroupForSubgroup(group, subgroup)
+	var sb strings.Builder
+	sb.Grow(len(filtered.Days) * 128)
+
+	for _, day := range filtered.Days {
 		sb.WriteString(formatScheduleDay(day))
 	}
 
@@ -201,6 +351,20 @@ func SplitMessage(text string, limit int) []string {
 	}
 
 	return chunks
+}
+
+func pairsAreEmpty(pairs []*entities.Pair) bool {
+	for _, p := range pairs {
+		if p == nil {
+			continue
+		}
+		name := strings.TrimSpace(p.Name)
+		hasContent := (name != "" && name != "-" && name != "—" && name != "–") || strings.TrimSpace(p.Group) != ""
+		if hasContent {
+			return false
+		}
+	}
+	return true
 }
 
 func formatSubjects(subjects []*entities.Subject, start int) string {
@@ -360,7 +524,21 @@ func formatTeacherScheduleDay(day *entities.Day) string {
 }
 
 func EffectiveTeacherDayIndex(teacher *entities.Teacher) int {
-	today := (int(time.Now().Weekday()) + 6) % 7
+	if teacher == nil || len(teacher.Days) == 0 {
+		return 0
+	}
+
+	minskLoc := time.FixedZone("MSK", 3*3600)
+	nowMinsk := time.Now().In(minskLoc)
+	today := (int(nowMinsk.Weekday()) + 6) % 7
+	offset := today
+	currentWeekMonday := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
+
+	// Если расписание относится к будущей или прошедшей неделе (относительно текущей), показываем первый учебный день (понедельник)
+	if !teacher.Week.IsZero() && !teacher.Week.Equal(currentWeekMonday) {
+		return 0
+	}
+
 	if today >= len(teacher.Days) {
 		return 0
 	}
@@ -370,7 +548,7 @@ func EffectiveTeacherDayIndex(teacher *entities.Teacher) int {
 		return nextWorkDayIndex(today)
 	}
 
-	if endTime, ok := getEndTime(today, lastSubject+1); ok && !time.Now().Before(endTime) {
+	if endTime, ok := getEndTime(today, lastSubject+1); ok && !nowMinsk.Before(endTime) {
 		return nextWorkDayIndex(today)
 	}
 

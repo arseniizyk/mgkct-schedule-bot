@@ -117,3 +117,90 @@ func TestTeacherService_Archive(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Иванов И. И.", teach.Name)
 }
+
+func TestTeacherService_FindSimilarTeachers(t *testing.T) {
+	ctx := context.Background()
+
+	tRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+	now := time.Now()
+	_ = tRepo.Save(ctx, "Смирнов С. С.", now, &entities.Teacher{Name: "Смирнов С. С."})
+	_ = tRepo.Save(ctx, "Иванов И. И.", now, &entities.Teacher{Name: "Иванов И. И."})
+	_ = tRepo.Save(ctx, "Иванова А. А.", now, &entities.Teacher{Name: "Иванова А. А."})
+	_ = tRepo.Save(ctx, "Новиков П. С.", now, &entities.Teacher{Name: "Новиков П. С."})
+	_ = tRepo.Save(ctx, "Морозов Д. В.", now, &entities.Teacher{Name: "Морозов Д. В."})
+	_ = tRepo.Save(ctx, "Волков И. И.", now, &entities.Teacher{Name: "Волков И. И."})
+	_ = tRepo.Save(ctx, "Фёдоров Ф. Ф.", now, &entities.Teacher{Name: "Фёдоров Ф. Ф."})
+
+	fRepo := &mockFacultyRepo{
+		members: []*entities.FacultyMember{
+			{
+				FullName:  "Смирнов Сергей Сергеевич",
+				ShortName: "Смирнов С. С.",
+				Position:  "Преподаватель",
+			},
+		},
+	}
+
+	svc := service.NewTeacherService(slog.Default(), tRepo, fRepo, nil)
+
+	t.Run("typo in one letter", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "Смирнав", 3)
+		require.NoError(t, err)
+		require.NotEmpty(t, suggestions)
+		assert.Equal(t, "Смирнов С. С.", suggestions[0])
+	})
+
+	t.Run("typo in two letters", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "Смырнав", 3)
+		require.NoError(t, err)
+		require.NotEmpty(t, suggestions)
+		assert.Equal(t, "Смирнов С. С.", suggestions[0])
+	})
+
+	t.Run("transposition typo", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "Смринов", 3)
+		require.NoError(t, err)
+		require.NotEmpty(t, suggestions)
+		assert.Equal(t, "Смирнов С. С.", suggestions[0])
+	})
+
+	t.Run("letter yo vs e", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "Федоров", 3)
+		require.NoError(t, err)
+		require.NotEmpty(t, suggestions)
+		assert.Equal(t, "Фёдоров Ф. Ф.", suggestions[0])
+	})
+
+	t.Run("keyboard layout typo", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "cvbhyjd", 3)
+		require.NoError(t, err)
+		require.NotEmpty(t, suggestions)
+		assert.Equal(t, "Смирнов С. С.", suggestions[0])
+	})
+
+	t.Run("typo with initials", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "Смирнав С. С.", 3)
+		require.NoError(t, err)
+		require.NotEmpty(t, suggestions)
+		assert.Equal(t, "Смирнов С. С.", suggestions[0])
+	})
+
+	t.Run("limit to 3 suggestions", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "Иваноф", 3)
+		require.NoError(t, err)
+		assert.LessOrEqual(t, len(suggestions), 3)
+		assert.NotEmpty(t, suggestions)
+	})
+
+	t.Run("completely unrelated word returns empty", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "Абракадабра", 3)
+		require.NoError(t, err)
+		assert.Empty(t, suggestions)
+	})
+
+	t.Run("short query returns empty", func(t *testing.T) {
+		suggestions, err := svc.FindSimilarTeachers(ctx, "Ан", 3)
+		require.NoError(t, err)
+		assert.Empty(t, suggestions)
+	})
+}
