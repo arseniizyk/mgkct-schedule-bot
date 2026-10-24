@@ -121,7 +121,7 @@ func TestAnalyticsService_GetEndings(t *testing.T) {
 	schedRepo := &mockScheduleRepo{schedules: map[time.Time]*entities.Schedule{now: sch}}
 	svc := service.NewAnalyticsService(slog.Default(), schedRepo, nil, nil)
 
-	stat, err := svc.GetEndings(ctx, 0)
+	stat, err := svc.GetEndings(ctx, 0, time.Time{})
 	require.NoError(t, err)
 	require.NotNil(t, stat)
 
@@ -131,6 +131,114 @@ func TestAnalyticsService_GetEndings(t *testing.T) {
 	assert.Equal(t, []int32{102}, stat.Pairs[2])
 	// Группа 103 выходной
 	assert.Equal(t, []int32{103}, stat.DayOff)
+}
+
+func TestAnalyticsService_GetEndings_SaturdayCurrentWeekVsNextWeek(t *testing.T) {
+	ctx := context.Background()
+	minskLoc := time.FixedZone("MSK", 3*3600)
+
+	currentMonday := time.Date(2026, 10, 19, 0, 0, 0, 0, minskLoc)
+	nextMonday := time.Date(2026, 10, 26, 0, 0, 0, 0, minskLoc)
+
+	currentSchedule := &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			101: {
+				ID:   101,
+				Week: currentMonday,
+				Days: []*entities.Day{
+					{Name: "Понедельник", Subjects: []*entities.Subject{{Pairs: []*entities.Pair{{Name: "Пара 1"}}}}},
+					{Name: "Вторник"},
+					{Name: "Среда"},
+					{Name: "Четверг"},
+					{Name: "Пятница"},
+					{
+						Name: "Суббота",
+						Subjects: []*entities.Subject{
+							{Pairs: []*entities.Pair{{Name: "Пара 1"}}},
+							{Pairs: []*entities.Pair{{Name: "Пара 2"}}}, // 2 пары в субботу на этой неделе
+						},
+					},
+				},
+			},
+		},
+	}
+
+	nextSchedule := &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			101: {
+				ID:   101,
+				Week: nextMonday,
+				Days: []*entities.Day{
+					{
+						Name: "Понедельник",
+						Subjects: []*entities.Subject{
+							{Pairs: []*entities.Pair{{Name: "Новая неделя пара 1"}}},
+							{Pairs: []*entities.Pair{{Name: "Новая неделя пара 2"}}},
+							{Pairs: []*entities.Pair{{Name: "Новая неделя пара 3"}}},
+						},
+					},
+					{Name: "Вторник"},
+					{Name: "Среда"},
+					{Name: "Четверг"},
+					{Name: "Пятница"},
+					{
+						Name: "Суббота",
+						Subjects: []*entities.Subject{
+							{Pairs: []*entities.Pair{{Name: "Пара 1"}}},
+							{Pairs: []*entities.Pair{{Name: "Пара 2"}}},
+							{Pairs: []*entities.Pair{{Name: "Пара 3"}}},
+							{Pairs: []*entities.Pair{{Name: "Пара 4"}}}, // 4 пары в субботу на следующей неделе
+						},
+					},
+				},
+			},
+		},
+	}
+
+	schedRepo := &mockScheduleRepo{
+		schedules: map[time.Time]*entities.Schedule{
+			currentMonday: currentSchedule,
+			nextMonday:    nextSchedule,
+		},
+	}
+	svc := service.NewAnalyticsService(slog.Default(), schedRepo, nil, nil)
+
+	// 1. Суббота 11:00 (Минск) — день еще идет
+	saturdayMorning := time.Date(2026, 10, 24, 11, 0, 0, 0, minskLoc)
+	svc.SetNowFunc(func() time.Time { return saturdayMorning })
+
+	dayIdx := svc.EffectiveEndingsDayIndex()
+	assert.Equal(t, 5, dayIdx, "в субботу утром dayIdx должен быть 5 (суббота)")
+
+	stat, err := svc.GetEndings(ctx, dayIdx, time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, "Суббота", stat.DayName)
+	assert.Equal(t, []int32{101}, stat.Pairs[2], "в субботу утром должно показываться расписание текущей недели (2 пары), а не следующей (4 пары)")
+	assert.Empty(t, stat.Pairs[4])
+
+	// 2. Суббота 20:00 (Минск) — вечер, учебная неделя кончилась
+	saturdayEvening := time.Date(2026, 10, 24, 20, 0, 0, 0, minskLoc)
+	svc.SetNowFunc(func() time.Time { return saturdayEvening })
+
+	dayIdx = svc.EffectiveEndingsDayIndex()
+	assert.Equal(t, 0, dayIdx, "в субботу вечером dayIdx должен переключиться на 0 (понедельник)")
+
+	stat, err = svc.GetEndings(ctx, dayIdx, time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, "Понедельник", stat.DayName)
+	assert.Equal(t, []int32{101}, stat.Pairs[3], "в субботу вечером должен показываться понедельник следующей недели (3 пары)")
+
+	// 3. Воскресенье 12:00 (Минск)
+	sundayNoon := time.Date(2026, 10, 25, 12, 0, 0, 0, minskLoc)
+	svc.SetNowFunc(func() time.Time { return sundayNoon })
+
+	dayIdx = svc.EffectiveEndingsDayIndex()
+	assert.Equal(t, 0, dayIdx, "в воскресенье dayIdx должен быть 0 (понедельник)")
+
+	stat, err = svc.GetEndings(ctx, dayIdx, time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, "Понедельник", stat.DayName)
+	assert.Equal(t, []int32{101}, stat.Pairs[3], "в воскресенье должен показываться понедельник следующей недели")
 }
 
 func TestAnalyticsService_GetGroupStats(t *testing.T) {
