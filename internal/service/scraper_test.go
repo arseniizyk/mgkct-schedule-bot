@@ -26,7 +26,23 @@ func (m *mockScheduleRepo) Save(ctx context.Context, week time.Time, schedule *e
 }
 
 func (m *mockScheduleRepo) GetByWeek(ctx context.Context, week time.Time) (*entities.Schedule, error) {
-	return m.schedules[week], nil
+	if s, ok := m.schedules[week]; ok {
+		return s, nil
+	}
+	var bestWeek time.Time
+	var found bool
+	for w := range m.schedules {
+		if !w.After(week) {
+			if !found || w.After(bestWeek) {
+				bestWeek = w
+				found = true
+			}
+		}
+	}
+	if found {
+		return m.schedules[bestWeek], nil
+	}
+	return nil, nil
 }
 
 func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, error) {

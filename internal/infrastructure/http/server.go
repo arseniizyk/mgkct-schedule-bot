@@ -346,7 +346,17 @@ func (s *Server) handleEndings(w http.ResponseWriter, r *http.Request) {
 		dayIdx = parsedDay
 	}
 
-	endings, err := s.analyticsSvc.GetEndings(ctx, dayIdx)
+	var week time.Time
+	if weekStr := r.URL.Query().Get("week"); weekStr != "" {
+		parsedWeek, err := time.Parse("2006-01-02", weekStr)
+		if err != nil {
+			http.Error(w, "invalid week parameter (YYYY-MM-DD expected)", http.StatusBadRequest)
+			return
+		}
+		week = parsedWeek
+	}
+
+	endings, err := s.analyticsSvc.GetEndings(ctx, dayIdx, week)
 	if err != nil {
 		s.log.Error("failed getting endings", "error", err, "day", dayIdx)
 		http.Error(w, "internal server error", http.StatusInternalServerError)

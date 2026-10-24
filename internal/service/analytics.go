@@ -18,6 +18,7 @@ type AnalyticsService struct {
 	schedRepo   ScheduleRepository
 	teacherRepo TeacherScheduleRepository
 	dict        SubjectDictionary
+	nowFunc     func() time.Time
 }
 
 func NewAnalyticsService(
@@ -32,6 +33,17 @@ func NewAnalyticsService(
 		teacherRepo: teacherRepo,
 		dict:        dict,
 	}
+}
+
+func (s *AnalyticsService) SetNowFunc(f func() time.Time) {
+	s.nowFunc = f
+}
+
+func (s *AnalyticsService) now() time.Time {
+	if s.nowFunc != nil {
+		return s.nowFunc()
+	}
+	return time.Now()
 }
 
 // GetAllCabinets возвращает список всех уникальных кабинетов, упорядоченных по имени
@@ -78,7 +90,11 @@ func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string,
 
 	var sch *entities.Schedule
 	if week.IsZero() {
-		sch, err = s.schedRepo.GetLatest(ctx)
+		targetWeek := EffectiveEndingsWeek(s.now())
+		sch, err = s.schedRepo.GetByWeek(ctx, targetWeek)
+		if err != nil || sch == nil {
+			sch, err = s.schedRepo.GetLatest(ctx)
+		}
 	} else {
 		sch, err = s.schedRepo.GetByWeek(ctx, week)
 	}
@@ -156,10 +172,20 @@ func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string,
 }
 
 // GetEndings собирает аналитику окончания занятий групп на указанный день недели
-func (s *AnalyticsService) GetEndings(ctx context.Context, dayIdx int) (*entities.EndingsStat, error) {
-	sch, err := s.schedRepo.GetLatest(ctx)
+func (s *AnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time.Time) (*entities.EndingsStat, error) {
+	var sch *entities.Schedule
+	var err error
+	if week.IsZero() {
+		targetWeek := EffectiveEndingsWeek(s.now())
+		sch, err = s.schedRepo.GetByWeek(ctx, targetWeek)
+		if err != nil || sch == nil {
+			sch, err = s.schedRepo.GetLatest(ctx)
+		}
+	} else {
+		sch, err = s.schedRepo.GetByWeek(ctx, week)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("analytics: get latest schedule: %w", err)
+		return nil, fmt.Errorf("analytics: get schedule for endings: %w", err)
 	}
 
 	stat := &entities.EndingsStat{
@@ -404,24 +430,42 @@ func findLastSubjectInDay(subjects []*entities.Subject) int {
 	return -1
 }
 
-// EffectiveEndingsDayIndex вычисляет индекс дня для показа окончаний пар
-func (s *AnalyticsService) EffectiveEndingsDayIndex() int {
-	return EffectiveEndingsDayIndex()
+// EffectiveEndingsWeek возвращает дату понедельника недели для показа окончаний пар
+func EffectiveEndingsWeek(now time.Time) time.Time {
+	localNow := now.In(minskLoc)
+	today := (int(localNow.Weekday()) + 6) % 7 // Пн=0..Вс=6
+	currentMonday := CurrentWeekMonday(localNow)
+
+	if today > 5 || (today == 5 && localNow.Hour() >= 19) {
+		return currentMonday.AddDate(0, 0, 7)
+	}
+
+	return currentMonday
 }
 
-// EffectiveEndingsDayIndex вычисляет индекс дня для показа окончаний пар
-func EffectiveEndingsDayIndex() int {
-	now := time.Now()
-	today := (int(now.Weekday()) + 6) % 7 // Пн=0..Вс=6
+// EffectiveEndingsDayIndexAt вычисляет индекс дня для показа окончаний пар для указанного времени
+func EffectiveEndingsDayIndexAt(now time.Time) int {
+	localNow := now.In(minskLoc)
+	today := (int(localNow.Weekday()) + 6) % 7 // Пн=0..Вс=6
 	if today > 5 {
 		return 0 // Воскресенье -> Понедельник
 	}
 	// Если уже вечер (после 19:00), показываем следующий день
-	if now.Hour() >= 19 {
+	if localNow.Hour() >= 19 {
 		if today == 5 {
 			return 0
 		}
 		return today + 1
 	}
 	return today
+}
+
+// EffectiveEndingsDayIndex вычисляет индекс дня для показа окончаний пар
+func (s *AnalyticsService) EffectiveEndingsDayIndex() int {
+	return EffectiveEndingsDayIndexAt(s.now())
+}
+
+// EffectiveEndingsDayIndex вычисляет индекс дня для показа окончаний пар
+func EffectiveEndingsDayIndex() int {
+	return EffectiveEndingsDayIndexAt(time.Now())
 }
