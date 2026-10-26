@@ -222,5 +222,6 @@ func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
 	assert.Equal(t, 101, grp)
 	assert.Equal(t, 1, sg)
 
-	assert.Contains(t, ctx.sentWhat, "1 подгруппа")
+	assert.Contains(t, ctx.editedWhat, "1 подгруппа")
+	assert.Nil(t, ctx.sentWhat)
 }
