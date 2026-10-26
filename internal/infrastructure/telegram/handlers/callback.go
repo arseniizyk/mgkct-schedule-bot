@@ -121,8 +121,7 @@ func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context,
 		text = messages.GroupSaved
 	}
 
-	_ = c.Edit(text)
-	return c.Send(text, keyboard.ReplyScheduleKeyboard)
+	return safeEdit(c, text)
 }
 
 func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
