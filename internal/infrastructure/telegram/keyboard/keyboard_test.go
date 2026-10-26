@@ -39,25 +39,31 @@ func TestInlineScheduleKeyboard(t *testing.T) {
 }
 
 func TestInlineDayKeyboard(t *testing.T) {
-	if got := InlineDayKeyboard(0, 2, 6); got != nil {
+	if got := InlineDayKeyboard(0, 2, 6, 0); got != nil {
 		t.Errorf("InlineDayKeyboard(0, ...) = %v, want nil", got)
 	}
 
 	t.Run("monday", func(t *testing.T) {
-		m := InlineDayKeyboard(88, 0, 6)
+		m := InlineDayKeyboard(88, 0, 6, 0)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
-		want := []string{"prevday|88:5", "currentweek|88", "nextday|88:1"}
+		want := []string{"prevday|88:5:0", "currentweek|88:0", "nextday|88:1:0"}
 		if strings.Join(datas, ",") != strings.Join(want, ",") {
-			t.Errorf("buttons = %v, want %v", datas, want)
+			t.Errorf("nav buttons = %v, want %v", datas, want)
+		}
+
+		sgDatas := btnFull(t, m.InlineKeyboard[1])
+		wantSg := []string{"day_sg|88:0:1", "day_sg|88:0:0", "day_sg|88:0:2"}
+		if strings.Join(sgDatas, ",") != strings.Join(wantSg, ",") {
+			t.Errorf("subgroup buttons = %v, want %v", sgDatas, wantSg)
 		}
 	})
 
 	t.Run("saturday wraps to monday", func(t *testing.T) {
-		m := InlineDayKeyboard(88, 5, 6)
+		m := InlineDayKeyboard(88, 5, 6, 1)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
-		want := []string{"prevday|88:4", "currentweek|88", "nextday|88:0"}
+		want := []string{"prevday|88:4:1", "currentweek|88:1", "nextday|88:0:1"}
 		if strings.Join(datas, ",") != strings.Join(want, ",") {
 			t.Errorf("buttons = %v, want %v", datas, want)
 		}
@@ -67,10 +73,15 @@ func TestInlineDayKeyboard(t *testing.T) {
 func TestInlineWeekKeyboard(t *testing.T) {
 	current := time.Date(2026, time.August, 24, 0, 0, 0, 0, time.UTC)
 
-	t.Run("no weeks available", func(t *testing.T) {
-		m := InlineWeekKeyboard(99, entities.WeekNavigation{})
-		if m == nil || len(m.InlineKeyboard) != 0 {
-			t.Errorf("expected empty inline keyboard, got %+v", m)
+	t.Run("no weeks available has subgroup row", func(t *testing.T) {
+		m := InlineWeekKeyboard(99, entities.WeekNavigation{}, 0)
+		if m == nil || len(m.InlineKeyboard) != 1 {
+			t.Fatalf("expected 1 row (subgroups), got %+v", m)
+		}
+		sgDatas := btnFull(t, m.InlineKeyboard[0])
+		wantSg := []string{"week_sg|99:current:1", "week_sg|99:current:0", "week_sg|99:current:2"}
+		if strings.Join(sgDatas, ",") != strings.Join(wantSg, ",") {
+			t.Errorf("subgroup buttons = %v, want %v", sgDatas, wantSg)
 		}
 	})
 
@@ -81,12 +92,18 @@ func TestInlineWeekKeyboard(t *testing.T) {
 			Next:    current.AddDate(0, 0, 7),
 		}
 
-		m := InlineWeekKeyboard(88, weeks)
+		m := InlineWeekKeyboard(88, weeks, 0)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
-		want := []string{"prevweek|88:17.08.2026", "currentweek|88", "nextweek|88:31.08.2026"}
+		want := []string{"prevweek|88:17.08.2026:0", "currentweek|88:0", "nextweek|88:31.08.2026:0"}
 		if strings.Join(datas, ",") != strings.Join(want, ",") {
-			t.Errorf("buttons = %v, want %v", datas, want)
+			t.Errorf("nav buttons = %v, want %v", datas, want)
+		}
+
+		sgDatas := btnFull(t, m.InlineKeyboard[1])
+		wantSg := []string{"week_sg|88:24.08.2026:1", "week_sg|88:24.08.2026:0", "week_sg|88:24.08.2026:2"}
+		if strings.Join(sgDatas, ",") != strings.Join(wantSg, ",") {
+			t.Errorf("subgroup buttons = %v, want %v", sgDatas, wantSg)
 		}
 	})
 }
@@ -114,8 +131,8 @@ func TestReplyScheduleKeyboard(t *testing.T) {
 	if markupWithApp.IsPersistent {
 		t.Errorf("expected BuildReplyScheduleKeyboard with app URL to have IsPersistent = false, got true")
 	}
-	if len(markupWithApp.ReplyKeyboard) != 3 {
-		t.Errorf("expected 3 rows with webApp, got %d", len(markupWithApp.ReplyKeyboard))
+	if len(markupWithApp.ReplyKeyboard) != 2 {
+		t.Errorf("expected 2 rows even with webApp URL (app button removed), got %d", len(markupWithApp.ReplyKeyboard))
 	}
 }
 

@@ -36,6 +36,8 @@ const (
 	ArchiveSelect  = "arch_sel"
 	NotifyToggle   = "notify_toggle"
 	SubgroupSelect = "subgroup_set"
+	DaySubgroup    = "day_sg"
+	WeekSubgroup   = "week_sg"
 
 	btnCurrentWeek = "📆 Неделя"
 	btnPrev        = "◀️"
@@ -50,28 +52,16 @@ var (
 	}
 )
 
-func BuildReplyScheduleKeyboard(webAppURL string) *tele.ReplyMarkup {
+func BuildReplyScheduleKeyboard(_ string) *tele.ReplyMarkup {
 	markup := &tele.ReplyMarkup{
 		ResizeKeyboard: true,
 	}
-	var rows [][]tele.ReplyButton
-	if webAppURL != "" {
-		rows = append(rows, []tele.ReplyButton{
-			{Text: BtnApp, WebApp: &tele.WebApp{URL: webAppURL}},
-		})
-	}
-	rows = append(rows,
-		[]tele.ReplyButton{{Text: BtnDay}, {Text: BtnWeek}},
-		[]tele.ReplyButton{{Text: BtnCalls}, {Text: BtnTeachers}},
-	)
-	markup.ReplyKeyboard = rows
+	markup.ReplyKeyboard = scheduleReplyButtons()
 	return markup
 }
 
 func InitKeyboard(webAppURL string) {
-	if webAppURL != "" {
-		ReplyScheduleKeyboard = BuildReplyScheduleKeyboard(webAppURL)
-	}
+	ReplyScheduleKeyboard = BuildReplyScheduleKeyboard(webAppURL)
 }
 
 func InlineWebAppKeyboard(webAppURL string) *tele.ReplyMarkup {
@@ -95,43 +85,96 @@ func InlineScheduleKeyboard(groupID int) *tele.ReplyMarkup {
 	return markup
 }
 
-func InlineDayKeyboard(groupID, dayIdx, dayCount int) *tele.ReplyMarkup {
-	if groupID == 0 || dayCount <= 1 {
+func InlineDayKeyboard(groupID, dayIdx, dayCount, subgroup int) *tele.ReplyMarkup {
+	if groupID == 0 {
 		return nil
 	}
 
 	markup := &tele.ReplyMarkup{}
-	prev := (dayIdx + dayCount - 1) % dayCount
-	next := (dayIdx + 1) % dayCount
+	var rows []tele.Row
 
-	markup.Inline(markup.Row(
-		markup.Data(btnPrev, PrevDay, fmt.Sprintf("%d:%d", groupID, prev)),
-		markup.Data(btnCurrentWeek, CurrentWeek, strconv.Itoa(groupID)),
-		markup.Data(btnNext, NextDay, fmt.Sprintf("%d:%d", groupID, next)),
+	if dayCount > 1 {
+		prev := (dayIdx + dayCount - 1) % dayCount
+		next := (dayIdx + 1) % dayCount
+
+		rows = append(rows, markup.Row(
+			markup.Data(btnPrev, PrevDay, fmt.Sprintf("%d:%d:%d", groupID, prev, subgroup)),
+			markup.Data(btnCurrentWeek, CurrentWeek, fmt.Sprintf("%d:%d", groupID, subgroup)),
+			markup.Data(btnNext, NextDay, fmt.Sprintf("%d:%d:%d", groupID, next, subgroup)),
+		))
+	}
+
+	// 2-й ряд: 1 подгруппа | Вся группа | 2 подгруппа
+	sg1Title := "1 подгруппа"
+	sg0Title := "Вся группа"
+	sg2Title := "2 подгруппа"
+	switch subgroup {
+	case 1:
+		sg1Title = "• 1 подгруппа •"
+	case 2:
+		sg2Title = "• 2 подгруппа •"
+	default:
+		sg0Title = "• Вся группа •"
+	}
+
+	rows = append(rows, markup.Row(
+		markup.Data(sg1Title, DaySubgroup, fmt.Sprintf("%d:%d:1", groupID, dayIdx)),
+		markup.Data(sg0Title, DaySubgroup, fmt.Sprintf("%d:%d:0", groupID, dayIdx)),
+		markup.Data(sg2Title, DaySubgroup, fmt.Sprintf("%d:%d:2", groupID, dayIdx)),
 	))
 
+	markup.Inline(rows...)
 	return markup
 }
 
-func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation) *tele.ReplyMarkup {
-	markup := &tele.ReplyMarkup{}
-	var row []tele.Btn
-
-	hasNav := !weeks.Prev.IsZero() || !weeks.Next.IsZero()
-
-	if !weeks.Prev.IsZero() {
-		row = append(row, markup.Data(btnPrev, PrevWeek, fmt.Sprintf("%d:%s", groupID, weeks.Prev.Format("02.01.2006"))))
+func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int) *tele.ReplyMarkup {
+	if groupID == 0 {
+		return nil
 	}
-	if hasNav {
-		row = append(row, markup.Data("Текущая", CurrentWeek, strconv.Itoa(groupID)))
+
+	markup := &tele.ReplyMarkup{}
+	var rows []tele.Row
+
+	var navRow []tele.Btn
+	if !weeks.Prev.IsZero() {
+		navRow = append(navRow, markup.Data(btnPrev, PrevWeek, fmt.Sprintf("%d:%s:%d", groupID, weeks.Prev.Format("02.01.2006"), subgroup)))
+	}
+	if !weeks.Prev.IsZero() || !weeks.Next.IsZero() {
+		navRow = append(navRow, markup.Data("Текущая", CurrentWeek, fmt.Sprintf("%d:%d", groupID, subgroup)))
 	}
 	if !weeks.Next.IsZero() {
-		row = append(row, markup.Data(btnNext, NextWeek, fmt.Sprintf("%d:%s", groupID, weeks.Next.Format("02.01.2006"))))
+		navRow = append(navRow, markup.Data(btnNext, NextWeek, fmt.Sprintf("%d:%s:%d", groupID, weeks.Next.Format("02.01.2006"), subgroup)))
 	}
 
-	if len(row) > 0 {
-		markup.Inline(markup.Row(row...))
+	if len(navRow) > 0 {
+		rows = append(rows, markup.Row(navRow...))
 	}
+
+	// 2-й ряд: 1 подгруппа | Вся группа | 2 подгруппа
+	sg1Title := "1 подгруппа"
+	sg0Title := "Вся группа"
+	sg2Title := "2 подгруппа"
+	switch subgroup {
+	case 1:
+		sg1Title = "• 1 подгруппа •"
+	case 2:
+		sg2Title = "• 2 подгруппа •"
+	default:
+		sg0Title = "• Вся группа •"
+	}
+
+	dateStr := "current"
+	if !weeks.Current.IsZero() {
+		dateStr = weeks.Current.Format("02.01.2006")
+	}
+
+	rows = append(rows, markup.Row(
+		markup.Data(sg1Title, WeekSubgroup, fmt.Sprintf("%d:%s:1", groupID, dateStr)),
+		markup.Data(sg0Title, WeekSubgroup, fmt.Sprintf("%d:%s:0", groupID, dateStr)),
+		markup.Data(sg2Title, WeekSubgroup, fmt.Sprintf("%d:%s:2", groupID, dateStr)),
+	))
+
+	markup.Inline(rows...)
 	return markup
 }
 
