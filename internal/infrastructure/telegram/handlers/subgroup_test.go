@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+	"time"
 
 	tele "gopkg.in/telebot.v4"
 
@@ -224,4 +225,153 @@ func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
 
 	assert.Contains(t, ctx.editedWhat, "1 подгруппа")
 	assert.Nil(t, ctx.sentWhat)
+}
+
+type mockScheduleService struct {
+	group *entities.Group
+}
+
+func (m *mockScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*entities.Group, error) {
+	return m.group, nil
+}
+func (m *mockScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
+	return m.group, nil
+}
+func (m *mockScheduleService) GetAvailableWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error) {
+	return entities.WeekNavigation{}, nil
+}
+func (m *mockScheduleService) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
+	return nil, nil
+}
+func (m *mockScheduleService) GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error) {
+	return m.group, nil
+}
+
+type mockTeacherService struct {
+	teacher *entities.Teacher
+}
+
+func (m *mockTeacherService) GetTeacherLatestSchedule(ctx context.Context, name string) (*entities.Teacher, error) {
+	return m.teacher, nil
+}
+func (m *mockTeacherService) GetTeacherScheduleByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
+	return m.teacher, nil
+}
+func (m *mockTeacherService) GetAvailableWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error) {
+	return entities.WeekNavigation{}, nil
+}
+func (m *mockTeacherService) GetAllTeacherNames(ctx context.Context) ([]string, error) {
+	return []string{m.teacher.Name}, nil
+}
+func (m *mockTeacherService) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
+	return nil, nil
+}
+func (m *mockTeacherService) GetTeacherArchiveSchedule(ctx context.Context, name string, targetDate time.Time) (*entities.Teacher, error) {
+	return m.teacher, nil
+}
+func (m *mockTeacherService) ValidateTeacher(ctx context.Context, name string) (string, []string, bool) {
+	return m.teacher.Name, nil, true
+}
+func (m *mockTeacherService) FindSimilarTeachers(ctx context.Context, name string, limit int) ([]string, error) {
+	return nil, nil
+}
+func (m *mockTeacherService) GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error) {
+	return nil, nil
+}
+
+func TestCallbacksHandler_DaySubgroupAndTeacher(t *testing.T) {
+	logger := testLogger()
+	repo := newMockUserRepo()
+
+	sampleGroup := &entities.Group{
+		ID: 101,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник | 26.10.2026",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{Name: "1. Физика", Group: "Иванов", Class: "101"},
+							{Name: "2. Химия", Group: "Петров", Class: "102"},
+						},
+					},
+				},
+			},
+		},
+	}
+	schedSvc := &mockScheduleService{group: sampleGroup}
+
+	sampleTeacher := &entities.Teacher{
+		Name: "Иванов И. И.",
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник | 26.10.2026",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{Name: "Физика", Group: "101", Class: "101"},
+						},
+					},
+				},
+			},
+		},
+	}
+	teacherSvc := &mockTeacherService{teacher: sampleTeacher}
+
+	handler := handlers.CallbacksHandler(logger, schedSvc, teacherSvc, nil, repo)
+
+	t.Run("group day subgroup switch to subgroup 2", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 301,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.DaySubgroup + "|101:0:2",
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, ctx.editedWhat, "Химия")
+		assert.NotContains(t, ctx.editedWhat, "Физика")
+	})
+
+	t.Run("group day subgroup switch to subgroup 1", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 301,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.DaySubgroup + "|101:0:1",
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, ctx.editedWhat, "Физика")
+		assert.NotContains(t, ctx.editedWhat, "Химия")
+	})
+
+	t.Run("teacher day callback routes to teacher handler properly", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 401,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.TeacherPrevDay + "|Иванов И. И.:0",
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, ctx.editedWhat, "Физика")
+		assert.Contains(t, ctx.editedWhat, "101")
+	})
+
+	t.Run("teacher current week callback routes to teacher handler properly", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 401,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.TeacherCurrentWeek + "|Иванов И. И.",
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, ctx.editedWhat, "Физика")
+	})
 }
