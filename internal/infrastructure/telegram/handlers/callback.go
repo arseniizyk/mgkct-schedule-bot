@@ -10,6 +10,7 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
@@ -67,8 +68,11 @@ func CallbacksHandler(
 
 		// Группы
 		case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay),
+			strings.Contains(data, keyboard.DaySubgroup),
 			strings.Contains(data, "prevday"), strings.Contains(data, "nextday"):
 			err = handleDayNav(ctx, log, c, data, schedSvc, userRepo)
+		case strings.Contains(data, keyboard.WeekSubgroup):
+			err = handleWeekSubgroup(ctx, log, c, data, schedSvc, userRepo)
 		case strings.Contains(data, keyboard.CurrentWeek), strings.Contains(data, "currentweek"):
 			err = handleCurrentWeek(ctx, log, c, data, schedSvc, userRepo)
 		case strings.Contains(data, keyboard.PrevWeek), strings.Contains(data, keyboard.NextWeek),
@@ -146,7 +150,11 @@ func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data st
 	}
 
 	subgroup := 0
-	if userRepo != nil {
+	if len(parts) >= 3 {
+		if sg, err := strconv.Atoi(parts[2]); err == nil {
+			subgroup = sg
+		}
+	} else if userRepo != nil {
 		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
 			subgroup = userSg
 		}
@@ -157,35 +165,73 @@ func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data st
 		return err
 	}
 
-	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineDayKeyboard(groupID, dayIdx, len(group.Days)))
+	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineDayKeyboard(groupID, dayIdx, len(group.Days), subgroup))
 }
 
-func handleCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
+func handleWeekSubgroup(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
-	groupID, err := strconv.Atoi(raw)
+	parts := strings.Split(raw, ":")
+	if len(parts) < 3 {
+		return fmt.Errorf("invalid week subgroup data: %s", raw)
+	}
+
+	groupID, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return err
+	}
+	dateStr := parts[1]
+	subgroup, err := strconv.Atoi(parts[2])
 	if err != nil {
 		return err
 	}
 
-	group, err := svc.GetGroupLatestSchedule(ctx, int32(groupID))
+	if dateStr == "current" {
+		return renderCurrentWeek(ctx, c, svc, groupID, subgroup)
+	}
+
+	date, err := time.Parse("02.01.2006", dateStr)
+	if err != nil {
+		return err
+	}
+
+	return renderWeek(ctx, c, svc, groupID, date, subgroup)
+}
+
+func handleCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
+	raw := dataFromCallbackData(data)
+	parts := strings.Split(raw, ":")
+	groupID, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return err
 	}
 
 	subgroup := 0
-	if userRepo != nil {
+	if len(parts) >= 2 {
+		if sg, err := strconv.Atoi(parts[1]); err == nil {
+			subgroup = sg
+		}
+	} else if userRepo != nil {
 		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
 			subgroup = userSg
 		}
 	}
 
+	return renderCurrentWeek(ctx, c, svc, groupID, subgroup)
+}
+
+func renderCurrentWeek(ctx context.Context, c tele.Context, svc ScheduleService, groupID, subgroup int) error {
+	group, err := svc.GetGroupLatestSchedule(ctx, int32(groupID))
+	if err != nil {
+		return err
+	}
+
 	msg := formatter.FormatScheduleWeekForSubgroup(group, subgroup)
 	weeks, err := svc.GetAvailableWeeks(ctx, group.Week)
 	if err != nil {
-		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		weeks = entities.WeekNavigation{}
 	}
 
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks))
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup))
 }
 
 func handleWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
@@ -205,25 +251,33 @@ func handleWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data s
 		return err
 	}
 
-	group, err := svc.GetGroupScheduleByWeek(ctx, int32(groupID), date)
-	if err != nil {
-		return err
-	}
-
 	subgroup := 0
-	if userRepo != nil {
+	if len(parts) >= 3 {
+		if sg, err := strconv.Atoi(parts[2]); err == nil {
+			subgroup = sg
+		}
+	} else if userRepo != nil {
 		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
 			subgroup = userSg
 		}
 	}
 
+	return renderWeek(ctx, c, svc, groupID, date, subgroup)
+}
+
+func renderWeek(ctx context.Context, c tele.Context, svc ScheduleService, groupID int, date time.Time, subgroup int) error {
+	group, err := svc.GetGroupScheduleByWeek(ctx, int32(groupID), date)
+	if err != nil {
+		return err
+	}
+
 	msg := formatter.FormatScheduleWeekForSubgroup(group, subgroup)
 	weeks, err := svc.GetAvailableWeeks(ctx, date)
 	if err != nil {
-		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		weeks = entities.WeekNavigation{}
 	}
 
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks))
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup))
 }
 
 func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {

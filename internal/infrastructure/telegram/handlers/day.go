@@ -37,7 +37,7 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 					msg,
 					tele.ModeMarkdown,
 					keyboard.ReplyScheduleKeyboard,
-					keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days)),
+					keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), 0),
 				)
 			}
 
@@ -105,7 +105,7 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 			msg,
 			tele.ModeMarkdown,
 			keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days)),
+			keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), subgroup),
 		)
 	}
 }
@@ -137,7 +137,7 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 					msg,
 					tele.ModeMarkdown,
 					keyboard.ReplyScheduleKeyboard,
-					keyboard.InlineWeekKeyboard(int(group.ID), weeks),
+					keyboard.InlineWeekKeyboard(int(group.ID), weeks, 0),
 				)
 			}
 
@@ -216,7 +216,7 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 			msg,
 			tele.ModeMarkdown,
 			keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineWeekKeyboard(int(group.ID), weeks),
+			keyboard.InlineWeekKeyboard(int(group.ID), weeks, subgroup),
 		)
 	}
 }
