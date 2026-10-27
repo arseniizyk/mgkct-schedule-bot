@@ -2,14 +2,20 @@ package formatter
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
+
+// ... [rest of the file remains as in the original state before my edits or as needed]
 
 func TestFormatErrorMessage(t *testing.T) {
 	tests := []struct {
@@ -746,5 +752,51 @@ func TestFilterGroupForSubgroup_SingleSubgroupInSlot(t *testing.T) {
 		assert.Contains(t, msg, "2. Лабораторная")
 	})
 }
+<<<<<<< HEAD
 =======
 >>>>>>> origin/fix/lessons-end-schedule-digest
+=======
+
+func TestIsCurrentWeek(t *testing.T) {
+	currentMonday := time.Date(2026, 10, 26, 0, 0, 0, 0, minskLoc)
+
+	tests := []struct {
+		name string
+		week time.Time
+		want bool
+	}{
+		{
+			name: "parsed week in UTC matches current monday in MSK",
+			week: time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC),
+			want: true,
+		},
+		{
+			name: "week in MSK matches current monday",
+			week: time.Date(2026, 10, 26, 0, 0, 0, 0, minskLoc),
+			want: true,
+		},
+		{
+			name: "next week in UTC does not match",
+			week: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+			want: false,
+		},
+		{
+			name: "past week in UTC does not match",
+			week: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC),
+			want: false,
+		},
+		{
+			name: "zero week matches",
+			week: time.Time{},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isCurrentWeek(tt.week, currentMonday)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+>>>>>>> pr-31
