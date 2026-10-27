@@ -2,22 +2,10 @@ package notifier
 
 import (
 	"context"
-<<<<<<< HEAD
-	"log/slog"
-=======
->>>>>>> origin/fix/lessons-end-schedule-digest
 	"strings"
 	"testing"
 	"time"
 
-<<<<<<< HEAD
-	tele "gopkg.in/telebot.v4"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
-=======
->>>>>>> origin/fix/lessons-end-schedule-digest
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
 
