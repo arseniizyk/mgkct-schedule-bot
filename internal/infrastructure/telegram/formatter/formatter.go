@@ -32,6 +32,17 @@ func FormatErrorMessage(err error) string {
 
 const secondShiftMinIndex = 3
 
+var minskLoc = time.FixedZone("MSK", 3*3600)
+
+func isCurrentWeek(week, currentWeekMonday time.Time) bool {
+	if week.IsZero() {
+		return true
+	}
+	w := week.In(minskLoc)
+	weekMonday := time.Date(w.Year(), w.Month(), w.Day(), 0, 0, 0, 0, minskLoc)
+	return weekMonday.Equal(currentWeekMonday)
+}
+
 func formatScheduleDay(day *entities.Day) string {
 	var sb strings.Builder
 	sb.Grow(256)
@@ -66,14 +77,13 @@ func EffectiveDayIndex(group *entities.Group) int {
 		return 0
 	}
 
-	minskLoc := time.FixedZone("MSK", 3*3600)
 	nowMinsk := time.Now().In(minskLoc)
 	today := (int(nowMinsk.Weekday()) + 6) % 7 // Пн=0 .. Вс=6
 	offset := today
 	currentWeekMonday := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
 
 	// Если расписание относится к будущей или прошедшей неделе (относительно текущей), показываем первый учебный день (понедельник)
-	if !group.Week.IsZero() && !group.Week.Equal(currentWeekMonday) {
+	if !isCurrentWeek(group.Week, currentWeekMonday) {
 		return 0
 	}
 
@@ -290,7 +300,7 @@ func GetDayEndTime(dayIdx, lastSubject int, loc *time.Location) (time.Time, bool
 }
 
 func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
-	return GetDayEndTime(dayIdx, lastSubject, time.Local)
+	return GetDayEndTime(dayIdx, lastSubject, minskLoc)
 }
 
 func FormatScheduleWeek(group *entities.Group) string {
@@ -528,14 +538,13 @@ func EffectiveTeacherDayIndex(teacher *entities.Teacher) int {
 		return 0
 	}
 
-	minskLoc := time.FixedZone("MSK", 3*3600)
 	nowMinsk := time.Now().In(minskLoc)
 	today := (int(nowMinsk.Weekday()) + 6) % 7
 	offset := today
 	currentWeekMonday := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
 
 	// Если расписание относится к будущей или прошедшей неделе (относительно текущей), показываем первый учебный день (понедельник)
-	if !teacher.Week.IsZero() && !teacher.Week.Equal(currentWeekMonday) {
+	if !isCurrentWeek(teacher.Week, currentWeekMonday) {
 		return 0
 	}
 
