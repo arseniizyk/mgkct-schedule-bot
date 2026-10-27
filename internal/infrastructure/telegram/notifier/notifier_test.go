@@ -194,43 +194,6 @@ func TestFormatNextDayDigest_GroupSuccess(t *testing.T) {
 	}
 }
 
-func TestFormatNextDayDigest_GroupSuccess(t *testing.T) {
-	ctx := context.Background()
-	minskLoc := time.FixedZone("MSK", 3*3600)
-	targetDate := time.Date(2026, 10, 13, 12, 0, 0, 0, minskLoc) // Tuesday
-	targetMonday := time.Date(2026, 10, 12, 0, 0, 0, 0, minskLoc)
-
-	schedProv := &mockSchedProvider{
-		byWeekFunc: func(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
-			return &entities.Group{
-				ID:   groupID,
-				Week: targetMonday,
-				Days: []*entities.Day{
-					{Name: "Понедельник"},
-					{
-						Name: "Вторник",
-						Subjects: []*entities.Subject{
-							{Pairs: []*entities.Pair{{Name: "Математика", Class: "101"}}},
-						},
-					},
-				},
-			}, nil
-		},
-	}
-
-	user := entities.User{ChatID: 12345, Group: 101}
-	msg, err := FormatNextDayDigest(ctx, user, targetDate, 1, schedProv, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(msg, "Расписание на") || !strings.Contains(msg, "13.10.2026") {
-		t.Errorf("expected header with date, got %s", msg)
-	}
-	if !strings.Contains(msg, "Математика") {
-		t.Errorf("expected subject in message, got %s", msg)
-	}
-}
-
 func TestFormatNextDayDigest_TeacherSuccess(t *testing.T) {
 	ctx := context.Background()
 	minskLoc := time.FixedZone("MSK", 3*3600)
@@ -271,47 +234,6 @@ func TestFormatNextDayDigest_TeacherSuccess(t *testing.T) {
 		t.Errorf("expected subject in message, got %s", msg)
 	}
 }
-func TestFormatNextDayDigest_TeacherSuccess(t *testing.T) {
-	ctx := context.Background()
-	minskLoc := time.FixedZone("MSK", 3*3600)
-	targetDate := time.Date(2026, 10, 14, 12, 0, 0, 0, minskLoc) // Wednesday
-	targetMonday := time.Date(2026, 10, 12, 0, 0, 0, 0, minskLoc)
-
-	teacherProv := &mockTeacherProvider{
-		byWeekFunc: func(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
-			return &entities.Teacher{
-				Name: name,
-				Week: targetMonday,
-				Days: []*entities.Day{
-					{Name: "Понедельник"},
-					{Name: "Вторник"},
-					{
-						Name: "Среда",
-						Subjects: []*entities.Subject{
-							{Pairs: []*entities.Pair{{Name: "Физика", Group: "101", Class: "202"}}},
-						},
-					},
-				},
-			}, nil
-		},
-		memberFunc: func(ctx context.Context, teacherName string) (*entities.FacultyMember, error) {
-			return &entities.FacultyMember{FullName: teacherName, Department: "Кафедра физики"}, nil
-		},
-	}
-
-	user := entities.User{ChatID: 12345, TeacherName: "Иванов И. И."}
-	msg, err := FormatNextDayDigest(ctx, user, targetDate, 2, nil, teacherProv)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(msg, "Расписание на") || !strings.Contains(msg, "14.10.2026") {
-		t.Errorf("expected header with date, got %s", msg)
-	}
-	if !strings.Contains(msg, "Физика") {
-		t.Errorf("expected subject in message, got %s", msg)
-	}
-}
-
 
 func TestFormatNextDayDigest_WeekNotPublishedYet(t *testing.T) {
 	ctx := context.Background()

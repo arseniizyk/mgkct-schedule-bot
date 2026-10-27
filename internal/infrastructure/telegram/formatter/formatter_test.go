@@ -375,7 +375,6 @@ func TestGetDayEndTime(t *testing.T) {
 		})
 	}
 }
-<<<<<<< HEAD
 
 func TestFormatGroupScheduleDiff(t *testing.T) {
 	diff := &entities.ScheduleDiff{
@@ -752,11 +751,6 @@ func TestFilterGroupForSubgroup_SingleSubgroupInSlot(t *testing.T) {
 		assert.Contains(t, msg, "2. Лабораторная")
 	})
 }
-<<<<<<< HEAD
-=======
->>>>>>> origin/fix/lessons-end-schedule-digest
-=======
-
 func TestIsCurrentWeek(t *testing.T) {
 	currentMonday := time.Date(2026, 10, 26, 0, 0, 0, 0, minskLoc)
 
@@ -799,4 +793,3 @@ func TestIsCurrentWeek(t *testing.T) {
 		})
 	}
 }
->>>>>>> pr-31
