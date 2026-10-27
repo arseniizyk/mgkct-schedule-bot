@@ -292,7 +292,6 @@ func GetDayEndTime(dayIdx, lastSubject int, loc *time.Location) (time.Time, bool
 func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
 	return GetDayEndTime(dayIdx, lastSubject, time.Local)
 }
-
 func FormatScheduleWeek(group *entities.Group) string {
 	return FormatScheduleWeekForSubgroup(group, 0)
 }
