@@ -6,9 +6,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+<<<<<<< HEAD
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+=======
+>>>>>>> origin/fix/lessons-end-schedule-digest
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
@@ -373,6 +376,7 @@ func TestGetDayEndTime(t *testing.T) {
 		})
 	}
 }
+<<<<<<< HEAD
 
 func TestFormatGroupScheduleDiff(t *testing.T) {
 	diff := &entities.ScheduleDiff{
@@ -749,3 +753,5 @@ func TestFilterGroupForSubgroup_SingleSubgroupInSlot(t *testing.T) {
 		assert.Contains(t, msg, "2. Лабораторная")
 	})
 }
+=======
+>>>>>>> origin/fix/lessons-end-schedule-digest
