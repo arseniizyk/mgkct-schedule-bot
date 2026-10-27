@@ -2,16 +2,9 @@ package formatter
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
-<<<<<<< HEAD
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-=======
->>>>>>> origin/fix/lessons-end-schedule-digest
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
