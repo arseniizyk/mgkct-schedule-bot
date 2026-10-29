@@ -24,7 +24,21 @@ func CallbacksHandler(
 	analyticsSvc AnalyticsService,
 	userRepo UserRepo,
 	sm StateManager,
+	extra ...any,
 ) tele.HandlerFunc {
+	var bot BotSender
+	var adminIDs []int64
+	for _, ex := range extra {
+		switch v := ex.(type) {
+		case BotSender:
+			bot = v
+		case []int64:
+			adminIDs = v
+		case context.Context:
+			SetBroadcastContext(v)
+		}
+	}
+
 	return func(c tele.Context) error {
 		callback := c.Callback()
 		data := callback.Data
@@ -34,6 +48,10 @@ func CallbacksHandler(
 
 		var err error
 		switch {
+		// Рассылка администратора
+		case strings.Contains(data, keyboard.BroadcastConfirm), strings.Contains(data, keyboard.BroadcastCancel):
+			return HandleBroadcastCallback(ctx, log, c, data, userRepo, bot, sm, adminIDs)
+
 		// Выбор роли
 		case strings.Contains(data, keyboard.RoleSelect):
 			if sm != nil {
@@ -49,7 +67,7 @@ func CallbacksHandler(
 		// Выбор подгруппы
 		case strings.Contains(data, keyboard.SubgroupSelect):
 			if userRepo != nil {
-				err = handleSubgroupSelect(ctx, log, c, data, userRepo)
+				err = handleSubgroupSelect(ctx, log, c, data, userRepo, sm)
 			}
 
 		// Кабинеты
@@ -63,16 +81,24 @@ func CallbacksHandler(
 			}
 
 		// Архив
+		case strings.Contains(data, keyboard.ArchiveBack):
+			err = handleArchiveBack(ctx, log, c, data, schedSvc, teacherSvc)
 		case strings.Contains(data, keyboard.ArchiveSelect):
-			err = handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc)
+			err = handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc, userRepo)
+
+		// Закрепление преподавателя
+		case strings.Contains(data, keyboard.TeacherSetSelect):
+			if userRepo != nil {
+				err = handleTeacherSetSelect(ctx, log, c, data, userRepo, sm)
+			}
 
 		// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
 		case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
-			err = handleTeacherDayNav(ctx, log, c, data, teacherSvc)
+			err = handleTeacherDayNav(ctx, log, c, data, teacherSvc, userRepo)
 		case strings.Contains(data, keyboard.TeacherCurrentWeek):
-			err = handleTeacherCurrentWeek(ctx, log, c, data, teacherSvc)
+			err = handleTeacherCurrentWeek(ctx, log, c, data, teacherSvc, userRepo)
 		case strings.Contains(data, keyboard.TeacherPrevWeek), strings.Contains(data, keyboard.TeacherNextWeek):
-			err = handleTeacherWeekNav(ctx, log, c, data, teacherSvc)
+			err = handleTeacherWeekNav(ctx, log, c, data, teacherSvc, userRepo)
 
 		// Группы
 		case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay),
@@ -109,7 +135,7 @@ func handleRoleSelect(ctx context.Context, log *slog.Logger, c tele.Context, dat
 	chatID := c.Chat().ID
 
 	// Очищаем инлайн-кнопки выбора роли у сообщения
-	_ = safeEdit(c, &tele.ReplyMarkup{})
+	_ = c.Edit(&tele.ReplyMarkup{})
 
 	switch raw {
 	case keyboard.RoleStudent:
@@ -131,7 +157,7 @@ func handleRoleSelect(ctx context.Context, log *slog.Logger, c tele.Context, dat
 	}
 }
 
-func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, userRepo UserRepo) error {
+func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, userRepo UserRepo, sm StateManager) error {
 	raw := dataFromCallbackData(data)
 	parts := strings.Split(raw, ":")
 	if len(parts) < 2 {
@@ -153,6 +179,10 @@ func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context,
 		return err
 	}
 
+	if sm != nil {
+		_ = sm.Clear(c.Chat().ID)
+	}
+
 	var text string
 	if subgroup > 0 {
 		text = fmt.Sprintf(messages.GroupWithSubgroupSaved, groupID, subgroup)
@@ -160,7 +190,28 @@ func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context,
 		text = messages.GroupSaved
 	}
 
-	return safeEdit(c, text)
+	_ = c.Edit(&tele.ReplyMarkup{})
+	return c.Send(text, keyboard.ReplyScheduleKeyboard)
+}
+
+func handleTeacherSetSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, userRepo UserRepo, sm StateManager) error {
+	raw := dataFromCallbackData(data)
+	teacherName := raw
+	if teacherName == "" {
+		return fmt.Errorf("invalid teacher set select data: %s", data)
+	}
+
+	if err := userRepo.SetTeacher(ctx, c.Chat().ID, teacherName); err != nil {
+		log.Error("failed saving user teacher from callback", "teacher", teacherName, "error", err)
+		return err
+	}
+
+	if sm != nil {
+		_ = sm.Clear(c.Chat().ID)
+	}
+
+	_ = c.Edit(&tele.ReplyMarkup{})
+	return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
 }
 
 func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
@@ -315,7 +366,7 @@ func renderWeek(ctx context.Context, c tele.Context, svc ScheduleService, groupI
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup))
 }
 
-func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
+func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
 	teacherName, dayStr, found := strings.CutLast(raw, ":")
 	if !found {
@@ -337,13 +388,15 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 		return err
 	}
 
-	member, _ := svc.GetFacultyMember(ctx, teacherName)
-	msg = formatter.FormatTeacherProfile(member) + msg
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+		member, _ := svc.GetFacultyMember(ctx, teacherName)
+		msg = formatter.FormatTeacherProfile(member) + msg
+	}
 
 	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherDayKeyboard(teacherName, dayIdx, len(teacher.Days)))
 }
 
-func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
+func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
 	teacherName := dataFromCallbackData(data)
 
 	teacher, err := svc.GetTeacherLatestSchedule(ctx, teacherName)
@@ -351,8 +404,12 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 		return err
 	}
 
-	member, _ := svc.GetFacultyMember(ctx, teacherName)
-	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+		member, _ := svc.GetFacultyMember(ctx, teacherName)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := svc.GetAvailableWeeks(ctx, teacherName, teacher.Week)
 	if err != nil {
 		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
@@ -361,7 +418,7 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherWeekKeyboard(teacherName, weeks))
 }
 
-func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
+func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
 	teacherName, dateStr, found := strings.CutLast(raw, ":")
 	if !found {
@@ -378,8 +435,12 @@ func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context,
 		return err
 	}
 
-	member, _ := svc.GetFacultyMember(ctx, teacherName)
-	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+		member, _ := svc.GetFacultyMember(ctx, teacherName)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := svc.GetAvailableWeeks(ctx, teacherName, date)
 	if err != nil {
 		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
@@ -437,7 +498,7 @@ func handleCabinetWeek(ctx context.Context, log *slog.Logger, c tele.Context, da
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 }
 
-func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService) error {
+func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
 	// формат "g:101:02.01.2006" или "t:Иванов И.И.:02.01.2006"
 	parts := strings.Split(raw, ":")
@@ -454,6 +515,8 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 		return err
 	}
 
+	kbd := keyboard.InlineArchiveReturnKeyboard(targetType, targetID)
+
 	if targetType == "g" {
 		groupID, err := strconv.Atoi(targetID)
 		if err != nil {
@@ -464,14 +527,52 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 			return err
 		}
 		msg := formatter.FormatScheduleWeek(group)
-		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		return editLongMessage(c, msg, tele.ModeMarkdown, kbd)
 	}
 
 	teacher, err := teacherSvc.GetTeacherArchiveSchedule(ctx, targetID, date)
 	if err != nil {
 		return err
 	}
-	member, _ := teacherSvc.GetFacultyMember(ctx, targetID)
-	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, targetID) {
+		member, _ := teacherSvc.GetFacultyMember(ctx, targetID)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
+	return editLongMessage(c, msg, tele.ModeMarkdown, kbd)
+}
+
+func handleArchiveBack(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService) error {
+	raw := dataFromCallbackData(data)
+	// формат "g:101" или "t:Иванов И.И."
+	parts := strings.Split(raw, ":")
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid archive back data: %s", raw)
+	}
+
+	targetType := parts[0]
+	targetID := parts[1]
+
+	if targetType == "g" {
+		groupID, err := strconv.Atoi(targetID)
+		if err != nil {
+			return err
+		}
+		weeks, err := schedSvc.GetAllWeeks(ctx)
+		if err != nil || len(weeks) == 0 {
+			return safeEdit(c, fmt.Sprintf("Архив расписаний для группы %d пока пуст.", groupID))
+		}
+		msg := fmt.Sprintf("📦 *Архив расписания группы %d*\nВыберите неделю для просмотра:", groupID)
+		kbd := keyboard.InlineArchiveWeeksKeyboard("g", targetID, weeks)
+		return safeEdit(c, msg, tele.ModeMarkdown, kbd)
+	}
+
+	weeks, err := teacherSvc.GetAllWeeks(ctx, targetID)
+	if err != nil || len(weeks) == 0 {
+		return safeEdit(c, fmt.Sprintf("📦 Архив расписаний для преподавателя *%s* пока пуст.", targetID), tele.ModeMarkdown)
+	}
+	msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю для просмотра:", targetID)
+	kbd := keyboard.InlineArchiveWeeksKeyboard("t", targetID, weeks)
+	return safeEdit(c, msg, tele.ModeMarkdown, kbd)
 }

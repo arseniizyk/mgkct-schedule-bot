@@ -41,8 +41,20 @@ func Calls() tele.HandlerFunc {
 	}
 }
 
+// Help обрабатывает команду /help. Для администраторов показывает расширенную справку.
+func Help(adminIDs []int64) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		text := messages.Help
+		if IsAdmin(adminIDs, c.Chat().ID) {
+			text += messages.HelpAdmin
+		}
+		return c.Send(text, keyboard.ReplyScheduleKeyboard)
+	}
+}
+
 func Cancel(log *slog.Logger, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
+		ClearBroadcastDraft(c.Chat().ID)
 		if err := sm.Clear(c.Chat().ID); err != nil {
 			log.Warn("failed to clear state on cancel", "error", err)
 		}
@@ -81,6 +93,10 @@ func SetGroup(log *slog.Logger, userRepo UserRepo, sm StateManager) tele.Handler
 		if err := userRepo.SetUserGroup(ctx, c.Chat().ID, groupID, subgroup); err != nil {
 			log.Error("failed saving user group", "error", err)
 			return c.Send(messages.Internal)
+		}
+
+		if sm != nil {
+			_ = sm.Clear(c.Chat().ID)
 		}
 
 		if subgroup > 0 {

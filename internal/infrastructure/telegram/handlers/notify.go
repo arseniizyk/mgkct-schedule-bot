@@ -26,7 +26,7 @@ func Notify(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 					log.Error("failed setting notify evening on", "error", err)
 					return c.Send("Ошибка сохранения настроек уведомлений.", keyboard.ReplyScheduleKeyboard)
 				}
-				return c.Send("🔔 Рассылка расписания на завтра *включена* (после окончания пар и вечером в 20:00).", tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+				return c.Send("🔔 Рассылка расписания на завтра *включена* (после окончания пар).", tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 			}
 			if arg == "off" || arg == "0" || arg == "false" {
 				if err := userRepo.SetNotifyEvening(ctx, c.Chat().ID, false); err != nil {
@@ -42,7 +42,7 @@ func Notify(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 			enabled = true
 		}
 
-		statusStr := "🔔 Включена (после окончания пар и в 20:00)"
+		statusStr := "🔔 Включена (после окончания пар)"
 		if !enabled {
 			statusStr = "🔕 Отключена"
 		}
@@ -65,7 +65,7 @@ func handleNotifyToggle(ctx context.Context, log *slog.Logger, c tele.Context, d
 		return err
 	}
 
-	statusStr := "🔔 Включена (после окончания пар и в 20:00)"
+	statusStr := "🔔 Включена (после окончания пар)"
 	if !enable {
 		statusStr = "🔕 Отключена"
 	}

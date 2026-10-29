@@ -12,19 +12,23 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/service"
 )
 
 // Cabinet обрабатывает команду /cabinet <номер>
-func Cabinet(log *slog.Logger, analyticsSvc AnalyticsService) tele.HandlerFunc {
+func Cabinet(log *slog.Logger, analyticsSvc AnalyticsService, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		args := c.Args()
 		if len(args) == 0 {
-			return c.Send(
-				"🚪 *Поиск расписания по аудитории*\n\nИспользование: `/cabinet <номер>`\nНапример: `/cabinet 301` или `/cabinet 3-207`\n\nСписок всех кабинетов: /cabinets",
-				tele.ModeMarkdown,
-				keyboard.ReplyScheduleKeyboard,
-			)
+			if sm != nil {
+				if err := sm.Set(c.Chat().ID, state.WaitingCabinet); err != nil {
+					log.Error("failed setting waiting cabinet state", "error", err)
+					return c.Send(messages.Internal)
+				}
+			}
+			return c.Send(messages.WaitingCabinet)
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -61,38 +65,6 @@ func Cabinet(log *slog.Logger, analyticsSvc AnalyticsService) tele.HandlerFunc {
 			keyboard.ReplyScheduleKeyboard,
 			keyboard.InlineCabinetDayKeyboard(cabSched.Cabinet, dayIdx, len(cabSched.Days)),
 		)
-	}
-}
-
-// Cabinets обрабатывает команду /cabinets (список всех аудиторий)
-func Cabinets(log *slog.Logger, analyticsSvc AnalyticsService) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		cabinets, err := analyticsSvc.GetAllCabinets(ctx)
-		if err != nil {
-			log.Error("failed getting cabinets list", "error", err)
-			return c.Send("Не удалось получить список кабинетов.", keyboard.ReplyScheduleKeyboard)
-		}
-
-		if len(cabinets) == 0 {
-			return c.Send("Кабинеты в расписании не найдены.", keyboard.ReplyScheduleKeyboard)
-		}
-
-		var sb strings.Builder
-		sb.WriteString("🚪 *Аудитории колледжа в расписании:*\n\n")
-
-		lineCount := 0
-		for _, cab := range cabinets {
-			fmt.Fprintf(&sb, "`/cabinet %s`  ", cab)
-			lineCount++
-			if lineCount%3 == 0 {
-				sb.WriteString("\n")
-			}
-		}
-
-		return sendLongMessage(c, sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 	}
 }
 

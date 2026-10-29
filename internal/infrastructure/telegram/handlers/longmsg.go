@@ -49,7 +49,20 @@ func editLongMessage(c tele.Context, text string, opt ...any) error {
 }
 
 func safeEdit(c tele.Context, what any, opt ...any) error {
-	err := c.Edit(what, opt...)
+	var cleanOpts []any
+	for _, o := range opt {
+		if rm, ok := o.(*tele.ReplyMarkup); ok {
+			// В c.Edit разрешен только InlineKeyboardMarkup.
+			// Передача обычного ReplyKeyboardMarkup вызывает 400 Bad Request: inline keyboard expected.
+			if rm != nil && len(rm.InlineKeyboard) > 0 {
+				cleanOpts = append(cleanOpts, rm)
+			}
+			continue
+		}
+		cleanOpts = append(cleanOpts, o)
+	}
+
+	err := c.Edit(what, cleanOpts...)
 	if err != nil && strings.Contains(err.Error(), "message is not modified") {
 		return nil
 	}

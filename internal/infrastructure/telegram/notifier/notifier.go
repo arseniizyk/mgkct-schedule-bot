@@ -38,24 +38,24 @@ type BotSender interface {
 }
 
 type Notifier struct {
-	log         *slog.Logger
-	bot         BotSender
-	userStore   UserStore
-	adminChatID int64
-	throttle    <-chan time.Time
+	log       *slog.Logger
+	bot       BotSender
+	userStore UserStore
+	adminIDs  []int64
+	throttle  <-chan time.Time
 }
 
-func New(log *slog.Logger, bot BotSender, userStore UserStore, adminChatID int64) *Notifier {
+func New(log *slog.Logger, bot BotSender, userStore UserStore, adminIDs []int64) *Notifier {
 	// Лимит Telegram: около 30 сообщений в секунду.
 	// Используем тикер на 40ms (25 сообщений в секунду) для гарантированной защиты от 429 Too Many Requests.
 	ticker := time.NewTicker(40 * time.Millisecond)
 
 	return &Notifier{
-		log:         log,
-		bot:         bot,
-		userStore:   userStore,
-		adminChatID: adminChatID,
-		throttle:    ticker.C,
+		log:       log,
+		bot:       bot,
+		userStore: userStore,
+		adminIDs:  adminIDs,
+		throttle:  ticker.C,
 	}
 }
 
@@ -210,30 +210,44 @@ func (n *Notifier) HandleTeacherScheduleUpdate(ctx context.Context, teacher *ent
 
 // HandleScraperError отправляет алерт администратору о сбое парсера.
 func (n *Notifier) HandleScraperError(ctx context.Context, err error, fails int) error {
-	if n.adminChatID == 0 {
+	if len(n.adminIDs) == 0 {
 		return nil
+	}
+	errMsg := "неизвестная ошибка"
+	if err != nil {
+		errMsg = err.Error()
 	}
 	msg := fmt.Sprintf(
 		"⚠️ *Внимание! Сбой парсера расписания!*\n\nСайт колледжа недоступен или парсер упал *%d* раз подряд.\n\n*Ошибка:* `%s`\n_Время: %s_",
 		fails,
-		err.Error(),
+		errMsg,
 		time.Now().Format("15:04:05 02.01.2006"),
 	)
-	_, sendErr := n.bot.Send(tele.ChatID(n.adminChatID), msg, tele.ModeMarkdown)
-	return sendErr
+	var firstErr error
+	for _, adminID := range n.adminIDs {
+		if _, sendErr := n.bot.Send(tele.ChatID(adminID), msg, tele.ModeMarkdown); sendErr != nil && firstErr == nil {
+			firstErr = sendErr
+		}
+	}
+	return firstErr
 }
 
 // HandleScraperRecovered отправляет уведомление о восстановлении работы парсера.
 func (n *Notifier) HandleScraperRecovered(ctx context.Context) error {
-	if n.adminChatID == 0 {
+	if len(n.adminIDs) == 0 {
 		return nil
 	}
 	msg := fmt.Sprintf(
 		"✅ *Парсер восстановил работу!*\n\nСайт колледжа снова отвечает, расписание успешно обработано.\n_Время: %s_",
 		time.Now().Format("15:04:05 02.01.2006"),
 	)
-	_, sendErr := n.bot.Send(tele.ChatID(n.adminChatID), msg, tele.ModeMarkdown)
-	return sendErr
+	var firstErr error
+	for _, adminID := range n.adminIDs {
+		if _, sendErr := n.bot.Send(tele.ChatID(adminID), msg, tele.ModeMarkdown); sendErr != nil && firstErr == nil {
+			firstErr = sendErr
+		}
+	}
+	return firstErr
 }
 
 // CalculateTomorrowDate рассчитывает целевую дату следующего учебного дня и индекс дня (0..5 для Пн..Сб).
@@ -297,11 +311,12 @@ func FormatNextDayDigest(
 			return "", err
 		}
 
-		if dayIdx < 0 || dayIdx >= len(grp.Days) {
+		filtered := formatter.FilterGroupForSubgroup(grp, user.Subgroup)
+		if dayIdx < 0 || dayIdx >= len(filtered.Days) || filtered.Days[dayIdx] == nil {
 			return "", fmt.Errorf("dayIdx %d out of range", dayIdx)
 		}
 
-		dayMsg, err := formatter.FormatScheduleDayAt(grp, dayIdx)
+		dayMsg, err := formatter.FormatScheduleDayAt(filtered, dayIdx)
 		if err != nil {
 			return "", err
 		}
@@ -320,7 +335,7 @@ func FormatNextDayDigest(
 			return "", err
 		}
 
-		if dayIdx < 0 || dayIdx >= len(t.Days) {
+		if dayIdx < 0 || dayIdx >= len(t.Days) || t.Days[dayIdx] == nil {
 			return "", fmt.Errorf("dayIdx %d out of range", dayIdx)
 		}
 
@@ -328,24 +343,24 @@ func FormatNextDayDigest(
 		if err != nil {
 			return "", err
 		}
-		member, _ := teacherProvider.GetFacultyMember(ctx, user.TeacherName)
-		profile := formatter.FormatTeacherProfile(member)
-		return fmt.Sprintf("📚 *Расписание на %s (%s)*:\n\n%s%s", headerDay, targetDate.Format("02.01.2006"), profile, teachMsg), nil
+		return fmt.Sprintf("📚 *Расписание на %s (%s)*:\n\n%s", headerDay, targetDate.Format("02.01.2006"), teachMsg), nil
 	}
 
 	return "", errors.New("neither group nor teacher specified")
 }
 
-// SendNextDayDigestForTarget отправляет расписание на следующий день всем подписчикам конкретной группы или преподавателя.
-// Возвращает список ChatID пользователей, которым успешно отправлено сообщение.
-func (n *Notifier) SendNextDayDigestForTarget(
+// SendNextDayDigestForGroupSubgroup отправляет расписание на следующий день подписчикам конкретной группы и подгруппы.
+func (n *Notifier) SendNextDayDigestForGroupSubgroup(
 	ctx context.Context,
 	schedProvider ScheduleProvider,
-	teacherProvider TeacherProvider,
 	targetGroup int,
-	targetTeacher string,
+	targetSubgroup int,
 ) ([]int64, error) {
-	log := n.log.With("operation", "notifier.Notifier.SendNextDayDigestForTarget", "group", targetGroup, "teacher", targetTeacher)
+	log := n.log.With(
+		"operation", "notifier.Notifier.SendNextDayDigestForGroupSubgroup",
+		"group", targetGroup,
+		"subgroup", targetSubgroup,
+	)
 	users, err := n.userStore.UsersForEveningNotification(ctx)
 	if err != nil {
 		log.ErrorContext(ctx, "failed getting users for digest", "error", err)
@@ -354,17 +369,12 @@ func (n *Notifier) SendNextDayDigestForTarget(
 
 	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
 
-	var dummyUser entities.User
-	switch {
-	case targetGroup > 0:
-		dummyUser.Group = targetGroup
-	case targetTeacher != "":
-		dummyUser.TeacherName = targetTeacher
-	default:
-		return nil, errors.New("neither group nor teacher specified")
+	dummyUser := entities.User{
+		Group:    targetGroup,
+		Subgroup: targetSubgroup,
 	}
 
-	msg, err := FormatNextDayDigest(ctx, dummyUser, targetDate, dayIdx, schedProvider, teacherProvider)
+	msg, err := FormatNextDayDigest(ctx, dummyUser, targetDate, dayIdx, schedProvider, nil)
 	if err != nil {
 		log.WarnContext(ctx, "failed formatting next day digest", "error", err)
 		return nil, err
@@ -372,29 +382,79 @@ func (n *Notifier) SendNextDayDigestForTarget(
 
 	var sentIDs []int64
 	for _, u := range users {
-		match := false
-		if targetGroup > 0 && u.Group == targetGroup {
-			match = true
-		} else if targetTeacher != "" && u.TeacherName == targetTeacher {
-			match = true
-		}
-		if !match {
-			continue
-		}
-
-		select {
-		case <-ctx.Done():
-			return sentIDs, ctx.Err()
-		case <-n.throttle:
-			if _, sendErr := n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown); sendErr != nil {
-				log.WarnContext(ctx, "failed sending next day digest", "chat_id", u.ChatID, "error", sendErr)
-			} else {
-				sentIDs = append(sentIDs, u.ChatID)
+		if u.Group == targetGroup && u.Subgroup == targetSubgroup {
+			select {
+			case <-ctx.Done():
+				return sentIDs, ctx.Err()
+			case <-n.throttle:
+				if _, sendErr := n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown); sendErr != nil {
+					log.WarnContext(ctx, "failed sending next day digest", "chat_id", u.ChatID, "error", sendErr)
+				} else {
+					sentIDs = append(sentIDs, u.ChatID)
+				}
 			}
 		}
 	}
 
 	return sentIDs, nil
+}
+
+// SendNextDayDigestForTeacher отправляет расписание на следующий день подписчикам преподавателя.
+func (n *Notifier) SendNextDayDigestForTeacher(
+	ctx context.Context,
+	teacherProvider TeacherProvider,
+	targetTeacher string,
+) ([]int64, error) {
+	log := n.log.With("operation", "notifier.Notifier.SendNextDayDigestForTeacher", "teacher", targetTeacher)
+	users, err := n.userStore.UsersForEveningNotification(ctx)
+	if err != nil {
+		log.ErrorContext(ctx, "failed getting users for digest", "error", err)
+		return nil, err
+	}
+
+	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
+	dummyUser := entities.User{TeacherName: targetTeacher}
+
+	msg, err := FormatNextDayDigest(ctx, dummyUser, targetDate, dayIdx, nil, teacherProvider)
+	if err != nil {
+		log.WarnContext(ctx, "failed formatting next day digest for teacher", "error", err)
+		return nil, err
+	}
+
+	var sentIDs []int64
+	for _, u := range users {
+		if u.TeacherName == targetTeacher {
+			select {
+			case <-ctx.Done():
+				return sentIDs, ctx.Err()
+			case <-n.throttle:
+				if _, sendErr := n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown); sendErr != nil {
+					log.WarnContext(ctx, "failed sending next day digest", "chat_id", u.ChatID, "error", sendErr)
+				} else {
+					sentIDs = append(sentIDs, u.ChatID)
+				}
+			}
+		}
+	}
+
+	return sentIDs, nil
+}
+
+// SendNextDayDigestForTarget отправляет расписание на следующий день всем подписчикам конкретной группы или преподавателя.
+func (n *Notifier) SendNextDayDigestForTarget(
+	ctx context.Context,
+	schedProvider ScheduleProvider,
+	teacherProvider TeacherProvider,
+	targetGroup int,
+	targetTeacher string,
+) ([]int64, error) {
+	if targetGroup > 0 {
+		return n.SendNextDayDigestForGroupSubgroup(ctx, schedProvider, targetGroup, 0)
+	}
+	if targetTeacher != "" {
+		return n.SendNextDayDigestForTeacher(ctx, teacherProvider, targetTeacher)
+	}
+	return nil, errors.New("neither group nor teacher specified")
 }
 
 // SendEveningDigest рассылает расписание на завтра всем пользователям с включенными уведомлениями.
