@@ -30,6 +30,11 @@ type BotConfig struct {
 	WebAppURL  string  `env:"WEB_APP_URL" env-default:""`
 	APIURL     string  `env:"API_URL" env-default:""`
 	AdminIDs   []int64 `env:"ADMIN_IDS" env-separator:","`
+	// Webhook-режим: если задан — бот принимает обновления через вебхук вместо Long Polling.
+	// Значение должно быть публичным HTTPS URL, например: https://example.com/telegram/webhook
+	WebhookURL string `env:"WEBHOOK_URL" env-default:""`
+	// Секретный токен для проверки заголовка X-Telegram-Bot-Api-Secret-Token (опционально)
+	WebhookSecret string `env:"WEBHOOK_SECRET" env-default:""`
 }
 
 type DBConfig struct {
