@@ -55,7 +55,7 @@ func Archive(
 				return sendGroupArchiveSchedule(ctx, c, schedSvc, int32(groupID), targetDate)
 			}
 			if teacher, err := userRepo.GetTeacher(ctx, c.Chat().ID); err == nil && teacher != "" {
-				return sendTeacherArchiveSchedule(ctx, c, teacherSvc, teacher, targetDate)
+				return sendTeacherArchiveSchedule(ctx, c, teacherSvc, userRepo, teacher, targetDate)
 			}
 			return c.Send("Укажите группу или преподавателя для поиска в архиве: `/archive <группа> <дата>`", tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
@@ -91,7 +91,7 @@ func Archive(
 		}
 
 		if hasDate {
-			return sendTeacherArchiveSchedule(ctx, c, teacherSvc, validatedName, targetDate)
+			return sendTeacherArchiveSchedule(ctx, c, teacherSvc, userRepo, validatedName, targetDate)
 		}
 
 		weeks, err := teacherSvc.GetAllWeeks(ctx, validatedName)
@@ -118,7 +118,7 @@ func sendGroupArchiveSchedule(ctx context.Context, c tele.Context, svc ScheduleS
 	return c.Send(msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 }
 
-func sendTeacherArchiveSchedule(ctx context.Context, c tele.Context, svc TeacherService, teacherName string, date time.Time) error {
+func sendTeacherArchiveSchedule(ctx context.Context, c tele.Context, svc TeacherService, userRepo UserRepo, teacherName string, date time.Time) error {
 	teacher, err := svc.GetTeacherArchiveSchedule(ctx, teacherName, date)
 	if err != nil {
 		return c.Send(
@@ -128,8 +128,12 @@ func sendTeacherArchiveSchedule(ctx context.Context, c tele.Context, svc Teacher
 		)
 	}
 
-	member, _ := svc.GetFacultyMember(ctx, teacherName)
-	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+		member, _ := svc.GetFacultyMember(ctx, teacherName)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	return c.Send(msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 }
 

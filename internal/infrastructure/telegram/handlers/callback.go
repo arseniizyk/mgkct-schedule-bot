@@ -66,15 +66,15 @@ func CallbacksHandler(
 		case strings.Contains(data, keyboard.ArchiveBack):
 			err = handleArchiveBack(ctx, log, c, data, schedSvc, teacherSvc)
 		case strings.Contains(data, keyboard.ArchiveSelect):
-			err = handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc)
+			err = handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc, userRepo)
 
 		// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
 		case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
-			err = handleTeacherDayNav(ctx, log, c, data, teacherSvc)
+			err = handleTeacherDayNav(ctx, log, c, data, teacherSvc, userRepo)
 		case strings.Contains(data, keyboard.TeacherCurrentWeek):
-			err = handleTeacherCurrentWeek(ctx, log, c, data, teacherSvc)
+			err = handleTeacherCurrentWeek(ctx, log, c, data, teacherSvc, userRepo)
 		case strings.Contains(data, keyboard.TeacherPrevWeek), strings.Contains(data, keyboard.TeacherNextWeek):
-			err = handleTeacherWeekNav(ctx, log, c, data, teacherSvc)
+			err = handleTeacherWeekNav(ctx, log, c, data, teacherSvc, userRepo)
 
 		// Группы
 		case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay),
@@ -317,7 +317,7 @@ func renderWeek(ctx context.Context, c tele.Context, svc ScheduleService, groupI
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup))
 }
 
-func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
+func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
 	teacherName, dayStr, found := strings.CutLast(raw, ":")
 	if !found {
@@ -339,13 +339,15 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 		return err
 	}
 
-	member, _ := svc.GetFacultyMember(ctx, teacherName)
-	msg = formatter.FormatTeacherProfile(member) + msg
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+		member, _ := svc.GetFacultyMember(ctx, teacherName)
+		msg = formatter.FormatTeacherProfile(member) + msg
+	}
 
 	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherDayKeyboard(teacherName, dayIdx, len(teacher.Days)))
 }
 
-func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
+func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
 	teacherName := dataFromCallbackData(data)
 
 	teacher, err := svc.GetTeacherLatestSchedule(ctx, teacherName)
@@ -353,8 +355,12 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 		return err
 	}
 
-	member, _ := svc.GetFacultyMember(ctx, teacherName)
-	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+		member, _ := svc.GetFacultyMember(ctx, teacherName)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := svc.GetAvailableWeeks(ctx, teacherName, teacher.Week)
 	if err != nil {
 		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
@@ -363,7 +369,7 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherWeekKeyboard(teacherName, weeks))
 }
 
-func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
+func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
 	teacherName, dateStr, found := strings.CutLast(raw, ":")
 	if !found {
@@ -380,8 +386,12 @@ func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context,
 		return err
 	}
 
-	member, _ := svc.GetFacultyMember(ctx, teacherName)
-	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+		member, _ := svc.GetFacultyMember(ctx, teacherName)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := svc.GetAvailableWeeks(ctx, teacherName, date)
 	if err != nil {
 		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
@@ -439,7 +449,7 @@ func handleCabinetWeek(ctx context.Context, log *slog.Logger, c tele.Context, da
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 }
 
-func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService) error {
+func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
 	// формат "g:101:02.01.2006" или "t:Иванов И.И.:02.01.2006"
 	parts := strings.Split(raw, ":")
@@ -475,8 +485,12 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 	if err != nil {
 		return err
 	}
-	member, _ := teacherSvc.GetFacultyMember(ctx, targetID)
-	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, targetID) {
+		member, _ := teacherSvc.GetFacultyMember(ctx, targetID)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	return editLongMessage(c, msg, tele.ModeMarkdown, kbd)
 }
 
