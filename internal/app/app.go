@@ -82,10 +82,12 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	scraperSvc.SetFaculty(facultyParser, facultyRepo)
 
 	// 4. Telegram Бот
+	poller, webhookHandler := buildPoller(cfg)
+
 	botPref := tele.Settings{
 		URL:    cfg.Bot.APIURL,
 		Token:  cfg.Bot.Token,
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+		Poller: poller,
 		Client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -136,6 +138,15 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		analyticsSvc,
 		userRepo,
 	)
+
+	// Если выбран webhook-режим — монтируем обработчик в HTTP-роутер
+	if webhookHandler != nil {
+		const webhookPath = "/telegram/webhook"
+		httpSrv.RegisterWebhook(webhookPath, webhookHandler)
+		log.Info("Бот запущен в Webhook-режиме", "path", webhookPath)
+	} else {
+		log.Info("Бот запущен в Long Polling-режиме")
+	}
 
 	return &App{
 		log:         log,
@@ -632,4 +643,28 @@ func registerBotHandlers(
 	// Инлайн-коллбэки и ввод текста
 	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr, bot, cfg.Bot.AdminIDs))
 	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc, scheduleSvc, analyticsSvc, subjectDict, bot, cfg.Bot.AdminIDs))
+}
+
+// buildPoller выбирает режим получения обновлений от Telegram.
+// Если в конфиге задан BOT_WEBHOOK_URL — возвращает *tele.Webhook и http.Handler для монтирования
+// в HTTP-роутер. В противном случае возвращает *tele.LongPoller и nil в качестве handler.
+func buildPoller(cfg *config.Config) (tele.Poller, http.Handler) {
+	if cfg.Bot.WebhookURL == "" {
+		return &tele.LongPoller{Timeout: 10 * time.Second}, nil
+	}
+
+	wh := &tele.Webhook{
+		// Listen намеренно оставляем пустым — HTTP-сервер запускается отдельно.
+		// telebot будет принимать обновления через ServeHTTP, а не открывать собственный порт.
+		Listen: "",
+		Endpoint: &tele.WebhookEndpoint{
+			PublicURL: cfg.Bot.WebhookURL,
+		},
+		SecretToken: cfg.Bot.WebhookSecret,
+		// При первом запуске сбрасываем накопившиеся обновления, которые
+		// могли прийти пока бот был офлайн и слушал через Long Polling.
+		DropUpdates: false,
+	}
+
+	return wh, wh
 }

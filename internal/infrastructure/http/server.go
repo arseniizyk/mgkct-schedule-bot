@@ -32,6 +32,7 @@ type Server struct {
 	analyticsSvc *service.AnalyticsService
 	userRepo     *repository.UserRepository
 	httpSrv      *http.Server
+	mux          *http.ServeMux
 }
 
 func New(
@@ -54,6 +55,7 @@ func New(
 	}
 
 	mux := http.NewServeMux()
+	s.mux = mux
 
 	// Healthcheck
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
@@ -87,6 +89,12 @@ func New(
 	}
 
 	return s
+}
+
+// RegisterWebhook регистрирует обработчик вебхука Telegram в HTTP-роутере.
+// Должен вызываться до старта HTTP-сервера.
+func (s *Server) RegisterWebhook(path string, handler http.Handler) {
+	s.mux.Handle("POST "+path, handler)
 }
 
 func (s *Server) Start() error {
