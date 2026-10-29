@@ -40,6 +40,7 @@ type App struct {
 	httpSrv     *httpserver.Server
 	scheduleSvc *service.ScheduleService
 	teacherSvc  *service.TeacherService
+	digestRepo  *repository.DigestSentRepository
 }
 
 func New(log *slog.Logger, cfg *config.Config) (*App, error) {
@@ -57,6 +58,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	teacherRepo := repository.NewTeacherScheduleRepository(database)
 	facultyRepo := repository.NewFacultyRepository(database)
 	userRepo := repository.NewUserRepository(database)
+	digestRepo := repository.NewDigestSentRepository(database)
 
 	// 3. Сервисы и справочники
 	subjectDict := dictionary.NewSubjectDictionary()
@@ -165,6 +167,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		httpSrv:     httpSrv,
 		scheduleSvc: scheduleSvc,
 		teacherSvc:  teacherSvc,
+		digestRepo:  digestRepo,
 	}, nil
 }
 
@@ -176,7 +179,11 @@ func (a *App) Run() error {
 	// 1. Запуск обработчика событий рассылки
 	go a.listenEvents(ctx)
 
-	// 2. Запуск планировщика вечернего дайджеста
+	// 2. Защита от повторной рассылки при перезапуске:
+	//    если бот стартует после окончания пар — помечаем всех как уже уведомлённых.
+	a.seedDigestLogIfNeeded(ctx)
+
+	// 3. Запуск планировщика вечернего дайджеста
 	go a.startEveningDigestScheduler(ctx)
 
 	// 3. Запуск фонового скрапера
@@ -258,14 +265,99 @@ type groupSubgroupKey struct {
 	subgroup int
 }
 
+// seedDigestLogIfNeeded вызывается при старте приложения.
+// Если сейчас рабочий день и пары уже закончились — помечает все группы и преподавателей
+// как уже уведомлённых на сегодня, не отправляя сообщений.
+// Это предотвращает повторную рассылку при перезапуске или деплое новой версии.
+func (a *App) seedDigestLogIfNeeded(ctx context.Context) {
+	const op = "app.App.seedDigestLogIfNeeded"
+	log := a.log.With("operation", op)
+
+	minskLoc := time.FixedZone("MSK", 3*3600)
+	now := time.Now().In(minskLoc)
+	weekday := now.Weekday()
+
+	// Вне учебных дней рассылка не происходит — сидировать нечего.
+	if weekday == time.Sunday || weekday == time.Saturday {
+		return
+	}
+
+	dayIdx := int(weekday - 1) // Пн=0 .. Пт=4
+	todayStr := now.Format("2006-01-02")
+
+	users, err := a.notifier.UsersForNotification(ctx)
+	if err != nil || len(users) == 0 {
+		return
+	}
+
+	uniqueTargets, uniqueTeachers := extractUniqueRecipients(users)
+	seeded := 0
+
+	// Группы
+	for target := range uniqueTargets {
+		grp, err := a.scheduleSvc.GetGroupLatestSchedule(ctx, int32(target.groupID))
+		if err != nil || dayIdx >= len(grp.Days) {
+			continue
+		}
+
+		filtered := formatter.FilterGroupForSubgroup(grp, target.subgroup)
+		if dayIdx >= len(filtered.Days) || filtered.Days[dayIdx] == nil {
+			continue
+		}
+
+		lastSubject := formatter.FindLastSubject(filtered.Days[dayIdx].Subjects)
+		if lastSubject == -1 {
+			continue
+		}
+
+		endTime, ok := formatter.GetDayEndTime(dayIdx, lastSubject+1, minskLoc)
+		if !ok || now.Before(endTime) {
+			// Пары ещё не закончились — ничего не трогаем.
+			continue
+		}
+
+		// Пары уже закончились: засеиваем запись, не отправляя ничего.
+		if err := a.digestRepo.MarkGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr); err != nil {
+			log.Warn("failed seeding group digest log", "group", target.groupID, "subgroup", target.subgroup, "error", err)
+			continue
+		}
+		seeded++
+	}
+
+	// Преподаватели
+	for teacherName := range uniqueTeachers {
+		teacher, err := a.teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
+		if err != nil || dayIdx >= len(teacher.Days) {
+			continue
+		}
+
+		lastSubject := formatter.FindLastSubject(teacher.Days[dayIdx].Subjects)
+		if lastSubject == -1 {
+			continue
+		}
+
+		endTime, ok := formatter.GetDayEndTime(dayIdx, lastSubject+1, minskLoc)
+		if !ok || now.Before(endTime) {
+			continue
+		}
+
+		if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
+			log.Warn("failed seeding teacher digest log", "teacher", teacherName, "error", err)
+			continue
+		}
+		seeded++
+	}
+
+	if seeded > 0 {
+		log.Info("seeded digest log on startup to prevent re-broadcast", "seeded_count", seeded, "date", todayStr)
+	}
+}
+
 func (a *App) startEveningDigestScheduler(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	minskLoc := time.FixedZone("MSK", 3*3600)
-	sentGroupsToday := make(map[groupSubgroupKey]bool)
-	sentTeachersToday := make(map[string]bool)
-	var currentDate string
 
 	for {
 		select {
@@ -276,11 +368,10 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 			todayStr := localTime.Format("2006-01-02")
 			todayWeekday := localTime.Weekday() // 0=Вс, 1=Пн, ... 6=Сб
 
-			// Сброс кэша отправленных уведомлений при наступлении новых суток
-			if currentDate != todayStr {
-				currentDate = todayStr
-				clear(sentGroupsToday)
-				clear(sentTeachersToday)
+			// Очищаем устаревшие записи дайджеста (записи старше вчера)
+			yesterday := localTime.AddDate(0, 0, -1).Format("2006-01-02")
+			if err := a.digestRepo.DeleteOldEntries(ctx, yesterday); err != nil {
+				a.log.Warn("failed cleaning up old digest log entries", "error", err)
 			}
 
 			// Проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на следующий рабочий день
@@ -290,8 +381,8 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 				users, err := a.notifier.UsersForNotification(ctx)
 				if err == nil && len(users) > 0 {
 					uniqueTargets, uniqueTeachers := extractUniqueRecipients(users)
-					a.notifyGroupsAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTargets, sentGroupsToday)
-					a.notifyTeachersAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTeachers, sentTeachersToday)
+					a.notifyGroupsAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTargets, todayStr)
+					a.notifyTeachersAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTeachers, todayStr)
 				}
 			}
 		}
@@ -317,10 +408,15 @@ func (a *App) notifyGroupsAfterLessons(
 	dayIdx int,
 	loc *time.Location,
 	targets map[groupSubgroupKey]struct{},
-	sentGroups map[groupSubgroupKey]bool,
+	todayStr string,
 ) {
 	for target := range targets {
-		if sentGroups[target] {
+		// Проверяем в БД: уже отправляли дайджест сегодня для этой группы/подгруппы?
+		sent, err := a.digestRepo.IsGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr)
+		if err != nil {
+			a.log.Warn("failed checking group digest sent status", "group", target.groupID, "subgroup", target.subgroup, "error", err)
+		}
+		if sent {
 			continue
 		}
 
@@ -345,7 +441,12 @@ func (a *App) notifyGroupsAfterLessons(
 			continue
 		}
 
-		sentGroups[target] = true
+		// Помечаем как отправленное в БД до фактической отправки,
+		// чтобы избежать повторной рассылки даже при ошибке отправки.
+		if err := a.digestRepo.MarkGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr); err != nil {
+			a.log.Warn("failed marking group digest as sent", "group", target.groupID, "subgroup", target.subgroup, "error", err)
+		}
+
 		a.log.Info("Lessons ended for group/subgroup, sending next day digest",
 			"group", target.groupID,
 			"subgroup", target.subgroup,
@@ -368,10 +469,15 @@ func (a *App) notifyTeachersAfterLessons(
 	dayIdx int,
 	loc *time.Location,
 	teachers map[string]struct{},
-	sentTeachers map[string]bool,
+	todayStr string,
 ) {
 	for teacherName := range teachers {
-		if sentTeachers[teacherName] {
+		// Проверяем в БД: уже отправляли дайджест сегодня для этого преподавателя?
+		sent, err := a.digestRepo.IsTeacherDigestSent(ctx, teacherName, todayStr)
+		if err != nil {
+			a.log.Warn("failed checking teacher digest sent status", "teacher", teacherName, "error", err)
+		}
+		if sent {
 			continue
 		}
 
@@ -390,7 +496,12 @@ func (a *App) notifyTeachersAfterLessons(
 			continue
 		}
 
-		sentTeachers[teacherName] = true
+		// Помечаем как отправленное в БД до фактической отправки,
+		// чтобы избежать повторной рассылки даже при ошибке отправки.
+		if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
+			a.log.Warn("failed marking teacher digest as sent", "teacher", teacherName, "error", err)
+		}
+
 		a.log.Info("Lessons ended for teacher, sending next day digest",
 			"teacher", teacherName,
 			"time", localTime.Format("15:04:05"),
