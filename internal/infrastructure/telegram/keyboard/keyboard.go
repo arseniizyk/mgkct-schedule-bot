@@ -34,6 +34,7 @@ const (
 	CabinetNextDay     = "cab_nextday"
 
 	ArchiveSelect  = "arch_sel"
+	ArchiveBack    = "arch_back"
 	NotifyToggle   = "notify_toggle"
 	SubgroupSelect = "subgroup_set"
 	DaySubgroup    = "day_sg"
@@ -307,6 +308,14 @@ func InlineArchiveWeeksKeyboard(targetType, targetID string, weeks []time.Time) 
 	}
 
 	markup.Inline(rows...)
+	return markup
+}
+
+// InlineArchiveReturnKeyboard создает инлайн-кнопку возврата к списку недель архива.
+func InlineArchiveReturnKeyboard(targetType, targetID string) *tele.ReplyMarkup {
+	markup := &tele.ReplyMarkup{}
+	btn := markup.Data("📦 К выбору недели", ArchiveBack, targetType+":"+targetID)
+	markup.Inline(markup.Row(btn))
 	return markup
 }
 
