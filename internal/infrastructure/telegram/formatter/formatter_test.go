@@ -15,8 +15,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
 
-// ... [rest of the file remains as in the original state before my edits or as needed]
-
 func TestFormatErrorMessage(t *testing.T) {
 	tests := []struct {
 		name string
@@ -68,7 +66,7 @@ func TestFormatSubjectsEscapesDynamicFields(t *testing.T) {
 		},
 	}
 
-	got := formatScheduleDay(day)
+	got := formatScheduleDay(day, false)
 
 	if !strings.Contains(got, "Основы C\\* и C\\_") {
 		t.Errorf("subject name should be escaped, got:\n%s", got)
@@ -92,7 +90,7 @@ func TestFormatScheduleDaySecondShift(t *testing.T) {
 		},
 	}
 
-	got := formatScheduleDay(day)
+	got := formatScheduleDay(day, false)
 
 	if !strings.Contains(got, "*Понедельник (2 смена") {
 		t.Errorf("день второй смены должен иметь маркер в заголовке, got:\n%s", got)
@@ -751,6 +749,7 @@ func TestFilterGroupForSubgroup_SingleSubgroupInSlot(t *testing.T) {
 		assert.Contains(t, msg, "2. Лабораторная")
 	})
 }
+
 func TestIsCurrentWeek(t *testing.T) {
 	currentMonday := time.Date(2026, 10, 26, 0, 0, 0, 0, minskLoc)
 
@@ -792,4 +791,56 @@ func TestIsCurrentWeek(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestFormatScheduleDay_TodayMarker(t *testing.T) {
+	day := &entities.Day{
+		Name: "Вторник",
+		Subjects: []*entities.Subject{
+			{Pairs: []*entities.Pair{{Name: "Информатика"}}},
+		},
+	}
+
+	t.Run("without today marker", func(t *testing.T) {
+		got := formatScheduleDay(day, false)
+		assert.Contains(t, got, "*Вторник\n*")
+		assert.NotContains(t, got, "(сегодня)")
+	})
+
+	t.Run("with today marker", func(t *testing.T) {
+		got := formatScheduleDay(day, true)
+		assert.Contains(t, got, "*Вторник (сегодня)\n*")
+	})
+
+	t.Run("with today marker and second shift", func(t *testing.T) {
+		secondShiftDay := &entities.Day{
+			Name: "Вторник",
+			Subjects: []*entities.Subject{
+				{IsEmpty: true},
+				{IsEmpty: true},
+				{IsEmpty: true},
+				{Pairs: []*entities.Pair{{Name: "Информатика"}}},
+			},
+		}
+		got := formatScheduleDay(secondShiftDay, true)
+		assert.Contains(t, got, "*Вторник (сегодня) (2 смена)\n*")
+	})
+}
+
+func TestIsDayToday(t *testing.T) {
+	origNow := nowFunc
+	defer func() { nowFunc = origNow }()
+
+	// Фиксируем вторник текущей недели
+	tuesdayNoon := time.Date(2026, 10, 27, 12, 0, 0, 0, minskLoc)
+	nowFunc = func() time.Time { return tuesdayNoon }
+
+	currentWeek := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
+	nextWeek := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+
+	// Вторник = индекс 1
+	assert.True(t, isDayToday(currentWeek, 1), "вторник текущей недели должен быть сегодня")
+	assert.False(t, isDayToday(currentWeek, 0), "понедельник текущей недели не сегодня")
+	assert.False(t, isDayToday(currentWeek, 2), "среда текущей недели не сегодня")
+	assert.False(t, isDayToday(nextWeek, 1), "вторник следующей недели не сегодня")
 }
