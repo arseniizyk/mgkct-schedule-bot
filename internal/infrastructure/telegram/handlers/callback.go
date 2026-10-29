@@ -63,6 +63,8 @@ func CallbacksHandler(
 			}
 
 		// Архив
+		case strings.Contains(data, keyboard.ArchiveBack):
+			err = handleArchiveBack(ctx, log, c, data, schedSvc, teacherSvc)
 		case strings.Contains(data, keyboard.ArchiveSelect):
 			err = handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc)
 
@@ -454,6 +456,8 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 		return err
 	}
 
+	kbd := keyboard.InlineArchiveReturnKeyboard(targetType, targetID)
+
 	if targetType == "g" {
 		groupID, err := strconv.Atoi(targetID)
 		if err != nil {
@@ -464,7 +468,7 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 			return err
 		}
 		msg := formatter.FormatScheduleWeek(group)
-		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		return editLongMessage(c, msg, tele.ModeMarkdown, kbd)
 	}
 
 	teacher, err := teacherSvc.GetTeacherArchiveSchedule(ctx, targetID, date)
@@ -473,5 +477,39 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 	}
 	member, _ := teacherSvc.GetFacultyMember(ctx, targetID)
 	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+	return editLongMessage(c, msg, tele.ModeMarkdown, kbd)
+}
+
+func handleArchiveBack(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService) error {
+	raw := dataFromCallbackData(data)
+	// формат "g:101" или "t:Иванов И.И."
+	parts := strings.Split(raw, ":")
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid archive back data: %s", raw)
+	}
+
+	targetType := parts[0]
+	targetID := parts[1]
+
+	if targetType == "g" {
+		groupID, err := strconv.Atoi(targetID)
+		if err != nil {
+			return err
+		}
+		weeks, err := schedSvc.GetAllWeeks(ctx)
+		if err != nil || len(weeks) == 0 {
+			return safeEdit(c, fmt.Sprintf("Архив расписаний для группы %d пока пуст.", groupID))
+		}
+		msg := fmt.Sprintf("📦 *Архив расписания группы %d*\nВыберите неделю для просмотра:", groupID)
+		kbd := keyboard.InlineArchiveWeeksKeyboard("g", targetID, weeks)
+		return safeEdit(c, msg, tele.ModeMarkdown, kbd)
+	}
+
+	weeks, err := teacherSvc.GetAllWeeks(ctx, targetID)
+	if err != nil || len(weeks) == 0 {
+		return safeEdit(c, fmt.Sprintf("📦 Архив расписаний для преподавателя *%s* пока пуст.", targetID), tele.ModeMarkdown)
+	}
+	msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю для просмотра:", targetID)
+	kbd := keyboard.InlineArchiveWeeksKeyboard("t", targetID, weeks)
+	return safeEdit(c, msg, tele.ModeMarkdown, kbd)
 }

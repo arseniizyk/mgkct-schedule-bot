@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/handlers"
@@ -138,7 +139,7 @@ func (m *mockScheduleSvc) GetAllWeeks(ctx context.Context) ([]time.Time, error) 
 }
 
 func (m *mockScheduleSvc) GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error) {
-	return nil, nil
+	return &entities.Group{ID: groupID, Days: []*entities.Day{{Name: "Понедельник"}}}, nil
 }
 
 func testLog() *slog.Logger {
@@ -345,4 +346,47 @@ func TestInteractive_Cancel(t *testing.T) {
 	_, ok := sm.Get(1000)
 	assert.False(t, ok, "state must be cleared on cancel")
 	assert.Equal(t, messages.Cancelled, ctx.sentWhat)
+}
+
+func TestInteractive_ArchiveSelect_And_Back(t *testing.T) {
+	schedSvc := &mockScheduleSvc{
+		weeks: []time.Time{time.Now()},
+	}
+	tSvc := &mockTeacherSvcFull{}
+	userRepo := newMockUserRepo()
+	sm := state.NewMemoryManager()
+
+	cbHandler := handlers.CallbacksHandler(testLog(), schedSvc, tSvc, nil, userRepo, sm)
+
+	// 1. Выбор недели в архиве: arch_sel|g:88:19.10.2026
+	ctxSelect := &mockContext{
+		chatID:   1234,
+		callback: &tele.Callback{Data: "\x0carch_sel|g:88:19.10.2026"},
+	}
+
+	err := cbHandler(ctxSelect)
+	require.NoError(t, err)
+	assert.NotNil(t, ctxSelect.editedWhat)
+
+	// Проверяем, что передана Inline-клавиатура возврата, а не ReplyScheduleKeyboard
+	var hasReturnInline bool
+	for _, opt := range ctxSelect.editedOpts {
+		if rm, ok := opt.(*tele.ReplyMarkup); ok {
+			if len(rm.InlineKeyboard) > 0 && rm.InlineKeyboard[0][0].Text == "📦 К выбору недели" {
+				hasReturnInline = true
+				break
+			}
+		}
+	}
+	assert.True(t, hasReturnInline, "must have inline button 'К выбору недели'")
+
+	// 2. Нажатие кнопки возврата к выбору недели: arch_back|g:88
+	ctxBack := &mockContext{
+		chatID:   1234,
+		callback: &tele.Callback{Data: "\x0carch_back|g:88"},
+	}
+
+	err = cbHandler(ctxBack)
+	require.NoError(t, err)
+	assert.Contains(t, ctxBack.editedWhat, "Архив расписания группы 88")
 }

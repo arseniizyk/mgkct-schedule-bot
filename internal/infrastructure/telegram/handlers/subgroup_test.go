@@ -82,6 +82,7 @@ type mockContext struct {
 	sentWhat   any
 	sentOpts   []any
 	editedWhat any
+	editedOpts []any
 	callback   *tele.Callback
 }
 
@@ -109,6 +110,7 @@ func (c *mockContext) Send(what any, opts ...any) error {
 
 func (c *mockContext) Edit(what any, opts ...any) error {
 	c.editedWhat = what
+	c.editedOpts = opts
 	return nil
 }
 
