@@ -43,7 +43,51 @@ func isCurrentWeek(week, currentWeekMonday time.Time) bool {
 	return weekMonday.Equal(currentWeekMonday)
 }
 
+// DayRelativeLabel возвращает метку относительно текущего дня: " (сегодня)", " (вчера)", " (завтра)" или пустую строку.
+func DayRelativeLabel(week time.Time, dayIdx int) string {
+	return DayRelativeLabelWithNow(week, dayIdx, time.Now())
+}
+
+// DayRelativeLabelWithNow возвращает относительную метку для дня с учетом переданного времени now.
+func DayRelativeLabelWithNow(week time.Time, dayIdx int, now time.Time) string {
+	if dayIdx < 0 || dayIdx > 6 {
+		return ""
+	}
+
+	nowMinsk := now.In(minskLoc)
+	todayWeekday := (int(nowMinsk.Weekday()) + 6) % 7 // Пн=0..Вс=6
+	todayDate := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc)
+
+	var weekMonday time.Time
+	if week.IsZero() {
+		weekMonday = todayDate.AddDate(0, 0, -todayWeekday)
+	} else {
+		w := week.In(minskLoc)
+		weekMonday = time.Date(w.Year(), w.Month(), w.Day(), 0, 0, 0, 0, minskLoc)
+	}
+
+	dayDate := weekMonday.AddDate(0, 0, dayIdx)
+
+	yesterdayDate := todayDate.AddDate(0, 0, -1)
+	tomorrowDate := todayDate.AddDate(0, 0, 1)
+
+	switch {
+	case dayDate.Equal(todayDate):
+		return " (сегодня)"
+	case dayDate.Equal(yesterdayDate):
+		return " (вчера)"
+	case dayDate.Equal(tomorrowDate):
+		return " (завтра)"
+	default:
+		return ""
+	}
+}
+
 func formatScheduleDay(day *entities.Day) string {
+	return formatScheduleDayWithTag(day, "")
+}
+
+func formatScheduleDayWithTag(day *entities.Day, tag string) string {
 	var sb strings.Builder
 	sb.Grow(256)
 
@@ -51,10 +95,10 @@ func formatScheduleDay(day *entities.Day) string {
 
 	skip := 0
 	if first >= secondShiftMinIndex {
-		fmt.Fprintf(&sb, "*%s %s\n*", escapeMD(day.Name), messages.SecondShift)
+		fmt.Fprintf(&sb, "*%s %s%s\n*", escapeMD(day.Name), messages.SecondShift, tag)
 		skip = first
 	} else {
-		fmt.Fprintf(&sb, "*%s\n*", escapeMD(day.Name))
+		fmt.Fprintf(&sb, "*%s%s\n*", escapeMD(day.Name), tag)
 	}
 
 	sb.WriteString(formatSubjects(day.Subjects, skip))
@@ -241,9 +285,9 @@ func FormatScheduleDayForSubgroup(group *entities.Group, subgroup int) string {
 	filtered := FilterGroupForSubgroup(group, subgroup)
 	dayIdx := EffectiveDayIndex(filtered)
 	if dayIdx >= len(filtered.Days) {
-		return formatScheduleDay(filtered.Days[0])
+		return formatScheduleDayWithTag(filtered.Days[0], DayRelativeLabel(group.Week, 0))
 	}
-	return formatScheduleDay(filtered.Days[dayIdx])
+	return formatScheduleDayWithTag(filtered.Days[dayIdx], DayRelativeLabel(group.Week, dayIdx))
 }
 
 func FormatScheduleDayAt(group *entities.Group, dayIdx int) (string, error) {
@@ -255,7 +299,7 @@ func FormatScheduleDayAtForSubgroup(group *entities.Group, dayIdx int, subgroup 
 	if dayIdx < 0 || dayIdx >= len(filtered.Days) {
 		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(filtered.Days))
 	}
-	return formatScheduleDay(filtered.Days[dayIdx]), nil
+	return formatScheduleDayWithTag(filtered.Days[dayIdx], DayRelativeLabel(group.Week, dayIdx)), nil
 }
 
 var weekdaysTimeEnd = map[int][2]int{
@@ -311,8 +355,8 @@ func FormatScheduleWeekForSubgroup(group *entities.Group, subgroup int) string {
 	var sb strings.Builder
 	sb.Grow(len(filtered.Days) * 128)
 
-	for _, day := range filtered.Days {
-		sb.WriteString(formatScheduleDay(day))
+	for dIdx, day := range filtered.Days {
+		sb.WriteString(formatScheduleDayWithTag(day, DayRelativeLabel(group.Week, dIdx)))
 	}
 
 	return sb.String()
@@ -500,19 +544,19 @@ func FormatTeacherProfile(member *entities.FacultyMember) string {
 func FormatTeacherScheduleDay(teacher *entities.Teacher) string {
 	dayIdx := EffectiveTeacherDayIndex(teacher)
 	if dayIdx >= len(teacher.Days) {
-		return formatTeacherScheduleDay(teacher.Days[0])
+		return formatTeacherScheduleDayWithTag(teacher.Days[0], DayRelativeLabel(teacher.Week, 0))
 	}
-	return formatTeacherScheduleDay(teacher.Days[dayIdx])
+	return formatTeacherScheduleDayWithTag(teacher.Days[dayIdx], DayRelativeLabel(teacher.Week, dayIdx))
 }
 
 func FormatTeacherScheduleDayAt(teacher *entities.Teacher, dayIdx int) (string, error) {
 	if dayIdx < 0 || dayIdx >= len(teacher.Days) {
 		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(teacher.Days))
 	}
-	return formatTeacherScheduleDay(teacher.Days[dayIdx]), nil
+	return formatTeacherScheduleDayWithTag(teacher.Days[dayIdx], DayRelativeLabel(teacher.Week, dayIdx)), nil
 }
 
-func formatTeacherScheduleDay(day *entities.Day) string {
+func formatTeacherScheduleDayWithTag(day *entities.Day, tag string) string {
 	var sb strings.Builder
 	sb.Grow(256)
 
@@ -520,10 +564,10 @@ func formatTeacherScheduleDay(day *entities.Day) string {
 
 	skip := 0
 	if first >= secondShiftMinIndex {
-		fmt.Fprintf(&sb, "*%s %s\n*", escapeMD(day.Name), messages.SecondShift)
+		fmt.Fprintf(&sb, "*%s %s%s\n*", escapeMD(day.Name), messages.SecondShift, tag)
 		skip = first
 	} else {
-		fmt.Fprintf(&sb, "*%s\n*", escapeMD(day.Name))
+		fmt.Fprintf(&sb, "*%s%s\n*", escapeMD(day.Name), tag)
 	}
 
 	sb.WriteString(formatTeacherSubjects(day.Subjects, skip))
@@ -567,8 +611,8 @@ func FormatTeacherScheduleWeek(teacher *entities.Teacher) string {
 	var sb strings.Builder
 	sb.Grow(len(teacher.Days) * 128)
 
-	for _, day := range teacher.Days {
-		sb.WriteString(formatTeacherScheduleDay(day))
+	for dIdx, day := range teacher.Days {
+		sb.WriteString(formatTeacherScheduleDayWithTag(day, DayRelativeLabel(teacher.Week, dIdx)))
 	}
 
 	return sb.String()

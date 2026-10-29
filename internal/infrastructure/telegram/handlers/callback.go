@@ -14,6 +14,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
 )
 
 func CallbacksHandler(
@@ -22,6 +23,7 @@ func CallbacksHandler(
 	teacherSvc TeacherService,
 	analyticsSvc AnalyticsService,
 	userRepo UserRepo,
+	sm StateManager,
 ) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		callback := c.Callback()
@@ -32,6 +34,12 @@ func CallbacksHandler(
 
 		var err error
 		switch {
+		// Выбор роли
+		case strings.Contains(data, keyboard.RoleSelect):
+			if sm != nil {
+				err = handleRoleSelect(ctx, log, c, data, sm)
+			}
+
 		// Уведомления
 		case strings.Contains(data, keyboard.NotifyToggle):
 			if userRepo != nil {
@@ -93,6 +101,33 @@ func CallbacksHandler(
 		}
 
 		return c.Respond()
+	}
+}
+
+func handleRoleSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, sm StateManager) error {
+	raw := dataFromCallbackData(data)
+	chatID := c.Chat().ID
+
+	// Очищаем инлайн-кнопки выбора роли у сообщения
+	_ = safeEdit(c, &tele.ReplyMarkup{})
+
+	switch raw {
+	case keyboard.RoleStudent:
+		if err := sm.Set(chatID, state.WaitingGroup); err != nil {
+			log.Error("failed setting waiting group state from role select", "error", err)
+			return c.Send(messages.Internal)
+		}
+		return c.Send("🎓 Вы выбрали роль: *Студент*\n\n"+messages.WaitingGroup, tele.ModeMarkdown)
+
+	case keyboard.RoleTeacher:
+		if err := sm.Set(chatID, state.WaitingTeacher); err != nil {
+			log.Error("failed setting waiting teacher state from role select", "error", err)
+			return c.Send(messages.Internal)
+		}
+		return c.Send("👨‍🏫 Вы выбрали роль: *Преподаватель*\n\n"+messages.WaitingTeacher, tele.ModeMarkdown)
+
+	default:
+		return fmt.Errorf("unknown role select data: %s", raw)
 	}
 }
 
