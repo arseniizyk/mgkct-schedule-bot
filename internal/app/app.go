@@ -125,7 +125,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	)
 
 	eventCh := make(chan service.Event, 100)
-	notif := notifier.New(log, bot, userRepo, cfg.Bot.AdminChatID)
+	notif := notifier.New(log, bot, userRepo, cfg.Bot.AdminIDs)
 
 	httpSrv := httpserver.New(
 		log,
@@ -156,6 +156,8 @@ func (a *App) Run() error {
 	log := a.log.With("operation", "app.App.Run")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	handlers.SetBroadcastContext(ctx)
 
 	// 1. Запуск обработчика событий рассылки
 	go a.listenEvents(ctx)
@@ -258,12 +260,11 @@ func (a *App) seedDigestLogIfNeeded(ctx context.Context) {
 	now := time.Now().In(minskLoc)
 	weekday := now.Weekday()
 
-	// Вне учебных дней рассылка не происходит — сидировать нечего.
-	if weekday == time.Sunday || weekday == time.Saturday {
+	// В воскресенье до 20:00 рассылка не происходит — сидировать нечего.
+	if weekday == time.Sunday && now.Hour() < 20 {
 		return
 	}
 
-	dayIdx := int(weekday - 1) // Пн=0 .. Пт=4
 	todayStr := now.Format("2006-01-02")
 
 	users, err := a.notifier.UsersForNotification(ctx)
@@ -273,6 +274,32 @@ func (a *App) seedDigestLogIfNeeded(ctx context.Context) {
 
 	uniqueTargets, uniqueTeachers := extractUniqueRecipients(users)
 	seeded := 0
+
+	// Если уже 20:00 или позже (в любой день) — вечерняя рассылка
+	// уже должна была состояться, поэтому сидируем всех получателей.
+	if now.Hour() >= 20 {
+		for target := range uniqueTargets {
+			if err := a.digestRepo.MarkGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr); err != nil {
+				log.Warn("failed seeding group digest log", "group", target.groupID, "subgroup", target.subgroup, "error", err)
+				continue
+			}
+			seeded++
+		}
+		for teacherName := range uniqueTeachers {
+			if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
+				log.Warn("failed seeding teacher digest log", "teacher", teacherName, "error", err)
+				continue
+			}
+			seeded++
+		}
+		if seeded > 0 {
+			log.Info("seeded digest log on startup after 20:00 to prevent re-broadcast", "seeded_count", seeded, "date", todayStr)
+		}
+		return
+	}
+
+	// Для учебных дней (Пн..Сб) до 20:00 проверяем окончание пар:
+	dayIdx := int(weekday - 1) // 0..5 для Пн..Сб
 
 	// Группы
 	for target := range uniqueTargets {
@@ -339,6 +366,7 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 	defer ticker.Stop()
 
 	minskLoc := time.FixedZone("MSK", 3*3600)
+	var lastEveningDate string
 
 	for {
 		select {
@@ -355,8 +383,8 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 				a.log.Warn("failed cleaning up old digest log entries", "error", err)
 			}
 
-			// Проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на следующий рабочий день
-			if todayWeekday >= time.Monday && todayWeekday <= time.Saturday {
+			// 1. В учебные дни (Пн..Сб) до 20:00: проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на следующий рабочий день
+			if todayWeekday >= time.Monday && todayWeekday <= time.Saturday && localTime.Hour() < 20 {
 				dayIdx := int(todayWeekday - 1) // 0..5 для Пн..Сб
 
 				users, err := a.notifier.UsersForNotification(ctx)
@@ -366,6 +394,68 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 					a.notifyTeachersAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTeachers, todayStr)
 				}
 			}
+
+			// 2. В 20:00 (в воскресенье — для всех, в будни/субботу — для групп и преподавателей без пар или кто ещё не получил дайджест)
+			if localTime.Hour() >= 20 && lastEveningDate != todayStr {
+				lastEveningDate = todayStr
+				a.log.Info("Triggering scheduled evening digest fallback at 20:00", "time", localTime.Format("15:04:05"))
+				a.sendEveningDigestFallback(ctx, todayStr)
+			}
+		}
+	}
+}
+
+func (a *App) sendEveningDigestFallback(ctx context.Context, todayStr string) {
+	log := a.log.With("operation", "app.App.sendEveningDigestFallback")
+	users, err := a.notifier.UsersForNotification(ctx)
+	if err != nil || len(users) == 0 {
+		return
+	}
+
+	uniqueTargets, uniqueTeachers := extractUniqueRecipients(users)
+
+	// Отправка группам/подгруппам, не получившим дайджест ранее
+	for target := range uniqueTargets {
+		sent, err := a.digestRepo.IsGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr)
+		if err != nil {
+			log.Warn("failed checking group digest sent status", "group", target.groupID, "subgroup", target.subgroup, "error", err)
+		}
+		if sent {
+			continue
+		}
+
+		if err := a.digestRepo.MarkGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr); err != nil {
+			log.Warn("failed marking group digest as sent", "group", target.groupID, "subgroup", target.subgroup, "error", err)
+		}
+
+		if _, sendErr := a.notifier.SendNextDayDigestForGroupSubgroup(ctx, a.scheduleSvc, target.groupID, target.subgroup); sendErr != nil {
+			log.Warn("failed sending evening digest for group/subgroup",
+				"group", target.groupID,
+				"subgroup", target.subgroup,
+				"error", sendErr,
+			)
+		}
+	}
+
+	// Отправка преподавателям, не получившим дайджест ранее
+	for teacherName := range uniqueTeachers {
+		sent, err := a.digestRepo.IsTeacherDigestSent(ctx, teacherName, todayStr)
+		if err != nil {
+			log.Warn("failed checking teacher digest sent status", "teacher", teacherName, "error", err)
+		}
+		if sent {
+			continue
+		}
+
+		if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
+			log.Warn("failed marking teacher digest as sent", "teacher", teacherName, "error", err)
+		}
+
+		if _, sendErr := a.notifier.SendNextDayDigestForTeacher(ctx, a.teacherSvc, teacherName); sendErr != nil {
+			log.Warn("failed sending evening digest for teacher",
+				"teacher", teacherName,
+				"error", sendErr,
+			)
 		}
 	}
 }
@@ -540,6 +630,6 @@ func registerBotHandlers(
 	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
 
 	// Инлайн-коллбэки и ввод текста
-	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr))
+	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr, bot, cfg.Bot.AdminIDs))
 	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc, scheduleSvc, analyticsSvc, subjectDict, bot, cfg.Bot.AdminIDs))
 }

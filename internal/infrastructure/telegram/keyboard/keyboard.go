@@ -28,6 +28,7 @@ const (
 	TeacherNextWeek    = "t_nextweek"
 	TeacherPrevDay     = "t_prevday"
 	TeacherNextDay     = "t_nextday"
+	TeacherSetSelect   = "t_set"
 
 	CabinetCurrentWeek = "cab_currweek"
 	CabinetPrevDay     = "cab_prevday"
@@ -43,6 +44,9 @@ const (
 	RoleSelect  = "role_sel"
 	RoleStudent = "student"
 	RoleTeacher = "teacher"
+
+	BroadcastConfirm = "bcast_confirm"
+	BroadcastCancel  = "bcast_cancel"
 
 	btnCurrentWeek = "📆 Неделя"
 	btnPrev        = "◀️"
@@ -249,6 +253,21 @@ func InlineTeacherSuggestionsKeyboard(teachers []string) *tele.ReplyMarkup {
 	return markup
 }
 
+func InlineTeacherSetSuggestionsKeyboard(teachers []string) *tele.ReplyMarkup {
+	if len(teachers) == 0 {
+		return nil
+	}
+
+	markup := &tele.ReplyMarkup{}
+	var rows []tele.Row
+	for _, t := range teachers {
+		btn := markup.Data(t, TeacherSetSelect, t)
+		rows = append(rows, markup.Row(btn))
+	}
+	markup.Inline(rows...)
+	return markup
+}
+
 func InlineCabinetDayKeyboard(cabinet string, dayIdx, dayCount int) *tele.ReplyMarkup {
 	if dayCount <= 1 {
 		return nil
@@ -351,6 +370,17 @@ func InlineRoleKeyboard() *tele.ReplyMarkup {
 		markup.Row(
 			markup.Data("🎓 Студент", RoleSelect, RoleStudent),
 			markup.Data("👨‍🏫 Преподаватель", RoleSelect, RoleTeacher),
+		),
+	)
+	return markup
+}
+
+func InlineBroadcastKeyboard() *tele.ReplyMarkup {
+	markup := &tele.ReplyMarkup{}
+	markup.Inline(
+		markup.Row(
+			markup.Data("✅ Отправить", BroadcastConfirm),
+			markup.Data("❌ Отмена", BroadcastCancel),
 		),
 	)
 	return markup

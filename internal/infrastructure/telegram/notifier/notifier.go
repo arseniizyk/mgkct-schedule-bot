@@ -38,24 +38,24 @@ type BotSender interface {
 }
 
 type Notifier struct {
-	log         *slog.Logger
-	bot         BotSender
-	userStore   UserStore
-	adminChatID int64
-	throttle    <-chan time.Time
+	log       *slog.Logger
+	bot       BotSender
+	userStore UserStore
+	adminIDs  []int64
+	throttle  <-chan time.Time
 }
 
-func New(log *slog.Logger, bot BotSender, userStore UserStore, adminChatID int64) *Notifier {
+func New(log *slog.Logger, bot BotSender, userStore UserStore, adminIDs []int64) *Notifier {
 	// Лимит Telegram: около 30 сообщений в секунду.
 	// Используем тикер на 40ms (25 сообщений в секунду) для гарантированной защиты от 429 Too Many Requests.
 	ticker := time.NewTicker(40 * time.Millisecond)
 
 	return &Notifier{
-		log:         log,
-		bot:         bot,
-		userStore:   userStore,
-		adminChatID: adminChatID,
-		throttle:    ticker.C,
+		log:       log,
+		bot:       bot,
+		userStore: userStore,
+		adminIDs:  adminIDs,
+		throttle:  ticker.C,
 	}
 }
 
@@ -210,30 +210,44 @@ func (n *Notifier) HandleTeacherScheduleUpdate(ctx context.Context, teacher *ent
 
 // HandleScraperError отправляет алерт администратору о сбое парсера.
 func (n *Notifier) HandleScraperError(ctx context.Context, err error, fails int) error {
-	if n.adminChatID == 0 {
+	if len(n.adminIDs) == 0 {
 		return nil
+	}
+	errMsg := "неизвестная ошибка"
+	if err != nil {
+		errMsg = err.Error()
 	}
 	msg := fmt.Sprintf(
 		"⚠️ *Внимание! Сбой парсера расписания!*\n\nСайт колледжа недоступен или парсер упал *%d* раз подряд.\n\n*Ошибка:* `%s`\n_Время: %s_",
 		fails,
-		err.Error(),
+		errMsg,
 		time.Now().Format("15:04:05 02.01.2006"),
 	)
-	_, sendErr := n.bot.Send(tele.ChatID(n.adminChatID), msg, tele.ModeMarkdown)
-	return sendErr
+	var firstErr error
+	for _, adminID := range n.adminIDs {
+		if _, sendErr := n.bot.Send(tele.ChatID(adminID), msg, tele.ModeMarkdown); sendErr != nil && firstErr == nil {
+			firstErr = sendErr
+		}
+	}
+	return firstErr
 }
 
 // HandleScraperRecovered отправляет уведомление о восстановлении работы парсера.
 func (n *Notifier) HandleScraperRecovered(ctx context.Context) error {
-	if n.adminChatID == 0 {
+	if len(n.adminIDs) == 0 {
 		return nil
 	}
 	msg := fmt.Sprintf(
 		"✅ *Парсер восстановил работу!*\n\nСайт колледжа снова отвечает, расписание успешно обработано.\n_Время: %s_",
 		time.Now().Format("15:04:05 02.01.2006"),
 	)
-	_, sendErr := n.bot.Send(tele.ChatID(n.adminChatID), msg, tele.ModeMarkdown)
-	return sendErr
+	var firstErr error
+	for _, adminID := range n.adminIDs {
+		if _, sendErr := n.bot.Send(tele.ChatID(adminID), msg, tele.ModeMarkdown); sendErr != nil && firstErr == nil {
+			firstErr = sendErr
+		}
+	}
+	return firstErr
 }
 
 // CalculateTomorrowDate рассчитывает целевую дату следующего учебного дня и индекс дня (0..5 для Пн..Сб).

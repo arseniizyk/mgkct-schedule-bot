@@ -253,6 +253,42 @@ func TestInlineTeacherSuggestionsKeyboard(t *testing.T) {
 	}
 }
 
+func TestInlineTeacherSetSuggestionsKeyboard(t *testing.T) {
+	if got := InlineTeacherSetSuggestionsKeyboard(nil); got != nil {
+		t.Errorf("InlineTeacherSetSuggestionsKeyboard(nil) = %v, want nil", got)
+	}
+	if got := InlineTeacherSetSuggestionsKeyboard([]string{}); got != nil {
+		t.Errorf("InlineTeacherSetSuggestionsKeyboard(empty) = %v, want nil", got)
+	}
+
+	teachers := []string{"Анципов Е. Ю.", "Иванов И. И."}
+	m := InlineTeacherSetSuggestionsKeyboard(teachers)
+	if m == nil {
+		t.Fatal("expected non-nil keyboard")
+	}
+
+	if len(m.InlineKeyboard) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(m.InlineKeyboard))
+	}
+
+	for i, name := range teachers {
+		row := m.InlineKeyboard[i]
+		if len(row) != 1 {
+			t.Fatalf("row %d: expected 1 button, got %d", i, len(row))
+		}
+		btn := row[0]
+		if btn.Text != name {
+			t.Errorf("row %d: btn.Text = %q, want %q", i, btn.Text, name)
+		}
+		if btn.Unique != TeacherSetSelect {
+			t.Errorf("row %d: btn.Unique = %q, want %q", i, btn.Unique, TeacherSetSelect)
+		}
+		if btn.Data != name {
+			t.Errorf("row %d: btn.Data = %q, want %q", i, btn.Data, name)
+		}
+	}
+}
+
 func TestInlineRoleKeyboard(t *testing.T) {
 	m := InlineRoleKeyboard()
 	if m == nil {

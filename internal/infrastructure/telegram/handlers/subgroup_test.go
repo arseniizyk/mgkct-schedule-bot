@@ -88,14 +88,16 @@ func (m *mockUserRepo) CountUsers(ctx context.Context) (int, error) {
 type mockContext struct {
 	tele.Context
 
-	args       []string
-	text       string
-	chatID     int64
-	sentWhat   any
-	sentOpts   []any
-	editedWhat any
-	editedOpts []any
-	callback   *tele.Callback
+	args         []string
+	text         string
+	chatID       int64
+	sentWhat     any
+	sentOpts     []any
+	editedWhat   any
+	editedOpts   []any
+	callback     *tele.Callback
+	responded    *tele.CallbackResponse
+	respondCalls int
 }
 
 func (c *mockContext) Args() []string {
@@ -131,6 +133,10 @@ func (c *mockContext) Callback() *tele.Callback {
 }
 
 func (c *mockContext) Respond(resp ...*tele.CallbackResponse) error {
+	c.respondCalls++
+	if len(resp) > 0 {
+		c.responded = resp[0]
+	}
 	return nil
 }
 
@@ -166,7 +172,8 @@ func TestSetGroupHandler(t *testing.T) {
 		assert.True(t, ok)
 	})
 
-	t.Run("with group and subgroup args saves directly", func(t *testing.T) {
+	t.Run("with group and subgroup args saves directly and clears state", func(t *testing.T) {
+		_ = sm.Set(102, state.WaitingGroup)
 		ctx := &mockContext{chatID: 102, args: []string{"102", "1"}}
 		err := handler(ctx)
 		require.NoError(t, err)
@@ -177,6 +184,9 @@ func TestSetGroupHandler(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 102, grp)
 		assert.Equal(t, 1, sg)
+
+		_, hasState := sm.Get(102)
+		assert.False(t, hasState)
 	})
 }
 
@@ -219,8 +229,10 @@ func TestStatesHandler_WaitingGroup(t *testing.T) {
 func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
 	logger := testLogger()
 	repo := newMockUserRepo()
+	sm := state.NewMemoryManager()
+	_ = sm.Set(301, state.WaitingGroup)
 
-	handler := handlers.CallbacksHandler(logger, nil, nil, nil, repo, nil)
+	handler := handlers.CallbacksHandler(logger, nil, nil, nil, repo, sm)
 
 	ctx := &mockContext{
 		chatID: 301,
@@ -237,8 +249,12 @@ func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
 	assert.Equal(t, 101, grp)
 	assert.Equal(t, 1, sg)
 
+	_, hasState := sm.Get(301)
+	assert.False(t, hasState)
+
 	assert.Contains(t, ctx.editedWhat, "1 подгруппа")
-	assert.Nil(t, ctx.sentWhat)
+	assert.Contains(t, ctx.sentWhat, "1 подгруппа")
+	assert.Contains(t, ctx.sentOpts, keyboard.ReplyScheduleKeyboard)
 }
 
 type mockScheduleService struct {

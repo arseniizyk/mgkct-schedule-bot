@@ -157,4 +157,102 @@ func TestTeacher_TypoSuggestions(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, messages.TeacherNotFoundSuggestions, c.sentWhat)
 	})
+
+	t.Run("SetTeacher command exact match saves teacher, clears state and sends ReplyScheduleKeyboard", func(t *testing.T) {
+		repo := newMockUserRepo()
+		_ = sm.Set(123, state.WaitingTeacher)
+		h := handlers.SetTeacher(log, tSvc, repo, sm)
+		c := &mockContext{
+			chatID: 123,
+			args:   []string{"Анципов Е. Ю."},
+		}
+
+		err := h(c)
+		require.NoError(t, err)
+
+		saved, err := repo.GetTeacher(context.Background(), 123)
+		require.NoError(t, err)
+		assert.Equal(t, "Анципов Е. Ю.", saved)
+
+		_, hasState := sm.Get(123)
+		assert.False(t, hasState)
+
+		assert.Equal(t, messages.TeacherSaved, c.sentWhat)
+		assert.Contains(t, c.sentOpts, keyboard.ReplyScheduleKeyboard)
+	})
+
+	t.Run("SetTeacher command with typo suggests keyboard with TeacherSetSelect", func(t *testing.T) {
+		repo := newMockUserRepo()
+		h := handlers.SetTeacher(log, tSvc, repo, sm)
+		c := &mockContext{
+			chatID: 123,
+			args:   []string{"Анципав"},
+		}
+
+		err := h(c)
+		require.NoError(t, err)
+		assert.Equal(t, messages.TeacherNotFoundSuggestions, c.sentWhat)
+
+		var markup *tele.ReplyMarkup
+		for _, opt := range c.sentOpts {
+			if m, ok := opt.(*tele.ReplyMarkup); ok {
+				markup = m
+				break
+			}
+		}
+		require.NotNil(t, markup)
+		require.Len(t, markup.InlineKeyboard, 1)
+		assert.Equal(t, "Анципов Е. Ю.", markup.InlineKeyboard[0][0].Text)
+		assert.Equal(t, keyboard.TeacherSetSelect, markup.InlineKeyboard[0][0].Unique)
+	})
+
+	t.Run("WaitingTeacher state with typo suggests keyboard with TeacherSetSelect", func(t *testing.T) {
+		repo := newMockUserRepo()
+		_ = sm.Set(123, state.WaitingTeacher)
+		h := handlers.StatesHandler(log, repo, sm, tSvc, nil, nil, nil, nil, nil)
+		c := &mockContext{
+			chatID: 123,
+			text:   "Анципав",
+		}
+
+		err := h(c)
+		require.NoError(t, err)
+		assert.Equal(t, messages.TeacherNotFoundSuggestions, c.sentWhat)
+
+		var markup *tele.ReplyMarkup
+		for _, opt := range c.sentOpts {
+			if m, ok := opt.(*tele.ReplyMarkup); ok {
+				markup = m
+				break
+			}
+		}
+		require.NotNil(t, markup)
+		assert.Equal(t, "Анципов Е. Ю.", markup.InlineKeyboard[0][0].Text)
+		assert.Equal(t, keyboard.TeacherSetSelect, markup.InlineKeyboard[0][0].Unique)
+	})
+
+	t.Run("TeacherSetSelect callback saves teacher, clears state and sends ReplyScheduleKeyboard", func(t *testing.T) {
+		repo := newMockUserRepo()
+		_ = sm.Set(123, state.WaitingTeacher)
+		h := handlers.CallbacksHandler(log, nil, tSvc, nil, repo, sm)
+		c := &mockContext{
+			chatID: 123,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.TeacherSetSelect + "|Анципов Е. Ю.",
+			},
+		}
+
+		err := h(c)
+		require.NoError(t, err)
+
+		saved, err := repo.GetTeacher(context.Background(), 123)
+		require.NoError(t, err)
+		assert.Equal(t, "Анципов Е. Ю.", saved)
+
+		_, hasState := sm.Get(123)
+		assert.False(t, hasState)
+
+		assert.Equal(t, messages.TeacherSaved, c.sentWhat)
+		assert.Contains(t, c.sentOpts, keyboard.ReplyScheduleKeyboard)
+	})
 }
