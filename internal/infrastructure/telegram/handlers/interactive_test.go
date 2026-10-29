@@ -265,7 +265,7 @@ func TestInteractive_StatesHandler_WaitingTeacherDay(t *testing.T) {
 	}
 
 	_ = sm.Set(500, state.WaitingTeacherDay)
-	h := handlers.StatesHandler(testLog(), repo, sm, tSvc, nil, nil, nil)
+	h := handlers.StatesHandler(testLog(), repo, sm, tSvc, nil, nil, nil, nil, nil)
 	ctx := &mockContext{chatID: 500, text: "Петров"}
 
 	err := h(ctx)
@@ -284,7 +284,7 @@ func TestInteractive_StatesHandler_WaitingCabinet(t *testing.T) {
 	}
 
 	_ = sm.Set(600, state.WaitingCabinet)
-	h := handlers.StatesHandler(testLog(), repo, sm, nil, nil, aSvc, nil)
+	h := handlers.StatesHandler(testLog(), repo, sm, nil, nil, aSvc, nil, nil, nil)
 	ctx := &mockContext{chatID: 600, text: "301"}
 
 	err := h(ctx)
@@ -305,7 +305,7 @@ func TestInteractive_StatesHandler_WaitingSubject(t *testing.T) {
 	}
 
 	_ = sm.Set(700, state.WaitingSubject)
-	h := handlers.StatesHandler(testLog(), repo, sm, nil, nil, nil, dict)
+	h := handlers.StatesHandler(testLog(), repo, sm, nil, nil, nil, dict, nil, nil)
 	ctx := &mockContext{chatID: 700, text: "ТОЭ"}
 
 	err := h(ctx)
@@ -324,7 +324,7 @@ func TestInteractive_StatesHandler_WaitingArchive_Group(t *testing.T) {
 	}
 
 	_ = sm.Set(800, state.WaitingArchive)
-	h := handlers.StatesHandler(testLog(), repo, sm, nil, schedSvc, nil, nil)
+	h := handlers.StatesHandler(testLog(), repo, sm, nil, schedSvc, nil, nil, nil, nil)
 	ctx := &mockContext{chatID: 800, text: "101"}
 
 	err := h(ctx)
@@ -345,7 +345,7 @@ func TestInteractive_StatesHandler_WaitingArchive_Teacher(t *testing.T) {
 	}
 
 	_ = sm.Set(900, state.WaitingArchive)
-	h := handlers.StatesHandler(testLog(), repo, sm, tSvc, nil, nil, nil)
+	h := handlers.StatesHandler(testLog(), repo, sm, tSvc, nil, nil, nil, nil, nil)
 	ctx := &mockContext{chatID: 900, text: "Иванов"}
 
 	err := h(ctx)

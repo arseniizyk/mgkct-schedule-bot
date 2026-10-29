@@ -429,6 +429,95 @@ func (r *UserRepository) GetNotifyEvening(ctx context.Context, chatID int64) (bo
 	return notify.Int64 == 1, nil
 }
 
+// AllUsersWithUsernames возвращает всех пользователей вместе с username, отсортированных по group_id и subgroup.
+func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.User, error) {
+	const op = "repository.UserRepository.AllUsersWithUsernames"
+
+	query := r.sb.Select("chat_id, username, group_id, subgroup, teacher_name").
+		From("users").
+		OrderBy("group_id ASC NULLS LAST, subgroup ASC, teacher_name ASC NULLS LAST")
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to build sql query: %w", op, err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
+	}
+	defer rows.Close()
+
+	var users []entities.User
+
+	for rows.Next() {
+		var (
+			chatID      int64
+			username    sql.NullString
+			groupID     sql.NullInt64
+			subgroup    sql.NullInt64
+			teacherName sql.NullString
+		)
+
+		if err := rows.Scan(&chatID, &username, &groupID, &subgroup, &teacherName); err != nil {
+			return nil, fmt.Errorf("%s: failed scanning row: %w", op, err)
+		}
+
+		group := 0
+		if groupID.Valid {
+			group = int(groupID.Int64)
+		}
+
+		sg := 0
+		if subgroup.Valid {
+			sg = int(subgroup.Int64)
+		}
+
+		tn := ""
+		if teacherName.Valid {
+			tn = teacherName.String
+		}
+
+		un := ""
+		if username.Valid {
+			un = username.String
+		}
+
+		users = append(users, entities.User{
+			ChatID:      chatID,
+			Username:    un,
+			Group:       group,
+			Subgroup:    sg,
+			TeacherName: tn,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
+	}
+
+	return users, nil
+}
+
+// CountUsers возвращает общее количество зарегистрированных пользователей.
+func (r *UserRepository) CountUsers(ctx context.Context) (int, error) {
+	const op = "repository.UserRepository.CountUsers"
+
+	query := r.sb.Select("COUNT(*)").From("users")
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("%s: failed to build sql query: %w", op, err)
+	}
+
+	var count int
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
+	}
+
+	return count, nil
+}
+
 func (r *UserRepository) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
 	const op = "repository.UserRepository.UsersForEveningNotification"
 

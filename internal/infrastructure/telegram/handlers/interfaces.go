@@ -38,6 +38,9 @@ type UserRepo interface {
 	SetTeacher(ctx context.Context, chatID int64, teacherName string) error
 	SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error
 	GetNotifyEvening(ctx context.Context, chatID int64) (bool, error)
+	AllUsersWithUsernames(ctx context.Context) ([]entities.User, error)
+	AllUsers(ctx context.Context) ([]entities.User, error)
+	CountUsers(ctx context.Context) (int, error)
 }
 
 type StateManager interface {
