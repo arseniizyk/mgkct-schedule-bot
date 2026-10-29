@@ -50,6 +50,20 @@ func TestSubjectDictionary_Resolve(t *testing.T) {
 			wantFound:    true,
 		},
 		{
+			name:         "trpo abbreviation",
+			raw:          "ТРПО",
+			wantCleaned:  "ТРПО",
+			wantFullName: "Технология разработки программного обеспечения",
+			wantFound:    true,
+		},
+		{
+			name:         "trpo with subgroup prefix",
+			raw:          "1. ТРПО",
+			wantCleaned:  "ТРПО",
+			wantFullName: "Технология разработки программного обеспечения",
+			wantFound:    true,
+		},
+		{
 			name:         "unknown subject",
 			raw:          "НеизвестныйПредмет123",
 			wantCleaned:  "НеизвестныйПредмет123",
