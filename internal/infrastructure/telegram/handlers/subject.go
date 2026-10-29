@@ -8,6 +8,8 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
 )
 
 type SubjectDict interface {
@@ -17,15 +19,16 @@ type SubjectDict interface {
 	Search(query string) []entities.SubjectInfo
 }
 
-func Subject(dict SubjectDict) tele.HandlerFunc {
+func Subject(dict SubjectDict, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		args := c.Args()
 		if len(args) == 0 {
-			return c.Send(
-				"📚 *Справочник предметов*\n\nИспользование: `/subject <название>`\nНапример: `/subject ТОЭ` или `/subject КПиЯП`",
-				tele.ModeMarkdown,
-				keyboard.ReplyScheduleKeyboard,
-			)
+			if sm != nil {
+				if err := sm.Set(c.Chat().ID, state.WaitingSubject); err != nil {
+					return c.Send(messages.Internal)
+				}
+			}
+			return c.Send(messages.WaitingSubject)
 		}
 
 		query := strings.Join(args, " ")
