@@ -135,7 +135,7 @@ func handleRoleSelect(ctx context.Context, log *slog.Logger, c tele.Context, dat
 	chatID := c.Chat().ID
 
 	// Очищаем инлайн-кнопки выбора роли у сообщения
-	_ = safeEdit(c, &tele.ReplyMarkup{})
+	_ = c.Edit(&tele.ReplyMarkup{})
 
 	switch raw {
 	case keyboard.RoleStudent:
@@ -190,7 +190,7 @@ func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context,
 		text = messages.GroupSaved
 	}
 
-	_ = safeEdit(c, text)
+	_ = c.Edit(&tele.ReplyMarkup{})
 	return c.Send(text, keyboard.ReplyScheduleKeyboard)
 }
 
@@ -210,7 +210,7 @@ func handleTeacherSetSelect(ctx context.Context, log *slog.Logger, c tele.Contex
 		_ = sm.Clear(c.Chat().ID)
 	}
 
-	_ = safeEdit(c, messages.TeacherSaved)
+	_ = c.Edit(&tele.ReplyMarkup{})
 	return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
 }
 
