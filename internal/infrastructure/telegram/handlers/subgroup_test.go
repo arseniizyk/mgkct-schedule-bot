@@ -252,7 +252,7 @@ func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
 	_, hasState := sm.Get(301)
 	assert.False(t, hasState)
 
-	assert.Contains(t, ctx.editedWhat, "1 подгруппа")
+	assert.Equal(t, &tele.ReplyMarkup{}, ctx.editedWhat)
 	assert.Contains(t, ctx.sentWhat, "1 подгруппа")
 	assert.Contains(t, ctx.sentOpts, keyboard.ReplyScheduleKeyboard)
 }
