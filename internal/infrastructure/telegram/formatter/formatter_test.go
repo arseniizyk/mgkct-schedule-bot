@@ -793,3 +793,110 @@ func TestIsCurrentWeek(t *testing.T) {
 		})
 	}
 }
+
+func TestDayRelativeLabel(t *testing.T) {
+	// Среда, 28 октября 2026
+	nowWednesday := time.Date(2026, 10, 28, 12, 0, 0, 0, minskLoc)
+	currWeekMonday := time.Date(2026, 10, 26, 0, 0, 0, 0, minskLoc)
+
+	t.Run("current week relative days on wednesday", func(t *testing.T) {
+		assert.Empty(t, DayRelativeLabelWithNow(currWeekMonday, 0, nowWednesday))               // Пн 26.10
+		assert.Equal(t, " (вчера)", DayRelativeLabelWithNow(currWeekMonday, 1, nowWednesday))   // Вт 27.10
+		assert.Equal(t, " (сегодня)", DayRelativeLabelWithNow(currWeekMonday, 2, nowWednesday)) // Ср 28.10
+		assert.Equal(t, " (завтра)", DayRelativeLabelWithNow(currWeekMonday, 3, nowWednesday))  // Чт 29.10
+		assert.Empty(t, DayRelativeLabelWithNow(currWeekMonday, 4, nowWednesday))               // Пт 30.10
+		assert.Empty(t, DayRelativeLabelWithNow(currWeekMonday, 5, nowWednesday))               // Сб 31.10
+	})
+
+	t.Run("zero week is treated as current week", func(t *testing.T) {
+		assert.Equal(t, " (сегодня)", DayRelativeLabelWithNow(time.Time{}, 2, nowWednesday))
+		assert.Equal(t, " (вчера)", DayRelativeLabelWithNow(time.Time{}, 1, nowWednesday))
+		assert.Equal(t, " (завтра)", DayRelativeLabelWithNow(time.Time{}, 3, nowWednesday))
+	})
+
+	t.Run("sunday transitions", func(t *testing.T) {
+		// Воскресенье, 1 ноября 2026
+		nowSunday := time.Date(2026, 11, 1, 14, 0, 0, 0, minskLoc)
+		// Суббота текущей недели (31.10) должна быть " (вчера)"
+		assert.Equal(t, " (вчера)", DayRelativeLabelWithNow(currWeekMonday, 5, nowSunday))
+		// Понедельник следующей недели (02.11) должен быть " (завтра)"
+		nextWeekMonday := time.Date(2026, 11, 2, 0, 0, 0, 0, minskLoc)
+		assert.Equal(t, " (завтра)", DayRelativeLabelWithNow(nextWeekMonday, 0, nowSunday))
+	})
+
+	t.Run("different week returns empty", func(t *testing.T) {
+		farPastWeek := time.Date(2026, 10, 12, 0, 0, 0, 0, minskLoc)
+		for i := range 6 {
+			assert.Empty(t, DayRelativeLabelWithNow(farPastWeek, i, nowWednesday))
+		}
+	})
+
+	t.Run("invalid day index", func(t *testing.T) {
+		assert.Empty(t, DayRelativeLabelWithNow(currWeekMonday, -1, nowWednesday))
+		assert.Empty(t, DayRelativeLabelWithNow(currWeekMonday, 7, nowWednesday))
+	})
+}
+
+func TestFormatScheduleWeek_DayRelativeLabels(t *testing.T) {
+	now := time.Now().In(minskLoc)
+	todayWeekday := (int(now.Weekday()) + 6) % 7
+	todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, minskLoc)
+	weekMonday := todayDate.AddDate(0, 0, -todayWeekday)
+
+	group := &entities.Group{
+		ID:   101,
+		Week: weekMonday,
+		Days: []*entities.Day{
+			{Name: "Понедельник", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Вторник", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Среда", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Четверг", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Пятница", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Суббота", Subjects: []*entities.Subject{{IsEmpty: true}}},
+		},
+	}
+
+	res := FormatScheduleWeek(group)
+
+	if todayWeekday < 6 {
+		assert.Contains(t, res, "(сегодня)")
+	}
+	if todayWeekday > 0 && todayWeekday <= 6 {
+		assert.Contains(t, res, "(вчера)")
+	}
+	if todayWeekday < 5 {
+		assert.Contains(t, res, "(завтра)")
+	}
+}
+
+func TestFormatTeacherScheduleWeek_DayRelativeLabels(t *testing.T) {
+	now := time.Now().In(minskLoc)
+	todayWeekday := (int(now.Weekday()) + 6) % 7
+	todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, minskLoc)
+	weekMonday := todayDate.AddDate(0, 0, -todayWeekday)
+
+	teacher := &entities.Teacher{
+		Name: "Иванов И. И.",
+		Week: weekMonday,
+		Days: []*entities.Day{
+			{Name: "Понедельник", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Вторник", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Среда", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Четверг", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Пятница", Subjects: []*entities.Subject{{IsEmpty: true}}},
+			{Name: "Суббота", Subjects: []*entities.Subject{{IsEmpty: true}}},
+		},
+	}
+
+	res := FormatTeacherScheduleWeek(teacher)
+
+	if todayWeekday < 6 {
+		assert.Contains(t, res, "(сегодня)")
+	}
+	if todayWeekday > 0 && todayWeekday <= 6 {
+		assert.Contains(t, res, "(вчера)")
+	}
+	if todayWeekday < 5 {
+		assert.Contains(t, res, "(завтра)")
+	}
+}

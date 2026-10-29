@@ -25,7 +25,13 @@ func Start(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 			log.Warn("can't save user from /start", "error", err)
 		}
 
-		return c.Send(messages.Start, tele.ModeMarkdown, tele.NoPreview, keyboard.ReplyScheduleKeyboard)
+		return c.Send(
+			messages.Start,
+			tele.ModeMarkdown,
+			tele.NoPreview,
+			keyboard.ReplyScheduleKeyboard,
+			keyboard.InlineRoleKeyboard(),
+		)
 	}
 }
 
