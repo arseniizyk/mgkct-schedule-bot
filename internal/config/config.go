@@ -25,12 +25,11 @@ type Config struct {
 }
 
 type BotConfig struct {
-	Token       string  `env:"TOKEN"`
-	HealthPort  string  `env:"HEALTH_PORT" env-default:"8081"`
-	WebAppURL   string  `env:"WEB_APP_URL" env-default:""`
-	APIURL      string  `env:"API_URL" env-default:""`
-	AdminChatID int64   `env:"ADMIN_CHAT_ID" env-default:"0"`
-	AdminIDs    []int64 `env:"ADMIN_IDS" env-separator:","`
+	Token      string  `env:"TOKEN"`
+	HealthPort string  `env:"HEALTH_PORT" env-default:"8081"`
+	WebAppURL  string  `env:"WEB_APP_URL" env-default:""`
+	APIURL     string  `env:"API_URL" env-default:""`
+	AdminIDs   []int64 `env:"ADMIN_IDS" env-separator:","`
 }
 
 type DBConfig struct {
@@ -63,16 +62,20 @@ func New(configPath string) (*Config, error) {
 		}
 	}
 
-	// Поддержка legacy TELEGRAM_TOKEN переменной
-	if cfg.Bot.Token == "" {
-		if legacyToken := os.Getenv("TELEGRAM_TOKEN"); legacyToken != "" {
-			cfg.Bot.Token = legacyToken
-		}
-	}
+	normalizeConfig(&cfg)
 
 	if cfg.Bot.Token == "" {
 		return nil, fmt.Errorf("%s: bot token is required (set TELEGRAM_TOKEN or BOT_TOKEN)", op)
 	}
 
 	return &cfg, nil
+}
+
+func normalizeConfig(cfg *Config) {
+	// Поддержка legacy TELEGRAM_TOKEN переменной
+	if cfg.Bot.Token == "" {
+		if legacyToken := os.Getenv("TELEGRAM_TOKEN"); legacyToken != "" {
+			cfg.Bot.Token = legacyToken
+		}
+	}
 }

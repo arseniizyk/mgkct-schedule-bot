@@ -149,12 +149,16 @@ func SetTeacher(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 		teacherQuery := strings.Join(args, " ")
 		matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
 		if !ok {
-			return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
+			return sendTeacherSetNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
 		}
 
 		if err := userRepo.SetTeacher(ctx, c.Chat().ID, matched); err != nil {
 			log.Error("failed saving user teacher", "name", matched, "error", err)
 			return c.Send(messages.Internal)
+		}
+
+		if sm != nil {
+			_ = sm.Clear(c.Chat().ID)
 		}
 
 		return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
@@ -182,6 +186,25 @@ func sendTeacherNotFoundOrSuggestions(ctx context.Context, c tele.Context, teach
 		return c.Send(
 			messages.TeacherNotFoundSuggestions,
 			keyboard.InlineTeacherSuggestionsKeyboard(suggestions),
+		)
+	}
+
+	return c.Send(messages.TeacherNotFound)
+}
+
+func sendTeacherSetNotFoundOrSuggestions(ctx context.Context, c tele.Context, teacherSvc TeacherService, query string, candidates []string) error {
+	if len(candidates) > 0 {
+		return c.Send(
+			fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)),
+			keyboard.InlineTeacherSetSuggestionsKeyboard(candidates),
+		)
+	}
+
+	suggestions, err := teacherSvc.FindSimilarTeachers(ctx, query, 3)
+	if err == nil && len(suggestions) > 0 {
+		return c.Send(
+			messages.TeacherNotFoundSuggestions,
+			keyboard.InlineTeacherSetSuggestionsKeyboard(suggestions),
 		)
 	}
 

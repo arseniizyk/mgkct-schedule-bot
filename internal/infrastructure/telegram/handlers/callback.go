@@ -24,7 +24,21 @@ func CallbacksHandler(
 	analyticsSvc AnalyticsService,
 	userRepo UserRepo,
 	sm StateManager,
+	extra ...any,
 ) tele.HandlerFunc {
+	var bot BotSender
+	var adminIDs []int64
+	for _, ex := range extra {
+		switch v := ex.(type) {
+		case BotSender:
+			bot = v
+		case []int64:
+			adminIDs = v
+		case context.Context:
+			SetBroadcastContext(v)
+		}
+	}
+
 	return func(c tele.Context) error {
 		callback := c.Callback()
 		data := callback.Data
@@ -34,6 +48,10 @@ func CallbacksHandler(
 
 		var err error
 		switch {
+		// Рассылка администратора
+		case strings.Contains(data, keyboard.BroadcastConfirm), strings.Contains(data, keyboard.BroadcastCancel):
+			return HandleBroadcastCallback(ctx, log, c, data, userRepo, bot, sm, adminIDs)
+
 		// Выбор роли
 		case strings.Contains(data, keyboard.RoleSelect):
 			if sm != nil {
@@ -49,7 +67,7 @@ func CallbacksHandler(
 		// Выбор подгруппы
 		case strings.Contains(data, keyboard.SubgroupSelect):
 			if userRepo != nil {
-				err = handleSubgroupSelect(ctx, log, c, data, userRepo)
+				err = handleSubgroupSelect(ctx, log, c, data, userRepo, sm)
 			}
 
 		// Кабинеты
@@ -67,6 +85,12 @@ func CallbacksHandler(
 			err = handleArchiveBack(ctx, log, c, data, schedSvc, teacherSvc)
 		case strings.Contains(data, keyboard.ArchiveSelect):
 			err = handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc, userRepo)
+
+		// Закрепление преподавателя
+		case strings.Contains(data, keyboard.TeacherSetSelect):
+			if userRepo != nil {
+				err = handleTeacherSetSelect(ctx, log, c, data, userRepo, sm)
+			}
 
 		// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
 		case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
@@ -133,7 +157,7 @@ func handleRoleSelect(ctx context.Context, log *slog.Logger, c tele.Context, dat
 	}
 }
 
-func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, userRepo UserRepo) error {
+func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, userRepo UserRepo, sm StateManager) error {
 	raw := dataFromCallbackData(data)
 	parts := strings.Split(raw, ":")
 	if len(parts) < 2 {
@@ -155,6 +179,10 @@ func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context,
 		return err
 	}
 
+	if sm != nil {
+		_ = sm.Clear(c.Chat().ID)
+	}
+
 	var text string
 	if subgroup > 0 {
 		text = fmt.Sprintf(messages.GroupWithSubgroupSaved, groupID, subgroup)
@@ -162,7 +190,28 @@ func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context,
 		text = messages.GroupSaved
 	}
 
-	return safeEdit(c, text)
+	_ = safeEdit(c, text)
+	return c.Send(text, keyboard.ReplyScheduleKeyboard)
+}
+
+func handleTeacherSetSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, userRepo UserRepo, sm StateManager) error {
+	raw := dataFromCallbackData(data)
+	teacherName := raw
+	if teacherName == "" {
+		return fmt.Errorf("invalid teacher set select data: %s", data)
+	}
+
+	if err := userRepo.SetTeacher(ctx, c.Chat().ID, teacherName); err != nil {
+		log.Error("failed saving user teacher from callback", "teacher", teacherName, "error", err)
+		return err
+	}
+
+	if sm != nil {
+		_ = sm.Clear(c.Chat().ID)
+	}
+
+	_ = safeEdit(c, messages.TeacherSaved)
+	return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
 }
 
 func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {

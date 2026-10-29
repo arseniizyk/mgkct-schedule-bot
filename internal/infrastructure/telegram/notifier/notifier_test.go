@@ -2,9 +2,13 @@ package notifier
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
@@ -77,15 +81,58 @@ func TestCalculateTomorrowDate(t *testing.T) {
 
 func TestNotifier_ScraperAlerts_NoAdmin(t *testing.T) {
 	n := &Notifier{
-		adminChatID: 0,
+		adminIDs: nil,
 	}
 
 	ctx := context.Background()
 	if err := n.HandleScraperError(ctx, nil, 5); err != nil {
-		t.Errorf("expected nil error when adminChatID=0, got %v", err)
+		t.Errorf("expected nil error when adminIDs is empty, got %v", err)
 	}
 	if err := n.HandleScraperRecovered(ctx); err != nil {
-		t.Errorf("expected nil error when adminChatID=0, got %v", err)
+		t.Errorf("expected nil error when adminIDs is empty, got %v", err)
+	}
+}
+
+type mockBotSender struct {
+	sentChats []int64
+}
+
+func (m *mockBotSender) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
+	if chatID, err := strconv.ParseInt(to.Recipient(), 10, 64); err == nil {
+		m.sentChats = append(m.sentChats, chatID)
+	}
+	return &tele.Message{}, nil
+}
+
+func TestNotifier_ScraperAlerts_MultipleAdmins(t *testing.T) {
+	bot := &mockBotSender{}
+	n := &Notifier{
+		bot:      bot,
+		adminIDs: []int64{111, 222},
+	}
+
+	ctx := context.Background()
+	if err := n.HandleScraperError(ctx, errors.New("timeout"), 3); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bot.sentChats) != 2 || bot.sentChats[0] != 111 || bot.sentChats[1] != 222 {
+		t.Errorf("expected sentChats to be [111, 222], got %v", bot.sentChats)
+	}
+
+	bot.sentChats = nil
+	if err := n.HandleScraperError(ctx, nil, 1); err != nil {
+		t.Fatalf("unexpected error on nil err: %v", err)
+	}
+	if len(bot.sentChats) != 2 {
+		t.Errorf("expected 2 alerts sent even when err is nil, got %d", len(bot.sentChats))
+	}
+
+	bot.sentChats = nil
+	if err := n.HandleScraperRecovered(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(bot.sentChats) != 2 || bot.sentChats[0] != 111 || bot.sentChats[1] != 222 {
+		t.Errorf("expected sentChats to be [111, 222], got %v", bot.sentChats)
 	}
 }
 

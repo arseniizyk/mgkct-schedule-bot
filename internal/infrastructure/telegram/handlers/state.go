@@ -60,7 +60,7 @@ func StatesHandler(
 				_ = sm.Clear(chatID)
 				return c.Send(messages.Cancelled)
 			}
-			return handleWaitingBroadcast(ctx, log, c, sm, userRepo, bot)
+			return handleWaitingBroadcast(ctx, log, c, sm)
 		default:
 			_ = sm.Clear(chatID)
 			return c.Send(messages.Cancelled)
@@ -104,7 +104,7 @@ func handleWaitingTeacher(ctx context.Context, log *slog.Logger, c tele.Context,
 	teacherQuery := c.Text()
 	matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
 	if !ok {
-		return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
+		return sendTeacherSetNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
 	}
 
 	if err := userRepo.SetTeacher(ctx, chatID, matched); err != nil {
