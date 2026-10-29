@@ -119,10 +119,10 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/group", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/day", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/week", handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
-	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, stateMgr))
+	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo, stateMgr))
-	bot.Handle("/teacherweek", handlers.Teachers(log, teacherSvc, stateMgr))
+	bot.Handle("/teacherweek", handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/subject", handlers.Subject(subjectDict, stateMgr))
 	bot.Handle("/cabinet", handlers.Cabinet(log, analyticsSvc, stateMgr))
 	bot.Handle("/auditory", handlers.Cabinet(log, analyticsSvc, stateMgr))
@@ -135,7 +135,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle(kbd.BtnWeek, handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle(kbd.BtnCalls, handlers.Calls())
-	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, stateMgr))
+	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
 
 	// Инлайн-коллбэки и ввод текста
 	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr))

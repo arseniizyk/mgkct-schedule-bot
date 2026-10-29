@@ -87,7 +87,7 @@ func TestTeacher_TypoSuggestions(t *testing.T) {
 	sm := state.NewMemoryManager()
 
 	t.Run("Teachers command with typo suggests keyboard", func(t *testing.T) {
-		h := handlers.Teachers(log, tSvc, sm)
+		h := handlers.Teachers(log, tSvc, nil, sm)
 		c := &mockContext{
 			chatID: 123,
 			args:   []string{"Анципав"},
@@ -112,7 +112,7 @@ func TestTeacher_TypoSuggestions(t *testing.T) {
 	})
 
 	t.Run("Teachers command with unknown name returns not found", func(t *testing.T) {
-		h := handlers.Teachers(log, tSvc, sm)
+		h := handlers.Teachers(log, tSvc, nil, sm)
 		c := &mockContext{
 			chatID: 123,
 			args:   []string{"Абракадабра"},

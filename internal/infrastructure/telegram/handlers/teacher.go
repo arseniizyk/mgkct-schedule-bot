@@ -56,7 +56,7 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 		}
 
 		var profile string
-		if isSearch {
+		if isSearch && shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
 			member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
 			profile = formatter.FormatTeacherProfile(member)
 		}
@@ -72,7 +72,20 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 	}
 }
 
-func Teachers(log *slog.Logger, teacherSvc TeacherService, sm StateManager) tele.HandlerFunc {
+// shouldShowTeacherProfile проверяет, нужно ли показывать профиль преподавателя.
+// Если в профиле пользователя установлен этот же преподаватель, возвращается false.
+func shouldShowTeacherProfile(ctx context.Context, userRepo UserRepo, chatID int64, teacherName string) bool {
+	if userRepo == nil || teacherName == "" {
+		return true
+	}
+	savedTeacher, err := userRepo.GetTeacher(ctx, chatID)
+	if err == nil && savedTeacher != "" && strings.EqualFold(savedTeacher, teacherName) {
+		return false
+	}
+	return true
+}
+
+func Teachers(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		args := c.Args()
 		if len(args) == 0 {
@@ -98,8 +111,12 @@ func Teachers(log *slog.Logger, teacherSvc TeacherService, sm StateManager) tele
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		member, _ := teacherSvc.GetFacultyMember(ctx, matched)
-		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
+		var profile string
+		if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, matched) {
+			member, _ := teacherSvc.GetFacultyMember(ctx, matched)
+			profile = formatter.FormatTeacherProfile(member)
+		}
+		msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 		weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
 		if err != nil {
 			weeks = entities.WeekNavigation{}

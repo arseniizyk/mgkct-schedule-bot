@@ -44,9 +44,9 @@ func StatesHandler(
 		case state.WaitingTeacher:
 			return handleWaitingTeacher(ctx, log, c, userRepo, sm, teacherSvc)
 		case state.WaitingTeacherSchedule:
-			return handleWaitingTeacherSchedule(ctx, log, c, sm, teacherSvc)
+			return handleWaitingTeacherSchedule(ctx, log, c, userRepo, sm, teacherSvc)
 		case state.WaitingTeacherDay:
-			return handleWaitingTeacherDay(ctx, log, c, sm, teacherSvc)
+			return handleWaitingTeacherDay(ctx, log, c, userRepo, sm, teacherSvc)
 		case state.WaitingCabinet:
 			return handleWaitingCabinet(ctx, log, c, sm, analyticsSvc)
 		case state.WaitingSubject:
@@ -108,7 +108,7 @@ func handleWaitingTeacher(ctx context.Context, log *slog.Logger, c tele.Context,
 	return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
 }
 
-func handleWaitingTeacherSchedule(ctx context.Context, log *slog.Logger, c tele.Context, sm StateManager, teacherSvc TeacherService) error {
+func handleWaitingTeacherSchedule(ctx context.Context, log *slog.Logger, c tele.Context, userRepo UserRepo, sm StateManager, teacherSvc TeacherService) error {
 	chatID := c.Chat().ID
 	teacherQuery := c.Text()
 	matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
@@ -124,7 +124,12 @@ func handleWaitingTeacherSchedule(ctx context.Context, log *slog.Logger, c tele.
 		return c.Send(formatter.FormatErrorMessage(err))
 	}
 
-	msg := formatter.FormatTeacherScheduleWeek(teacher)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, chatID, matched) {
+		member, _ := teacherSvc.GetFacultyMember(ctx, matched)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
 	if err != nil {
 		weeks = entities.WeekNavigation{}
@@ -139,7 +144,7 @@ func handleWaitingTeacherSchedule(ctx context.Context, log *slog.Logger, c tele.
 	)
 }
 
-func handleWaitingTeacherDay(ctx context.Context, log *slog.Logger, c tele.Context, sm StateManager, teacherSvc TeacherService) error {
+func handleWaitingTeacherDay(ctx context.Context, log *slog.Logger, c tele.Context, userRepo UserRepo, sm StateManager, teacherSvc TeacherService) error {
 	chatID := c.Chat().ID
 	teacherQuery := c.Text()
 	matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
@@ -155,8 +160,12 @@ func handleWaitingTeacherDay(ctx context.Context, log *slog.Logger, c tele.Conte
 		return c.Send(formatter.FormatErrorMessage(err))
 	}
 
-	member, _ := teacherSvc.GetFacultyMember(ctx, matched)
-	msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleDay(teacher)
+	var profile string
+	if shouldShowTeacherProfile(ctx, userRepo, chatID, matched) {
+		member, _ := teacherSvc.GetFacultyMember(ctx, matched)
+		profile = formatter.FormatTeacherProfile(member)
+	}
+	msg := profile + formatter.FormatTeacherScheduleDay(teacher)
 	dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
 
 	return c.Send(

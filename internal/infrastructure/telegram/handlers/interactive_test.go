@@ -413,3 +413,60 @@ func TestInteractive_ArchiveSelect_And_Back(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, ctxBack.editedWhat, "Архив расписания группы 88")
 }
+
+func TestInteractive_TeacherDayNav_HidesProfile_ForSavedTeacher(t *testing.T) {
+	userRepo := newMockUserRepo()
+	_ = userRepo.SetTeacher(context.Background(), 101, "Иванов И. И.")
+
+	tSvc := &mockTeacherSvcFull{
+		teacherSchedule: &entities.Teacher{
+			Name: "Иванов И. И.",
+			Days: []*entities.Day{
+				{Name: "Понедельник"},
+				{Name: "Вторник"},
+			},
+		},
+	}
+	sm := state.NewMemoryManager()
+	cbHandler := handlers.CallbacksHandler(testLog(), nil, tSvc, nil, userRepo, sm)
+
+	ctx := &mockContext{
+		chatID:   101,
+		callback: &tele.Callback{Data: "\x0ct_nextday|Иванов И. И.:1"},
+	}
+
+	err := cbHandler(ctx)
+	require.NoError(t, err)
+	assert.NotNil(t, ctx.editedWhat)
+	// Для самого преподавателя профиль не выводится
+	assert.NotContains(t, ctx.editedWhat, "Иванов И. И.")
+	assert.Contains(t, ctx.editedWhat, "Вторник")
+}
+
+func TestInteractive_TeacherDayNav_ShowsProfile_ForOtherUser(t *testing.T) {
+	userRepo := newMockUserRepo() // у пользователя 202 нет сохранённого преподавателя
+
+	tSvc := &mockTeacherSvcFull{
+		teacherSchedule: &entities.Teacher{
+			Name: "Иванов И. И.",
+			Days: []*entities.Day{
+				{Name: "Понедельник"},
+				{Name: "Вторник"},
+			},
+		},
+	}
+	sm := state.NewMemoryManager()
+	cbHandler := handlers.CallbacksHandler(testLog(), nil, tSvc, nil, userRepo, sm)
+
+	ctx := &mockContext{
+		chatID:   202,
+		callback: &tele.Callback{Data: "\x0ct_nextday|Иванов И. И.:1"},
+	}
+
+	err := cbHandler(ctx)
+	require.NoError(t, err)
+	assert.NotNil(t, ctx.editedWhat)
+	// Для другого пользователя (студента) профиль отображается
+	assert.Contains(t, ctx.editedWhat, "Иванов И. И.")
+	assert.Contains(t, ctx.editedWhat, "Вторник")
+}
