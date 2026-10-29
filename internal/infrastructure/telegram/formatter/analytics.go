@@ -18,7 +18,8 @@ func FormatCabinetDay(cs *entities.CabinetSchedule, dayIdx int) string {
 
 	day := cs.Days[dayIdx]
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "🚪 *Кабинет %s*\n*%s*\n\n", escapeMD(cs.Cabinet), escapeMD(day.DayName))
+	tag := DayRelativeLabel(cs.Week, day.DayIndex)
+	fmt.Fprintf(&sb, "🚪 *Кабинет %s*\n*%s%s*\n\n", escapeMD(cs.Cabinet), escapeMD(day.DayName), tag)
 
 	if len(day.Bookings) == 0 {
 		sb.WriteString("🎉 *Свободен на весь день!*\nПар в этом кабинете не запланировано.\n")
@@ -50,7 +51,8 @@ func FormatCabinetWeek(cs *entities.CabinetSchedule) string {
 	fmt.Fprintf(&sb, "🚪 *Расписание кабинета %s на неделю*\n\n", escapeMD(cs.Cabinet))
 
 	for _, day := range cs.Days {
-		fmt.Fprintf(&sb, "*%s*\n", escapeMD(day.DayName))
+		tag := DayRelativeLabel(cs.Week, day.DayIndex)
+		fmt.Fprintf(&sb, "*%s%s*\n", escapeMD(day.DayName), tag)
 		if len(day.Bookings) == 0 {
 			sb.WriteString("└─ _Свободен_\n\n")
 			continue

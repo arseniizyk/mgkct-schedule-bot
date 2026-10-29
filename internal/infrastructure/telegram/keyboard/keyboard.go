@@ -39,6 +39,10 @@ const (
 	DaySubgroup    = "day_sg"
 	WeekSubgroup   = "week_sg"
 
+	RoleSelect  = "role_sel"
+	RoleStudent = "student"
+	RoleTeacher = "teacher"
+
 	btnCurrentWeek = "📆 Неделя"
 	btnPrev        = "◀️"
 	btnNext        = "▶️"
@@ -327,6 +331,17 @@ func InlineSubgroupKeyboard(groupID int) *tele.ReplyMarkup {
 		),
 		markup.Row(
 			markup.Data("Вся группа", SubgroupSelect, fmt.Sprintf("%d:0", groupID)),
+		),
+	)
+	return markup
+}
+
+func InlineRoleKeyboard() *tele.ReplyMarkup {
+	markup := &tele.ReplyMarkup{}
+	markup.Inline(
+		markup.Row(
+			markup.Data("🎓 Студент", RoleSelect, RoleStudent),
+			markup.Data("👨‍🏫 Преподаватель", RoleSelect, RoleTeacher),
 		),
 	)
 	return markup

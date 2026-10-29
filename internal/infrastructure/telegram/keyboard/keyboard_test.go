@@ -252,3 +252,41 @@ func TestInlineTeacherSuggestionsKeyboard(t *testing.T) {
 		}
 	}
 }
+
+func TestInlineRoleKeyboard(t *testing.T) {
+	m := InlineRoleKeyboard()
+	if m == nil {
+		t.Fatal("expected non-nil keyboard")
+	}
+
+	if len(m.InlineKeyboard) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(m.InlineKeyboard))
+	}
+
+	row := m.InlineKeyboard[0]
+	if len(row) != 2 {
+		t.Fatalf("expected 2 buttons, got %d", len(row))
+	}
+
+	btnStudent := row[0]
+	if btnStudent.Text != "🎓 Студент" {
+		t.Errorf("student btn.Text = %q, want %q", btnStudent.Text, "🎓 Студент")
+	}
+	if btnStudent.Unique != RoleSelect {
+		t.Errorf("student btn.Unique = %q, want %q", btnStudent.Unique, RoleSelect)
+	}
+	if btnStudent.Data != RoleStudent {
+		t.Errorf("student btn.Data = %q, want %q", btnStudent.Data, RoleStudent)
+	}
+
+	btnTeacher := row[1]
+	if btnTeacher.Text != "👨‍🏫 Преподаватель" {
+		t.Errorf("teacher btn.Text = %q, want %q", btnTeacher.Text, "👨‍🏫 Преподаватель")
+	}
+	if btnTeacher.Unique != RoleSelect {
+		t.Errorf("teacher btn.Unique = %q, want %q", btnTeacher.Unique, RoleSelect)
+	}
+	if btnTeacher.Data != RoleTeacher {
+		t.Errorf("teacher btn.Data = %q, want %q", btnTeacher.Data, RoleTeacher)
+	}
+}
