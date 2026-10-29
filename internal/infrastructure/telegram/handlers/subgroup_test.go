@@ -73,6 +73,18 @@ func (m *mockUserRepo) GetNotifyEvening(ctx context.Context, chatID int64) (bool
 	return true, nil
 }
 
+func (m *mockUserRepo) AllUsersWithUsernames(ctx context.Context) ([]entities.User, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepo) AllUsers(ctx context.Context) ([]entities.User, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepo) CountUsers(ctx context.Context) (int, error) {
+	return 0, nil
+}
+
 type mockContext struct {
 	tele.Context
 
@@ -173,7 +185,7 @@ func TestStatesHandler_WaitingGroup(t *testing.T) {
 	repo := newMockUserRepo()
 	sm := state.NewMemoryManager()
 
-	handler := handlers.StatesHandler(logger, repo, sm, nil, nil, nil, nil)
+	handler := handlers.StatesHandler(logger, repo, sm, nil, nil, nil, nil, nil, nil)
 
 	t.Run("user inputs only group number", func(t *testing.T) {
 		_ = sm.Set(201, state.WaitingGroup)

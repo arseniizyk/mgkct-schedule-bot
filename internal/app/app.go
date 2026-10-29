@@ -112,36 +112,17 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	// Инициализация клавиатуры с WebApp URL (если настроен)
 	kbd.InitKeyboard(cfg.Bot.WebAppURL)
 
-	// Регистрация команд
-	bot.Handle("/start", handlers.Start(log, userRepo))
-	bot.Handle("/app", handlers.App(cfg.Bot.WebAppURL))
-	bot.Handle("/calls", handlers.Calls())
-	bot.Handle("/cancel", handlers.Cancel(log, stateMgr))
-	bot.Handle("/setgroup", handlers.SetGroup(log, userRepo, stateMgr))
-	bot.Handle("/group", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
-	bot.Handle("/day", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
-	bot.Handle("/week", handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
-	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
-	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
-	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo, stateMgr))
-	bot.Handle("/teacherweek", handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
-	bot.Handle("/subject", handlers.Subject(subjectDict, stateMgr))
-	bot.Handle("/cabinet", handlers.Cabinet(log, analyticsSvc, stateMgr))
-	bot.Handle("/auditory", handlers.Cabinet(log, analyticsSvc, stateMgr))
-	bot.Handle("/endings", handlers.Endings(log, analyticsSvc))
-	bot.Handle("/stats", handlers.Stats(log, analyticsSvc, userRepo, teacherSvc))
-	bot.Handle("/archive", handlers.Archive(log, scheduleSvc, teacherSvc, userRepo, stateMgr))
-	bot.Handle("/notify", handlers.Notify(log, userRepo))
-
-	// Кнопки Reply-клавиатуры
-	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
-	bot.Handle(kbd.BtnWeek, handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
-	bot.Handle(kbd.BtnCalls, handlers.Calls())
-	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
-
-	// Инлайн-коллбэки и ввод текста
-	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr))
-	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc, scheduleSvc, analyticsSvc, subjectDict))
+	registerBotHandlers(
+		bot,
+		log,
+		cfg,
+		stateMgr,
+		userRepo,
+		scheduleSvc,
+		teacherSvc,
+		analyticsSvc,
+		subjectDict,
+	)
 
 	eventCh := make(chan service.Event, 100)
 	notif := notifier.New(log, bot, userRepo, cfg.Bot.AdminChatID)
@@ -511,4 +492,54 @@ func (a *App) notifyTeachersAfterLessons(
 			a.log.Warn("failed sending next day digest for teacher", "teacher", teacherName, "error", sendErr)
 		}
 	}
+}
+
+func registerBotHandlers(
+	bot *tele.Bot,
+	log *slog.Logger,
+	cfg *config.Config,
+	stateMgr *state.MemoryManager,
+	userRepo *repository.UserRepository,
+	scheduleSvc *service.ScheduleService,
+	teacherSvc *service.TeacherService,
+	analyticsSvc *service.AnalyticsService,
+	subjectDict *dictionary.SubjectDictionary,
+) {
+	// Регистрация команд
+	bot.Handle("/start", handlers.Start(log, userRepo))
+	bot.Handle("/help", handlers.Help(cfg.Bot.AdminIDs))
+	bot.Handle("/app", handlers.App(cfg.Bot.WebAppURL))
+	bot.Handle("/calls", handlers.Calls())
+	bot.Handle("/cancel", handlers.Cancel(log, stateMgr))
+	bot.Handle("/setgroup", handlers.SetGroup(log, userRepo, stateMgr))
+	bot.Handle("/group", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/day", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/week", handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
+	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
+	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo, stateMgr))
+	bot.Handle("/teacherweek", handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
+	bot.Handle("/subject", handlers.Subject(subjectDict, stateMgr))
+	bot.Handle("/cabinet", handlers.Cabinet(log, analyticsSvc, stateMgr))
+	bot.Handle("/auditory", handlers.Cabinet(log, analyticsSvc, stateMgr))
+	bot.Handle("/endings", handlers.Endings(log, analyticsSvc))
+	bot.Handle("/stats", handlers.Stats(log, analyticsSvc, userRepo, teacherSvc))
+	bot.Handle("/archive", handlers.Archive(log, scheduleSvc, teacherSvc, userRepo, stateMgr))
+	bot.Handle("/notify", handlers.Notify(log, userRepo))
+
+	// Команды администратора
+	adminMiddleware := handlers.AdminOnly(cfg.Bot.AdminIDs)
+	bot.Handle("/userstats", handlers.UserStats(log, userRepo), adminMiddleware)
+	bot.Handle("/broadcast", handlers.Broadcast(log, stateMgr), adminMiddleware)
+	bot.Handle("/botinfo", handlers.BotInfo(log, userRepo), adminMiddleware)
+
+	// Кнопки Reply-клавиатуры
+	bot.Handle(kbd.BtnDay, handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle(kbd.BtnWeek, handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle(kbd.BtnCalls, handlers.Calls())
+	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
+
+	// Инлайн-коллбэки и ввод текста
+	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr))
+	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc, scheduleSvc, analyticsSvc, subjectDict, bot, cfg.Bot.AdminIDs))
 }

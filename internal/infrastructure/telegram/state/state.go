@@ -13,6 +13,7 @@ const (
 	WaitingCabinet         State = "waiting_cabinet"
 	WaitingSubject         State = "waiting_subject"
 	WaitingArchive         State = "waiting_archive"
+	WaitingBroadcast       State = "waiting_broadcast"
 )
 
 // MemoryManager хранит временные интерактивные состояния пользователей в памяти.

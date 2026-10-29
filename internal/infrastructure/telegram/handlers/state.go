@@ -26,6 +26,8 @@ func StatesHandler(
 	schedSvc ScheduleService,
 	analyticsSvc AnalyticsService,
 	subjectDict SubjectDict,
+	bot BotSender,
+	adminIDs []int64,
 ) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		chatID := c.Chat().ID
@@ -53,6 +55,12 @@ func StatesHandler(
 			return handleWaitingSubject(c, sm, subjectDict)
 		case state.WaitingArchive:
 			return handleWaitingArchive(ctx, c, sm, schedSvc, teacherSvc)
+		case state.WaitingBroadcast:
+			if !IsAdmin(adminIDs, chatID) {
+				_ = sm.Clear(chatID)
+				return c.Send(messages.Cancelled)
+			}
+			return handleWaitingBroadcast(ctx, log, c, sm, userRepo, bot)
 		default:
 			_ = sm.Clear(chatID)
 			return c.Send(messages.Cancelled)

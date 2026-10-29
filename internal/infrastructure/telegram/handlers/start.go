@@ -41,6 +41,17 @@ func Calls() tele.HandlerFunc {
 	}
 }
 
+// Help обрабатывает команду /help. Для администраторов показывает расширенную справку.
+func Help(adminIDs []int64) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		text := messages.Help
+		if IsAdmin(adminIDs, c.Chat().ID) {
+			text += messages.HelpAdmin
+		}
+		return c.Send(text, keyboard.ReplyScheduleKeyboard)
+	}
+}
+
 func Cancel(log *slog.Logger, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		if err := sm.Clear(c.Chat().ID); err != nil {
