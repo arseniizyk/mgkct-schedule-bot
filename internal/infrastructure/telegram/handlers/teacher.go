@@ -16,7 +16,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
 )
 
-func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) tele.HandlerFunc {
+func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -36,8 +36,14 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) 
 			teacherName = matched
 		} else {
 			teacherName, err = userRepo.GetTeacher(ctx, c.Chat().ID)
-			if err != nil {
-				return c.Send(formatter.FormatErrorMessage(err))
+			if err != nil || teacherName == "" {
+				if sm != nil {
+					if setErr := sm.Set(c.Chat().ID, state.WaitingTeacherDay); setErr != nil {
+						log.Error("failed setting waiting teacher day state", "error", setErr)
+						return c.Send(messages.Internal)
+					}
+				}
+				return c.Send(messages.WaitingTeacherDay)
 			}
 		}
 

@@ -171,7 +171,7 @@ func TestStatesHandler_WaitingGroup(t *testing.T) {
 	repo := newMockUserRepo()
 	sm := state.NewMemoryManager()
 
-	handler := handlers.StatesHandler(logger, repo, sm, nil)
+	handler := handlers.StatesHandler(logger, repo, sm, nil, nil, nil, nil)
 
 	t.Run("user inputs only group number", func(t *testing.T) {
 		_ = sm.Set(201, state.WaitingGroup)

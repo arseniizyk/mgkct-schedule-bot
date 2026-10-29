@@ -125,7 +125,7 @@ func TestTeacher_TypoSuggestions(t *testing.T) {
 
 	t.Run("WaitingTeacherSchedule state with typo suggests keyboard", func(t *testing.T) {
 		_ = sm.Set(123, state.WaitingTeacherSchedule)
-		h := handlers.StatesHandler(log, newMockUserRepo(), sm, tSvc)
+		h := handlers.StatesHandler(log, newMockUserRepo(), sm, tSvc, nil, nil, nil)
 		c := &mockContext{
 			chatID: 123,
 			text:   "Анципав",
@@ -147,7 +147,7 @@ func TestTeacher_TypoSuggestions(t *testing.T) {
 	})
 
 	t.Run("TeacherDay command with typo suggests keyboard", func(t *testing.T) {
-		h := handlers.TeacherDay(log, tSvc, newMockUserRepo())
+		h := handlers.TeacherDay(log, tSvc, newMockUserRepo(), sm)
 		c := &mockContext{
 			chatID: 123,
 			args:   []string{"Анципав"},

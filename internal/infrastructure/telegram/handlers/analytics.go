@@ -12,19 +12,23 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/service"
 )
 
 // Cabinet обрабатывает команду /cabinet <номер>
-func Cabinet(log *slog.Logger, analyticsSvc AnalyticsService) tele.HandlerFunc {
+func Cabinet(log *slog.Logger, analyticsSvc AnalyticsService, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		args := c.Args()
 		if len(args) == 0 {
-			return c.Send(
-				"🚪 *Поиск расписания по аудитории*\n\nИспользование: `/cabinet <номер>`\nНапример: `/cabinet 301` или `/cabinet 3-207`\n\nСписок всех кабинетов: /cabinets",
-				tele.ModeMarkdown,
-				keyboard.ReplyScheduleKeyboard,
-			)
+			if sm != nil {
+				if err := sm.Set(c.Chat().ID, state.WaitingCabinet); err != nil {
+					log.Error("failed setting waiting cabinet state", "error", err)
+					return c.Send(messages.Internal)
+				}
+			}
+			return c.Send(messages.WaitingCabinet)
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

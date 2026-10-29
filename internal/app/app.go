@@ -121,15 +121,15 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/week", handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, stateMgr))
 	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
-	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo))
+	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/teacherweek", handlers.TeacherWeek(log, teacherSvc, userRepo))
-	bot.Handle("/subject", handlers.Subject(subjectDict))
-	bot.Handle("/cabinet", handlers.Cabinet(log, analyticsSvc))
-	bot.Handle("/auditory", handlers.Cabinet(log, analyticsSvc))
+	bot.Handle("/subject", handlers.Subject(subjectDict, stateMgr))
+	bot.Handle("/cabinet", handlers.Cabinet(log, analyticsSvc, stateMgr))
+	bot.Handle("/auditory", handlers.Cabinet(log, analyticsSvc, stateMgr))
 	bot.Handle("/cabinets", handlers.Cabinets(log, analyticsSvc))
 	bot.Handle("/endings", handlers.Endings(log, analyticsSvc))
 	bot.Handle("/stats", handlers.Stats(log, analyticsSvc, userRepo, teacherSvc))
-	bot.Handle("/archive", handlers.Archive(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/archive", handlers.Archive(log, scheduleSvc, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/notify", handlers.Notify(log, userRepo))
 
 	// Кнопки Reply-клавиатуры
@@ -140,7 +140,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 
 	// Инлайн-коллбэки и ввод текста
 	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr))
-	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc))
+	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc, scheduleSvc, analyticsSvc, subjectDict))
 
 	eventCh := make(chan service.Event, 100)
 	notif := notifier.New(log, bot, userRepo, cfg.Bot.AdminChatID)
