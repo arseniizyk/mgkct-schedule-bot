@@ -206,7 +206,7 @@ func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
 	logger := testLogger()
 	repo := newMockUserRepo()
 
-	handler := handlers.CallbacksHandler(logger, nil, nil, nil, repo)
+	handler := handlers.CallbacksHandler(logger, nil, nil, nil, repo, nil)
 
 	ctx := &mockContext{
 		chatID: 301,
@@ -318,7 +318,7 @@ func TestCallbacksHandler_DaySubgroupAndTeacher(t *testing.T) {
 	}
 	teacherSvc := &mockTeacherService{teacher: sampleTeacher}
 
-	handler := handlers.CallbacksHandler(logger, schedSvc, teacherSvc, nil, repo)
+	handler := handlers.CallbacksHandler(logger, schedSvc, teacherSvc, nil, repo, nil)
 
 	t.Run("group day subgroup switch to subgroup 2", func(t *testing.T) {
 		ctx := &mockContext{
@@ -373,5 +373,48 @@ func TestCallbacksHandler_DaySubgroupAndTeacher(t *testing.T) {
 		err := handler(ctx)
 		require.NoError(t, err)
 		assert.Contains(t, ctx.editedWhat, "Физика")
+	})
+}
+
+func TestCallbacksHandler_RoleSelect(t *testing.T) {
+	logger := testLogger()
+	sm := state.NewMemoryManager()
+
+	handler := handlers.CallbacksHandler(logger, nil, nil, nil, nil, sm)
+
+	t.Run("select student role sets WaitingGroup state", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 501,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.RoleSelect + "|" + keyboard.RoleStudent,
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+
+		st, ok := sm.Get(501)
+		require.True(t, ok)
+		assert.Equal(t, state.WaitingGroup, st)
+		assert.Contains(t, ctx.sentWhat, "Студент")
+		assert.Contains(t, ctx.sentWhat, messages.WaitingGroup)
+	})
+
+	t.Run("select teacher role sets WaitingTeacher state", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 502,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.RoleSelect + "|" + keyboard.RoleTeacher,
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+
+		st, ok := sm.Get(502)
+		require.True(t, ok)
+		assert.Equal(t, state.WaitingTeacher, st)
+		assert.Contains(t, ctx.sentWhat, "Преподаватель")
+		assert.Contains(t, ctx.sentWhat, messages.WaitingTeacher)
 	})
 }
