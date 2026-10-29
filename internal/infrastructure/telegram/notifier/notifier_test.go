@@ -194,6 +194,48 @@ func TestFormatNextDayDigest_GroupSuccess(t *testing.T) {
 	}
 }
 
+func TestFormatNextDayDigest_GroupSubgroupFiltered(t *testing.T) {
+	ctx := context.Background()
+	minskLoc := time.FixedZone("MSK", 3*3600)
+	targetDate := time.Date(2026, 10, 13, 12, 0, 0, 0, minskLoc)
+	targetMonday := time.Date(2026, 10, 12, 0, 0, 0, 0, minskLoc)
+
+	schedProv := &mockSchedProvider{
+		byWeekFunc: func(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
+			return &entities.Group{
+				ID:   groupID,
+				Week: targetMonday,
+				Days: []*entities.Day{
+					{Name: "Понедельник"},
+					{
+						Name: "Вторник",
+						Subjects: []*entities.Subject{
+							{
+								Pairs: []*entities.Pair{
+									{Name: "1. Физика", Class: "101"},
+									{Name: "2. Химия", Class: "102"},
+								},
+							},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	userSub1 := entities.User{ChatID: 12345, Group: 101, Subgroup: 1}
+	msgSub1, err := FormatNextDayDigest(ctx, userSub1, targetDate, 1, schedProv, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(msgSub1, "Физика") {
+		t.Errorf("expected subgroup 1 subject in message, got %s", msgSub1)
+	}
+	if strings.Contains(msgSub1, "Химия") {
+		t.Errorf("did not expect subgroup 2 subject in message, got %s", msgSub1)
+	}
+}
+
 func TestFormatNextDayDigest_TeacherSuccess(t *testing.T) {
 	ctx := context.Background()
 	minskLoc := time.FixedZone("MSK", 3*3600)

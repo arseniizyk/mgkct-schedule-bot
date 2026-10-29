@@ -122,11 +122,10 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, stateMgr))
 	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo, stateMgr))
-	bot.Handle("/teacherweek", handlers.TeacherWeek(log, teacherSvc, userRepo))
+	bot.Handle("/teacherweek", handlers.Teachers(log, teacherSvc, stateMgr))
 	bot.Handle("/subject", handlers.Subject(subjectDict, stateMgr))
 	bot.Handle("/cabinet", handlers.Cabinet(log, analyticsSvc, stateMgr))
 	bot.Handle("/auditory", handlers.Cabinet(log, analyticsSvc, stateMgr))
-	bot.Handle("/cabinets", handlers.Cabinets(log, analyticsSvc))
 	bot.Handle("/endings", handlers.Endings(log, analyticsSvc))
 	bot.Handle("/stats", handlers.Stats(log, analyticsSvc, userRepo, teacherSvc))
 	bot.Handle("/archive", handlers.Archive(log, scheduleSvc, teacherSvc, userRepo, stateMgr))
@@ -254,17 +253,19 @@ func (a *App) listenEvents(ctx context.Context) {
 	}
 }
 
+type groupSubgroupKey struct {
+	groupID  int
+	subgroup int
+}
+
 func (a *App) startEveningDigestScheduler(ctx context.Context) {
-	log := a.log.With("operation", "app.App.startEveningDigestScheduler")
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	minskLoc := time.FixedZone("MSK", 3*3600)
-	sentGroupsToday := make(map[int]bool)
+	sentGroupsToday := make(map[groupSubgroupKey]bool)
 	sentTeachersToday := make(map[string]bool)
-	sentUsersToday := make(map[int64]bool)
 	var currentDate string
-	var lastEveningDate string
 
 	for {
 		select {
@@ -280,44 +281,34 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 				currentDate = todayStr
 				clear(sentGroupsToday)
 				clear(sentTeachersToday)
-				clear(sentUsersToday)
 			}
 
-			// 1. Проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на завтра
-			if todayWeekday >= time.Monday && todayWeekday <= time.Saturday && localTime.Hour() < 20 {
+			// Проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на следующий рабочий день
+			if todayWeekday >= time.Monday && todayWeekday <= time.Saturday {
 				dayIdx := int(todayWeekday - 1) // 0..5 для Пн..Сб
 
 				users, err := a.notifier.UsersForNotification(ctx)
 				if err == nil && len(users) > 0 {
-					uniqueGroups, uniqueTeachers := extractUniqueRecipients(users)
-					a.notifyGroupsAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueGroups, sentGroupsToday, sentUsersToday)
-					a.notifyTeachersAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTeachers, sentTeachersToday, sentUsersToday)
-				}
-			}
-
-			// 2. В 20:00 (или в воскресенье/выходные) отправляем общий вечерний дайджест тем, у кого сегодня не было пар или кто еще не получил
-			if localTime.Hour() >= 20 && lastEveningDate != todayStr {
-				lastEveningDate = todayStr
-				log.Info("Triggering scheduled evening digest fallback", "time", localTime.Format("15:04:05"))
-				if err := a.notifier.SendEveningDigest(ctx, a.scheduleSvc, a.teacherSvc, sentUsersToday); err != nil {
-					log.Error("error during evening digest broadcast", "error", err)
+					uniqueTargets, uniqueTeachers := extractUniqueRecipients(users)
+					a.notifyGroupsAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTargets, sentGroupsToday)
+					a.notifyTeachersAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTeachers, sentTeachersToday)
 				}
 			}
 		}
 	}
 }
 
-func extractUniqueRecipients(users []entities.User) (map[int]struct{}, map[string]struct{}) {
-	groups := make(map[int]struct{})
+func extractUniqueRecipients(users []entities.User) (map[groupSubgroupKey]struct{}, map[string]struct{}) {
+	targets := make(map[groupSubgroupKey]struct{})
 	teachers := make(map[string]struct{})
 	for _, u := range users {
 		if u.Group > 0 {
-			groups[u.Group] = struct{}{}
+			targets[groupSubgroupKey{groupID: u.Group, subgroup: u.Subgroup}] = struct{}{}
 		} else if u.TeacherName != "" {
 			teachers[u.TeacherName] = struct{}{}
 		}
 	}
-	return groups, teachers
+	return targets, teachers
 }
 
 func (a *App) notifyGroupsAfterLessons(
@@ -325,21 +316,26 @@ func (a *App) notifyGroupsAfterLessons(
 	localTime time.Time,
 	dayIdx int,
 	loc *time.Location,
-	groups map[int]struct{},
-	sentGroups map[int]bool,
-	sentUsers map[int64]bool,
+	targets map[groupSubgroupKey]struct{},
+	sentGroups map[groupSubgroupKey]bool,
 ) {
-	for groupID := range groups {
-		if sentGroups[groupID] {
+	for target := range targets {
+		if sentGroups[target] {
 			continue
 		}
 
-		grp, err := a.scheduleSvc.GetGroupLatestSchedule(ctx, int32(groupID))
+		grp, err := a.scheduleSvc.GetGroupLatestSchedule(ctx, int32(target.groupID))
 		if err != nil || dayIdx >= len(grp.Days) {
 			continue
 		}
 
-		lastSubject := formatter.FindLastSubject(grp.Days[dayIdx].Subjects)
+		// Фильтруем расписание сегодняшнего дня для конкретной подгруппы
+		filtered := formatter.FilterGroupForSubgroup(grp, target.subgroup)
+		if dayIdx >= len(filtered.Days) || filtered.Days[dayIdx] == nil {
+			continue
+		}
+
+		lastSubject := formatter.FindLastSubject(filtered.Days[dayIdx].Subjects)
 		if lastSubject == -1 {
 			continue
 		}
@@ -349,14 +345,19 @@ func (a *App) notifyGroupsAfterLessons(
 			continue
 		}
 
-		sentGroups[groupID] = true
-		a.log.Info("Lessons ended for group, sending next day digest", "group", groupID, "time", localTime.Format("15:04:05"))
-		sentIDs, sendErr := a.notifier.SendNextDayDigestForTarget(ctx, a.scheduleSvc, a.teacherSvc, groupID, "")
-		if sendErr != nil {
-			a.log.Warn("failed sending next day digest for group", "group", groupID, "error", sendErr)
-		}
-		for _, id := range sentIDs {
-			sentUsers[id] = true
+		sentGroups[target] = true
+		a.log.Info("Lessons ended for group/subgroup, sending next day digest",
+			"group", target.groupID,
+			"subgroup", target.subgroup,
+			"time", localTime.Format("15:04:05"),
+		)
+
+		if _, sendErr := a.notifier.SendNextDayDigestForGroupSubgroup(ctx, a.scheduleSvc, target.groupID, target.subgroup); sendErr != nil {
+			a.log.Warn("failed sending next day digest for group/subgroup",
+				"group", target.groupID,
+				"subgroup", target.subgroup,
+				"error", sendErr,
+			)
 		}
 	}
 }
@@ -368,7 +369,6 @@ func (a *App) notifyTeachersAfterLessons(
 	loc *time.Location,
 	teachers map[string]struct{},
 	sentTeachers map[string]bool,
-	sentUsers map[int64]bool,
 ) {
 	for teacherName := range teachers {
 		if sentTeachers[teacherName] {
@@ -391,13 +391,13 @@ func (a *App) notifyTeachersAfterLessons(
 		}
 
 		sentTeachers[teacherName] = true
-		a.log.Info("Lessons ended for teacher, sending next day digest", "teacher", teacherName, "time", localTime.Format("15:04:05"))
-		sentIDs, sendErr := a.notifier.SendNextDayDigestForTarget(ctx, a.scheduleSvc, a.teacherSvc, 0, teacherName)
-		if sendErr != nil {
+		a.log.Info("Lessons ended for teacher, sending next day digest",
+			"teacher", teacherName,
+			"time", localTime.Format("15:04:05"),
+		)
+
+		if _, sendErr := a.notifier.SendNextDayDigestForTeacher(ctx, a.teacherSvc, teacherName); sendErr != nil {
 			a.log.Warn("failed sending next day digest for teacher", "teacher", teacherName, "error", sendErr)
-		}
-		for _, id := range sentIDs {
-			sentUsers[id] = true
 		}
 	}
 }

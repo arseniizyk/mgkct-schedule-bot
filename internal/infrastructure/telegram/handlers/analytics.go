@@ -68,38 +68,6 @@ func Cabinet(log *slog.Logger, analyticsSvc AnalyticsService, sm StateManager) t
 	}
 }
 
-// Cabinets обрабатывает команду /cabinets (список всех аудиторий)
-func Cabinets(log *slog.Logger, analyticsSvc AnalyticsService) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		cabinets, err := analyticsSvc.GetAllCabinets(ctx)
-		if err != nil {
-			log.Error("failed getting cabinets list", "error", err)
-			return c.Send("Не удалось получить список кабинетов.", keyboard.ReplyScheduleKeyboard)
-		}
-
-		if len(cabinets) == 0 {
-			return c.Send("Кабинеты в расписании не найдены.", keyboard.ReplyScheduleKeyboard)
-		}
-
-		var sb strings.Builder
-		sb.WriteString("🚪 *Аудитории колледжа в расписании:*\n\n")
-
-		lineCount := 0
-		for _, cab := range cabinets {
-			fmt.Fprintf(&sb, "`/cabinet %s`  ", cab)
-			lineCount++
-			if lineCount%3 == 0 {
-				sb.WriteString("\n")
-			}
-		}
-
-		return sendLongMessage(c, sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-	}
-}
-
 // Endings обрабатывает команду /endings (аналитика окончания пар)
 func Endings(log *slog.Logger, analyticsSvc AnalyticsService) tele.HandlerFunc {
 	return func(c tele.Context) error {
