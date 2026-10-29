@@ -9,6 +9,11 @@ const (
 	WaitingGroup           State = "waiting_group"
 	WaitingTeacher         State = "waiting_teacher"
 	WaitingTeacherSchedule State = "waiting_teacher_schedule"
+	WaitingTeacherDay      State = "waiting_teacher_day"
+	WaitingCabinet         State = "waiting_cabinet"
+	WaitingSubject         State = "waiting_subject"
+	WaitingArchive         State = "waiting_archive"
+	WaitingBroadcast       State = "waiting_broadcast"
 )
 
 // MemoryManager хранит временные интерактивные состояния пользователей в памяти.

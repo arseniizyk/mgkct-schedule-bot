@@ -39,7 +39,7 @@
   const dayTabs = document.getElementById('dayTabs');
   const currentDayTitle = document.getElementById('currentDayTitle');
   const pairsCountLabel = document.getElementById('pairsCountLabel');
-  const saveDefaultBtn = document.getElementById('saveDefaultBtn');
+  const myScheduleBtn = document.getElementById('myScheduleBtn') || document.getElementById('saveDefaultBtn');
   const pairsList = document.getElementById('pairsList');
   const callsList = document.getElementById('callsList');
   const loadingIndicator = document.getElementById('loadingIndicator');
@@ -183,6 +183,37 @@
     return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
   }
 
+  // Check if current view is user's own schedule and update button state
+  function updateMyScheduleButton() {
+    if (!myScheduleBtn) return;
+    const profile = state.userProfile;
+    if (!profile || (!profile.group_id && !profile.teacher_name)) {
+      myScheduleBtn.classList.add('hidden');
+      return;
+    }
+
+    const isStudent = profile.group_id && profile.group_id > 0;
+    const isTeacher = !!profile.teacher_name;
+
+    let isViewingOwn = false;
+    if (isStudent && state.mode === 'group' && state.selectedGroup === profile.group_id && !state.selectedWeek) {
+      isViewingOwn = true;
+    } else if (isTeacher && state.mode === 'teacher' && state.selectedTeacher === profile.teacher_name && !state.selectedWeek) {
+      isViewingOwn = true;
+    }
+
+    if (isViewingOwn) {
+      myScheduleBtn.classList.add('hidden');
+    } else {
+      myScheduleBtn.classList.remove('hidden');
+      if (isStudent) {
+        myScheduleBtn.textContent = `Моя группа (${profile.group_id})`;
+      } else {
+        myScheduleBtn.textContent = 'Моё расписание';
+      }
+    }
+  }
+
   // Switch App Mode
   function setMode(mode) {
     haptic('light');
@@ -198,7 +229,7 @@
       scheduleView.classList.remove('hidden');
       callsView.classList.add('hidden');
       targetLabel.textContent = 'Группа:';
-      saveDefaultBtn.textContent = 'Моя группа';
+      updateMyScheduleButton();
       renderTargetOptions();
       loadSchedule();
     } else if (mode === 'teacher') {
@@ -207,7 +238,7 @@
       scheduleView.classList.remove('hidden');
       callsView.classList.add('hidden');
       targetLabel.textContent = 'Преподаватель:';
-      saveDefaultBtn.textContent = 'Моё расписание';
+      updateMyScheduleButton();
       renderTargetOptions();
       loadSchedule();
     } else if (mode === 'calls') {
@@ -263,6 +294,7 @@
     } else {
       state.selectedTeacher = e.target.value;
     }
+    updateMyScheduleButton();
     loadSchedule();
   });
 
@@ -271,6 +303,7 @@
     if (state.weeksNav?.prev && state.weeksNav.prev !== '0001-01-01T00:00:00Z') {
       haptic('light');
       state.selectedWeek = state.weeksNav.prev.split('T')[0];
+      updateMyScheduleButton();
       loadSchedule();
     }
   });
@@ -279,43 +312,28 @@
     if (state.weeksNav?.next && state.weeksNav.next !== '0001-01-01T00:00:00Z') {
       haptic('light');
       state.selectedWeek = state.weeksNav.next.split('T')[0];
+      updateMyScheduleButton();
       loadSchedule();
     }
   });
 
-  // Save Default Button
-  saveDefaultBtn.addEventListener('click', async () => {
-    haptic('light');
-    try {
-      const payload = {};
-      if (state.mode === 'group') {
-        payload.group_id = state.selectedGroup;
-        localStorage.setItem('mgkct_saved_mode', 'group');
-        localStorage.setItem('mgkct_saved_group', String(state.selectedGroup));
-      } else {
-        payload.teacher_name = state.selectedTeacher;
-        localStorage.setItem('mgkct_saved_mode', 'teacher');
-        localStorage.setItem('mgkct_saved_teacher', state.selectedTeacher);
-      }
+  // Quick Navigation to Own Schedule (view-only, does not alter server profile)
+  if (myScheduleBtn) {
+    myScheduleBtn.addEventListener('click', () => {
+      haptic('light');
+      const profile = state.userProfile;
+      if (!profile) return;
 
-      await apiFetch('/api/v1/user/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      haptic('success');
-      if (tg?.showAlert) {
-        tg.showAlert('Сохранено в ваш профиль бота!');
-      } else {
-        alert('Сохранено в ваш профиль бота!');
+      state.selectedWeek = '';
+      if (profile.teacher_name) {
+        state.selectedTeacher = profile.teacher_name;
+        setMode('teacher');
+      } else if (profile.group_id && profile.group_id > 0) {
+        state.selectedGroup = profile.group_id;
+        setMode('group');
       }
-    } catch (err) {
-      haptic('error');
-      console.error('Save profile error:', err);
-      alert('Ошибка при сохранении профиля');
-    }
-  });
+    });
+  }
 
   // Load Schedule Data
   async function loadSchedule() {
@@ -351,6 +369,7 @@
 
       loadingIndicator.classList.add('hidden');
       scheduleView.classList.remove('hidden');
+      updateMyScheduleButton();
     } catch (err) {
       console.error('Failed to load schedule:', err);
       loadingIndicator.classList.add('hidden');
@@ -644,17 +663,10 @@
     syncTheme();
     state.currentDayIdx = getInitialDayIndex();
 
-    // 0. Восстановление сохраненного выбора из localStorage
-    const savedMode = localStorage.getItem('mgkct_saved_mode');
-    const savedGroup = localStorage.getItem('mgkct_saved_group');
-    const savedTeacher = localStorage.getItem('mgkct_saved_teacher');
-    if (savedMode === 'teacher' && savedTeacher) {
-      state.mode = 'teacher';
-      state.selectedTeacher = savedTeacher;
-    } else if (savedMode === 'group' && savedGroup) {
-      state.mode = 'group';
-      state.selectedGroup = parseInt(savedGroup, 10);
-    }
+    // Очищаем устаревшие ключи выбора, чтобы выбор из бота не перезаписывался кэшем браузера
+    localStorage.removeItem('mgkct_saved_mode');
+    localStorage.removeItem('mgkct_saved_group');
+    localStorage.removeItem('mgkct_saved_teacher');
 
     try {
       // 1. Fetch Calls
@@ -680,19 +692,15 @@
         if (profile.teacher_name) {
           state.mode = 'teacher';
           state.selectedTeacher = profile.teacher_name;
-          localStorage.setItem('mgkct_saved_mode', 'teacher');
-          localStorage.setItem('mgkct_saved_teacher', profile.teacher_name);
         } else if (profile.group_id && profile.group_id > 0) {
           state.mode = 'group';
           state.selectedGroup = profile.group_id;
-          localStorage.setItem('mgkct_saved_mode', 'group');
-          localStorage.setItem('mgkct_saved_group', String(profile.group_id));
         }
       } catch (e) {
         console.warn('User profile not authorized or empty:', e);
       }
 
-      // Default selection if not set by profile or localStorage
+      // Default selection if not set by profile
       if (!state.selectedGroup && state.groups.length > 0) {
         state.selectedGroup = state.groups[0];
       }

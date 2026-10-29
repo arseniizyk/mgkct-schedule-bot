@@ -16,7 +16,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
 )
 
-func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) tele.HandlerFunc {
+func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -24,10 +24,12 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) 
 		var (
 			teacherName string
 			err         error
+			isSearch    bool
 		)
 
 		args := c.Args()
 		if len(args) > 0 {
+			isSearch = true
 			query := strings.Join(args, " ")
 			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
 			if !ok {
@@ -36,8 +38,14 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) 
 			teacherName = matched
 		} else {
 			teacherName, err = userRepo.GetTeacher(ctx, c.Chat().ID)
-			if err != nil {
-				return c.Send(formatter.FormatErrorMessage(err))
+			if err != nil || teacherName == "" {
+				if sm != nil {
+					if setErr := sm.Set(c.Chat().ID, state.WaitingTeacherDay); setErr != nil {
+						log.Error("failed setting waiting teacher day state", "error", setErr)
+						return c.Send(messages.Internal)
+					}
+				}
+				return c.Send(messages.WaitingTeacherDay)
 			}
 		}
 
@@ -47,8 +55,12 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) 
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
-		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleDay(teacher)
+		var profile string
+		if isSearch && shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+			member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
+			profile = formatter.FormatTeacherProfile(member)
+		}
+		msg := profile + formatter.FormatTeacherScheduleDay(teacher)
 		dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
 
 		return c.Send(
@@ -60,55 +72,20 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) 
 	}
 }
 
-func TeacherWeek(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		var (
-			teacherName string
-			err         error
-		)
-
-		args := c.Args()
-		if len(args) > 0 {
-			query := strings.Join(args, " ")
-			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
-			if !ok {
-				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, query, candidates)
-			}
-			teacherName = matched
-		} else {
-			teacherName, err = userRepo.GetTeacher(ctx, c.Chat().ID)
-			if err != nil {
-				return c.Send(formatter.FormatErrorMessage(err))
-			}
-		}
-
-		teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
-		if err != nil {
-			log.Warn("failed getting teacher week schedule", "name", teacherName, "error", err)
-			return c.Send(formatter.FormatErrorMessage(err))
-		}
-
-		member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
-		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
-		weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
-		if err != nil {
-			weeks = entities.WeekNavigation{}
-		}
-
-		return sendLongMessage(
-			c,
-			msg,
-			tele.ModeMarkdown,
-			keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
-		)
+// shouldShowTeacherProfile проверяет, нужно ли показывать профиль преподавателя.
+// Если в профиле пользователя установлен этот же преподаватель, возвращается false.
+func shouldShowTeacherProfile(ctx context.Context, userRepo UserRepo, chatID int64, teacherName string) bool {
+	if userRepo == nil || teacherName == "" {
+		return true
 	}
+	savedTeacher, err := userRepo.GetTeacher(ctx, chatID)
+	if err == nil && savedTeacher != "" && strings.EqualFold(savedTeacher, teacherName) {
+		return false
+	}
+	return true
 }
 
-func Teachers(log *slog.Logger, teacherSvc TeacherService, sm StateManager) tele.HandlerFunc {
+func Teachers(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		args := c.Args()
 		if len(args) == 0 {
@@ -134,8 +111,12 @@ func Teachers(log *slog.Logger, teacherSvc TeacherService, sm StateManager) tele
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		member, _ := teacherSvc.GetFacultyMember(ctx, matched)
-		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
+		var profile string
+		if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, matched) {
+			member, _ := teacherSvc.GetFacultyMember(ctx, matched)
+			profile = formatter.FormatTeacherProfile(member)
+		}
+		msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 		weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
 		if err != nil {
 			weeks = entities.WeekNavigation{}
@@ -168,12 +149,16 @@ func SetTeacher(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 		teacherQuery := strings.Join(args, " ")
 		matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
 		if !ok {
-			return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
+			return sendTeacherSetNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
 		}
 
 		if err := userRepo.SetTeacher(ctx, c.Chat().ID, matched); err != nil {
 			log.Error("failed saving user teacher", "name", matched, "error", err)
 			return c.Send(messages.Internal)
+		}
+
+		if sm != nil {
+			_ = sm.Clear(c.Chat().ID)
 		}
 
 		return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
@@ -201,6 +186,25 @@ func sendTeacherNotFoundOrSuggestions(ctx context.Context, c tele.Context, teach
 		return c.Send(
 			messages.TeacherNotFoundSuggestions,
 			keyboard.InlineTeacherSuggestionsKeyboard(suggestions),
+		)
+	}
+
+	return c.Send(messages.TeacherNotFound)
+}
+
+func sendTeacherSetNotFoundOrSuggestions(ctx context.Context, c tele.Context, teacherSvc TeacherService, query string, candidates []string) error {
+	if len(candidates) > 0 {
+		return c.Send(
+			fmt.Sprintf(messages.TeacherAmbiguous, formatCandidates(candidates)),
+			keyboard.InlineTeacherSetSuggestionsKeyboard(candidates),
+		)
+	}
+
+	suggestions, err := teacherSvc.FindSimilarTeachers(ctx, query, 3)
+	if err == nil && len(suggestions) > 0 {
+		return c.Send(
+			messages.TeacherNotFoundSuggestions,
+			keyboard.InlineTeacherSetSuggestionsKeyboard(suggestions),
 		)
 	}
 

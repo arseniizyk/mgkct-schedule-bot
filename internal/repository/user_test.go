@@ -111,3 +111,49 @@ func TestUserRepository_AllUsers_AndEveningNotification(t *testing.T) {
 	assert.Equal(t, 1, notifUsers[0].Subgroup)
 	assert.Equal(t, 2, notifUsers[1].Subgroup)
 }
+
+func TestUserRepository_AllUsersWithUsernames_And_CountUsers(t *testing.T) {
+	db, repo := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	err := repo.SaveUser(ctx, entities.User{ChatID: 2001, Username: "alice"})
+	require.NoError(t, err)
+	err = repo.SetUserGroup(ctx, 2001, 88, 1)
+	require.NoError(t, err)
+
+	err = repo.SaveUser(ctx, entities.User{ChatID: 2002, Username: ""})
+	require.NoError(t, err)
+	err = repo.SetUserGroup(ctx, 2002, 88, 0)
+	require.NoError(t, err)
+
+	err = repo.SaveUser(ctx, entities.User{ChatID: 2003, Username: "teacher_bob"})
+	require.NoError(t, err)
+	err = repo.SetTeacher(ctx, 2003, "Иванов И. И.")
+	require.NoError(t, err)
+
+	count, err := repo.CountUsers(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count)
+
+	users, err := repo.AllUsersWithUsernames(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 3)
+
+	var foundAlice, foundTeacher bool
+	for _, u := range users {
+		if u.ChatID == 2001 {
+			foundAlice = true
+			assert.Equal(t, "alice", u.Username)
+			assert.Equal(t, 88, u.Group)
+			assert.Equal(t, 1, u.Subgroup)
+		}
+		if u.ChatID == 2003 {
+			foundTeacher = true
+			assert.Equal(t, "teacher_bob", u.Username)
+			assert.Equal(t, "Иванов И. И.", u.TeacherName)
+		}
+	}
+	assert.True(t, foundAlice)
+	assert.True(t, foundTeacher)
+}
