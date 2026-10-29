@@ -179,7 +179,30 @@ func TestInteractive_TeacherDay_WithTeacherSet_ShowsSchedule(t *testing.T) {
 
 	_, ok := sm.Get(101)
 	assert.False(t, ok)
+	// Для установленного профиля преподавателя имя не выводится
+	assert.NotContains(t, ctx.sentWhat, "Иванов И. И.")
+	assert.Contains(t, ctx.sentWhat, "Понедельник")
+}
+
+func TestInteractive_TeacherDay_WithSearchArg_ShowsTeacherName(t *testing.T) {
+	repo := newMockUserRepo()
+	sm := state.NewMemoryManager()
+	tSvc := &mockTeacherSvcFull{
+		validateMatched: "Иванов И. И.",
+		validateOk:      true,
+		teacherSchedule: &entities.Teacher{Name: "Иванов И. И.", Days: []*entities.Day{{Name: "Понедельник"}}},
+	}
+
+	h := handlers.TeacherDay(testLog(), tSvc, repo, sm)
+	ctx := &mockContext{chatID: 101, args: []string{"Иванов"}}
+
+	err := h(ctx)
+	require.NoError(t, err)
+
+	_, ok := sm.Get(101)
+	assert.False(t, ok)
 	assert.Contains(t, ctx.sentWhat, "Иванов И. И.")
+	assert.Contains(t, ctx.sentWhat, "Понедельник")
 }
 
 func TestInteractive_Cabinet_Empty_WaitingState(t *testing.T) {

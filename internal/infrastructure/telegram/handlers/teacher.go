@@ -24,10 +24,12 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 		var (
 			teacherName string
 			err         error
+			isSearch    bool
 		)
 
 		args := c.Args()
 		if len(args) > 0 {
+			isSearch = true
 			query := strings.Join(args, " ")
 			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
 			if !ok {
@@ -53,8 +55,12 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
-		member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
-		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleDay(teacher)
+		var profile string
+		if isSearch {
+			member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
+			profile = formatter.FormatTeacherProfile(member)
+		}
+		msg := profile + formatter.FormatTeacherScheduleDay(teacher)
 		dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
 
 		return c.Send(
@@ -62,54 +68,6 @@ func TeacherDay(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 			tele.ModeMarkdown,
 			keyboard.ReplyScheduleKeyboard,
 			keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days)),
-		)
-	}
-}
-
-func TeacherWeek(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		var (
-			teacherName string
-			err         error
-		)
-
-		args := c.Args()
-		if len(args) > 0 {
-			query := strings.Join(args, " ")
-			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
-			if !ok {
-				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, query, candidates)
-			}
-			teacherName = matched
-		} else {
-			teacherName, err = userRepo.GetTeacher(ctx, c.Chat().ID)
-			if err != nil {
-				return c.Send(formatter.FormatErrorMessage(err))
-			}
-		}
-
-		teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
-		if err != nil {
-			log.Warn("failed getting teacher week schedule", "name", teacherName, "error", err)
-			return c.Send(formatter.FormatErrorMessage(err))
-		}
-
-		member, _ := teacherSvc.GetFacultyMember(ctx, teacherName)
-		msg := formatter.FormatTeacherProfile(member) + formatter.FormatTeacherScheduleWeek(teacher)
-		weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
-		if err != nil {
-			weeks = entities.WeekNavigation{}
-		}
-
-		return sendLongMessage(
-			c,
-			msg,
-			tele.ModeMarkdown,
-			keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
 		)
 	}
 }
