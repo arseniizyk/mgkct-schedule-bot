@@ -36,6 +36,45 @@ func TestInlineScheduleKeyboard(t *testing.T) {
 	if !strings.Contains(btn.Text, "Неделя") {
 		t.Errorf("btn.Text = %q, want week label", btn.Text)
 	}
+
+	t.Run("with target week uses NextWeek callback and formatted date", func(t *testing.T) {
+		targetWeek := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+		mw := InlineScheduleKeyboard(99, targetWeek)
+		if mw == nil || len(mw.InlineKeyboard) != 1 || len(mw.InlineKeyboard[0]) != 1 {
+			t.Fatalf("unexpected keyboard structure: %+v", mw)
+		}
+		btnW := mw.InlineKeyboard[0][0]
+		if btnW.Unique != NextWeek || btnW.Data != "99:02.11.2026" {
+			t.Errorf("callback = %s|%s, want %s|99:02.11.2026", btnW.Unique, btnW.Data, NextWeek)
+		}
+	})
+}
+
+func TestInlineTeacherScheduleKeyboard(t *testing.T) {
+	if got := InlineTeacherScheduleKeyboard(""); got != nil {
+		t.Errorf("InlineTeacherScheduleKeyboard(\"\") = %v, want nil", got)
+	}
+
+	m := InlineTeacherScheduleKeyboard("Иванов И. И.")
+	if m == nil || len(m.InlineKeyboard) != 1 || len(m.InlineKeyboard[0]) != 1 {
+		t.Fatalf("unexpected keyboard structure: %+v", m)
+	}
+	btn := m.InlineKeyboard[0][0]
+	if btn.Unique != TeacherCurrentWeek || btn.Data != "Иванов И. И." {
+		t.Errorf("got %s|%s, want %s|Иванов И. И.", btn.Unique, btn.Data, TeacherCurrentWeek)
+	}
+
+	t.Run("with target week uses TeacherNextWeek callback and formatted date", func(t *testing.T) {
+		targetWeek := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+		mw := InlineTeacherScheduleKeyboard("Иванов И. И.", targetWeek)
+		if mw == nil || len(mw.InlineKeyboard) != 1 || len(mw.InlineKeyboard[0]) != 1 {
+			t.Fatalf("unexpected keyboard structure: %+v", mw)
+		}
+		btnW := mw.InlineKeyboard[0][0]
+		if btnW.Unique != TeacherNextWeek || btnW.Data != "Иванов И. И.:02.11.2026" {
+			t.Errorf("got %s|%s, want %s|Иванов И. И.:02.11.2026", btnW.Unique, btnW.Data, TeacherNextWeek)
+		}
+	})
 }
 
 func TestInlineDayKeyboard(t *testing.T) {

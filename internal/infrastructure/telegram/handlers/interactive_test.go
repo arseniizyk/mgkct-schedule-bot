@@ -142,6 +142,10 @@ func (m *mockScheduleSvc) GetArchiveSchedule(ctx context.Context, groupID int32,
 	return &entities.Group{ID: groupID, Days: []*entities.Day{{Name: "Понедельник"}}}, nil
 }
 
+func (m *mockScheduleSvc) HasGroup(ctx context.Context, groupID int32) (bool, error) {
+	return true, nil
+}
+
 func testLog() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }

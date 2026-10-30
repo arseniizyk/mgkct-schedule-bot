@@ -149,6 +149,9 @@ func SetTeacher(log *slog.Logger, teacherSvc TeacherService, userRepo UserRepo, 
 		teacherQuery := strings.Join(args, " ")
 		matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
 		if !ok {
+			if sm != nil {
+				_ = sm.Set(c.Chat().ID, state.WaitingTeacher)
+			}
 			return sendTeacherSetNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
 		}
 

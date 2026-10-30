@@ -554,6 +554,18 @@ func (s *Server) handleSetUserProfile(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	if req.GroupID > 0 {
+		if s.scheduleSvc != nil {
+			exists, err := s.scheduleSvc.HasGroup(ctx, int32(req.GroupID))
+			if err != nil {
+				s.log.Error("failed checking group existence from webapp", "error", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if !exists {
+				http.Error(w, "group not found", http.StatusBadRequest)
+				return
+			}
+		}
 		if err := s.userRepo.SetUserGroup(ctx, user.ID, req.GroupID, req.Subgroup); err != nil {
 			s.log.Error("failed setting user group from webapp", "error", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
