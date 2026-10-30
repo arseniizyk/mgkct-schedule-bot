@@ -2,7 +2,9 @@ package handlers_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -148,8 +150,9 @@ func TestSetGroupHandler(t *testing.T) {
 	logger := testLogger()
 	repo := newMockUserRepo()
 	sm := state.NewMemoryManager()
+	schedSvc := &mockScheduleService{groups: []int32{101, 102}}
 
-	handler := handlers.SetGroup(logger, repo, sm)
+	handler := handlers.SetGroup(logger, schedSvc, repo, sm)
 
 	t.Run("without args sets waiting_group state", func(t *testing.T) {
 		ctx := &mockContext{chatID: 100}
@@ -188,14 +191,26 @@ func TestSetGroupHandler(t *testing.T) {
 		_, hasState := sm.Get(102)
 		assert.False(t, hasState)
 	})
+
+	t.Run("with non-existent group returns GroupNotFound and sets waiting_group state for re-entry", func(t *testing.T) {
+		ctx := &mockContext{chatID: 103, args: []string{"999"}}
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, fmt.Sprintf("%s. %s", messages.GroupNotFound, messages.WaitingGroup), ctx.sentWhat)
+
+		st, ok := sm.Get(103)
+		assert.True(t, ok, "state should be set to WaitingGroup to give opportunity to enter again")
+		assert.Equal(t, state.WaitingGroup, st)
+	})
 }
 
 func TestStatesHandler_WaitingGroup(t *testing.T) {
 	logger := testLogger()
 	repo := newMockUserRepo()
 	sm := state.NewMemoryManager()
+	schedSvc := &mockScheduleService{groups: []int32{101, 102}}
 
-	handler := handlers.StatesHandler(logger, repo, sm, nil, nil, nil, nil, nil, nil)
+	handler := handlers.StatesHandler(logger, repo, sm, nil, schedSvc, nil, nil, nil, nil)
 
 	t.Run("user inputs only group number", func(t *testing.T) {
 		_ = sm.Set(201, state.WaitingGroup)
@@ -224,6 +239,33 @@ func TestStatesHandler_WaitingGroup(t *testing.T) {
 		_, ok := sm.Get(202)
 		assert.False(t, ok)
 	})
+
+	t.Run("user inputs non-existent group keeps state and allows re-entry", func(t *testing.T) {
+		_ = sm.Set(203, state.WaitingGroup)
+		ctx := &mockContext{chatID: 203, text: "999"}
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, fmt.Sprintf("%s. %s", messages.GroupNotFound, messages.WaitingGroup), ctx.sentWhat)
+
+		// Состояние должно сохраниться для повторного ввода
+		st, ok := sm.Get(203)
+		assert.True(t, ok)
+		assert.Equal(t, state.WaitingGroup, st)
+
+		// Повторный ввод существующей группы успешен
+		ctxSuccess := &mockContext{chatID: 203, text: "101 1"}
+		err = handler(ctxSuccess)
+		require.NoError(t, err)
+		assert.Contains(t, ctxSuccess.sentWhat, "1 подгруппа")
+
+		grp, sg, err := repo.GroupAndSubgroupByChatID(context.Background(), 203)
+		require.NoError(t, err)
+		assert.Equal(t, 101, grp)
+		assert.Equal(t, 1, sg)
+
+		_, ok = sm.Get(203)
+		assert.False(t, ok)
+	})
 }
 
 func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
@@ -231,8 +273,9 @@ func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
 	repo := newMockUserRepo()
 	sm := state.NewMemoryManager()
 	_ = sm.Set(301, state.WaitingGroup)
+	schedSvc := &mockScheduleService{groups: []int32{101, 102}}
 
-	handler := handlers.CallbacksHandler(logger, nil, nil, nil, repo, sm)
+	handler := handlers.CallbacksHandler(logger, schedSvc, nil, nil, repo, sm)
 
 	ctx := &mockContext{
 		chatID: 301,
@@ -258,7 +301,8 @@ func TestCallbacksHandler_SubgroupSelect(t *testing.T) {
 }
 
 type mockScheduleService struct {
-	group *entities.Group
+	group  *entities.Group
+	groups []int32
 }
 
 func (m *mockScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*entities.Group, error) {
@@ -275,6 +319,15 @@ func (m *mockScheduleService) GetAllWeeks(ctx context.Context) ([]time.Time, err
 }
 func (m *mockScheduleService) GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error) {
 	return m.group, nil
+}
+func (m *mockScheduleService) HasGroup(ctx context.Context, groupID int32) (bool, error) {
+	if len(m.groups) > 0 {
+		return slices.Contains(m.groups, groupID), nil
+	}
+	if m.group != nil {
+		return m.group.ID == groupID, nil
+	}
+	return false, nil
 }
 
 type mockTeacherService struct {

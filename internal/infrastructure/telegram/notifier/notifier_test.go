@@ -3,6 +3,7 @@ package notifier
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,6 +12,8 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
 
 func TestCalculateTomorrowDate(t *testing.T) {
@@ -95,13 +98,107 @@ func TestNotifier_ScraperAlerts_NoAdmin(t *testing.T) {
 
 type mockBotSender struct {
 	sentChats []int64
+	sentWhat  []any
+	sentOpts  [][]any
 }
 
 func (m *mockBotSender) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
 	if chatID, err := strconv.ParseInt(to.Recipient(), 10, 64); err == nil {
 		m.sentChats = append(m.sentChats, chatID)
 	}
+	m.sentWhat = append(m.sentWhat, what)
+	m.sentOpts = append(m.sentOpts, opts)
 	return &tele.Message{}, nil
+}
+
+type mockUserStore struct {
+	users []entities.User
+}
+
+func (m *mockUserStore) AllUsers(ctx context.Context) ([]entities.User, error) {
+	return m.users, nil
+}
+func (m *mockUserStore) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {
+	return nil, nil
+}
+func (m *mockUserStore) UserIDsByTeacherName(ctx context.Context, teacherName string) ([]int64, error) {
+	return nil, nil
+}
+func (m *mockUserStore) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
+	return nil, nil
+}
+
+func TestNotifier_HandleNewWeek(t *testing.T) {
+	bot := &mockBotSender{}
+	store := &mockUserStore{
+		users: []entities.User{
+			{ChatID: 1001, Group: 101},
+			{ChatID: 1002, TeacherName: "Иванов И. И."},
+			{ChatID: 1003},
+		},
+	}
+	throttle := make(chan time.Time, 10)
+	for range 10 {
+		throttle <- time.Now()
+	}
+
+	n := &Notifier{
+		bot:       bot,
+		userStore: store,
+		throttle:  throttle,
+		log:       slog.Default(),
+	}
+
+	targetWeek := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+
+	err := n.HandleNewWeek(ctx, targetWeek)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(bot.sentChats) != 3 {
+		t.Fatalf("expected 3 sent messages, got %d", len(bot.sentChats))
+	}
+
+	// 1. Студент (Group 101) - кнопка должна вести на NextWeek с датой новой недели
+	if bot.sentWhat[0] != messages.WeekUpdated {
+		t.Errorf("expected %s, got %v", messages.WeekUpdated, bot.sentWhat[0])
+	}
+	opts1 := bot.sentOpts[0]
+	if len(opts1) != 1 {
+		t.Fatalf("expected 1 option (markup), got %d", len(opts1))
+	}
+	kbd1, ok := opts1[0].(*tele.ReplyMarkup)
+	if !ok || len(kbd1.InlineKeyboard) != 1 || len(kbd1.InlineKeyboard[0]) != 1 {
+		t.Fatalf("expected 1 inline button for student, got %+v", kbd1)
+	}
+	btn1 := kbd1.InlineKeyboard[0][0]
+	if btn1.Unique != keyboard.NextWeek || btn1.Data != "101:02.11.2026" {
+		t.Errorf("expected NextWeek|101:02.11.2026, got %s|%s", btn1.Unique, btn1.Data)
+	}
+
+	// 2. Преподаватель - кнопка должна вести на TeacherNextWeek с датой новой недели
+	if bot.sentWhat[1] != messages.TeacherWeekUpdated {
+		t.Errorf("expected %s, got %v", messages.TeacherWeekUpdated, bot.sentWhat[1])
+	}
+	opts2 := bot.sentOpts[1]
+	kbd2, ok := opts2[0].(*tele.ReplyMarkup)
+	if !ok || len(kbd2.InlineKeyboard) != 1 || len(kbd2.InlineKeyboard[0]) != 1 {
+		t.Fatalf("expected 1 inline button for teacher, got %+v", kbd2)
+	}
+	btn2 := kbd2.InlineKeyboard[0][0]
+	if btn2.Unique != keyboard.TeacherNextWeek || btn2.Data != "Иванов И. И.:02.11.2026" {
+		t.Errorf("expected TeacherNextWeek|Иванов И. И.:02.11.2026, got %s|%s", btn2.Unique, btn2.Data)
+	}
+
+	// 3. Пользователь без роли
+	if bot.sentWhat[2] != messages.WeekUpdated {
+		t.Errorf("expected %s, got %v", messages.WeekUpdated, bot.sentWhat[2])
+	}
+	if len(bot.sentOpts[2]) != 0 {
+		t.Errorf("expected no inline buttons for user without role, got %v", bot.sentOpts[2])
+	}
 }
 
 func TestNotifier_ScraperAlerts_MultipleAdmins(t *testing.T) {

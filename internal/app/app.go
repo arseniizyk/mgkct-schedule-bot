@@ -632,7 +632,7 @@ func registerBotHandlers(
 	bot.Handle("/app", handlers.App(cfg.Bot.WebAppURL))
 	bot.Handle("/calls", handlers.Calls())
 	bot.Handle("/cancel", handlers.Cancel(log, stateMgr))
-	bot.Handle("/setgroup", handlers.SetGroup(log, userRepo, stateMgr))
+	bot.Handle("/setgroup", handlers.SetGroup(log, scheduleSvc, userRepo, stateMgr))
 	bot.Handle("/group", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/day", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/week", handlers.Week(log, scheduleSvc, teacherSvc, userRepo))

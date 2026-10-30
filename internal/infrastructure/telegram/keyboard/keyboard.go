@@ -83,13 +83,18 @@ func InlineWebAppKeyboard(webAppURL string) *tele.ReplyMarkup {
 	return markup
 }
 
-func InlineScheduleKeyboard(groupID int) *tele.ReplyMarkup {
+func InlineScheduleKeyboard(groupID int, week ...time.Time) *tele.ReplyMarkup {
 	if groupID == 0 {
 		return nil
 	}
 
 	markup := &tele.ReplyMarkup{}
-	weekBtn := markup.Data(btnCurrentWeek, CurrentWeek, strconv.Itoa(groupID))
+	var weekBtn tele.Btn
+	if len(week) > 0 && !week[0].IsZero() {
+		weekBtn = markup.Data(btnCurrentWeek, NextWeek, fmt.Sprintf("%d:%s", groupID, week[0].Format("02.01.2006")))
+	} else {
+		weekBtn = markup.Data(btnCurrentWeek, CurrentWeek, strconv.Itoa(groupID))
+	}
 	markup.Inline(markup.Row(weekBtn))
 	return markup
 }
@@ -227,13 +232,18 @@ func InlineTeacherWeekKeyboard(teacherName string, weeks entities.WeekNavigation
 	return markup
 }
 
-func InlineTeacherScheduleKeyboard(teacherName string) *tele.ReplyMarkup {
+func InlineTeacherScheduleKeyboard(teacherName string, week ...time.Time) *tele.ReplyMarkup {
 	if teacherName == "" {
 		return nil
 	}
 
 	markup := &tele.ReplyMarkup{}
-	weekBtn := markup.Data(btnCurrentWeek, TeacherCurrentWeek, teacherName)
+	var weekBtn tele.Btn
+	if len(week) > 0 && !week[0].IsZero() {
+		weekBtn = markup.Data(btnCurrentWeek, TeacherNextWeek, fmt.Sprintf("%s:%s", teacherName, week[0].Format("02.01.2006")))
+	} else {
+		weekBtn = markup.Data(btnCurrentWeek, TeacherCurrentWeek, teacherName)
+	}
 	markup.Inline(markup.Row(weekBtn))
 	return markup
 }

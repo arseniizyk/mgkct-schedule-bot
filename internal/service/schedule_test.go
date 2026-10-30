@@ -93,3 +93,42 @@ func TestScheduleService_GetGroupLatestSchedule_SaturdayCurrentWeekVsNextWeek(t 
 	require.NoError(t, err)
 	assert.Equal(t, nextMonday, grp.Week, "в воскресенье должно возвращаться расписание следующей недели")
 }
+
+func TestScheduleService_GetAllGroupIDs_And_HasGroup(t *testing.T) {
+	ctx := context.Background()
+
+	w1, _ := time.Parse("2006-01-02", "2026-10-12")
+	w2, _ := time.Parse("2006-01-02", "2026-10-19")
+
+	schedRepo := &mockScheduleRepo{schedules: make(map[time.Time]*entities.Schedule)}
+	_ = schedRepo.Save(ctx, w1, &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			101: {ID: 101},
+			102: {ID: 102},
+		},
+	})
+	_ = schedRepo.Save(ctx, w2, &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			102: {ID: 102},
+			103: {ID: 103},
+		},
+	})
+
+	svc := service.NewScheduleService(slog.Default(), schedRepo)
+
+	ids, err := svc.GetAllGroupIDs(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []int32{101, 102, 103}, ids)
+
+	ok, err := svc.HasGroup(ctx, 101)
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	ok, err = svc.HasGroup(ctx, 103)
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	ok, err = svc.HasGroup(ctx, 999)
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
