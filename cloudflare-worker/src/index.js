@@ -37,14 +37,16 @@ export default {
 
       const targetUrl = new URL(url.pathname + url.search, targetBase);
 
-      // Перезаписываем заголовок Host для корректного разрешения vhost (Nginx, Caddy и т.д.)
+      // Буферизуем тело вебхука для исключения Transfer-Encoding: chunked и явной передачи Content-Length
+      const bodyBuffer = await request.arrayBuffer();
       const headers = new Headers(request.headers);
       headers.set('Host', targetUrl.host);
+      headers.set('Content-Length', bodyBuffer.byteLength.toString());
 
       const webhookRequest = new Request(targetUrl.toString(), {
         method: request.method,
         headers: headers,
-        body: request.body,
+        body: bodyBuffer,
         redirect: 'manual',
       });
 
