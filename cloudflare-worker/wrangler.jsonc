@@ -2,5 +2,14 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mgkct-tg-proxy",
   "main": "src/index.js",
-  "compatibility_date": "2026-10-01"
+  "compatibility_date": "2026-10-01",
+  "placement": {
+    "mode": "smart"
+  }
+  // Environment variables and secrets:
+  // - BACKEND_HOST (or BACKEND_URL): Target backend host/URL where incoming Telegram webhooks are forwarded
+  // - WEBHOOK_SECRET: (Optional) Secret token for Edge validation of X-Telegram-Bot-Api-Secret-Token
+  // Set in Cloudflare via:
+  //   npx wrangler secret put BACKEND_HOST
+  //   npx wrangler secret put WEBHOOK_SECRET
 }
