@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -84,12 +86,30 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	// 4. Telegram Бот
 	poller, webhookHandler := buildPoller(cfg)
 
+	tgTransport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       300 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		TLSClientConfig: &tls.Config{
+			CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
+		},
+	}
+
 	botPref := tele.Settings{
 		URL:    cfg.Bot.APIURL,
 		Token:  cfg.Bot.Token,
 		Poller: poller,
 		Client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: tgTransport,
 		},
 	}
 

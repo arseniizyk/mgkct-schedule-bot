@@ -1,3 +1,4 @@
+//go:debug tlsmlkem=0
 package main
 
 import (

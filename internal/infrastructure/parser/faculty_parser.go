@@ -47,8 +47,9 @@ func NewFacultyParser(log *slog.Logger) *FacultyParser {
 		DisableKeepAlives: true,
 		ForceAttemptHTTP2: false,
 		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			MaxVersion: tls.VersionTLS13,
+			MinVersion:       tls.VersionTLS12,
+			MaxVersion:       tls.VersionTLS13,
+			CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
 		},
 	})
 
