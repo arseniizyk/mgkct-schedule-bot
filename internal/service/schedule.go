@@ -26,9 +26,10 @@ type ScheduleService struct {
 	log          *slog.Logger
 	scheduleRepo ScheduleRepository
 
-	mu      sync.RWMutex
-	cache   *entities.Schedule
-	nowFunc func() time.Time
+	mu        sync.RWMutex
+	cache     *entities.Schedule
+	allGroups []int32
+	nowFunc   func() time.Time
 }
 
 func NewScheduleService(log *slog.Logger, scheduleRepo ScheduleRepository) *ScheduleService {
@@ -123,38 +124,80 @@ func (s *ScheduleService) SetCache(sch *entities.Schedule) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cache = sch
+	s.allGroups = nil
 }
 
 func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {
 	const op = "service.ScheduleService.GetAllGroupIDs"
 
 	s.mu.RLock()
-	if s.cache != nil && len(s.cache.Groups) > 0 {
-		ids := make([]int32, 0, len(s.cache.Groups))
-		for id := range s.cache.Groups {
-			ids = append(ids, id)
-		}
-		s.mu.RUnlock()
-		slices.Sort(ids)
-		return ids, nil
+	if len(s.allGroups) > 0 {
+		defer s.mu.RUnlock()
+		cp := make([]int32, len(s.allGroups))
+		copy(cp, s.allGroups)
+		return cp, nil
 	}
 	s.mu.RUnlock()
 
-	sch, err := s.scheduleRepo.GetLatest(ctx)
-	if err != nil {
-		if errors.Is(err, domainerr.ErrScheduleNotFound) {
-			return []int32{}, nil
-		}
+	schedules, err := s.scheduleRepo.GetAll(ctx)
+	if err != nil && !errors.Is(err, domainerr.ErrScheduleNotFound) {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	s.SetCache(sch)
-	ids := make([]int32, 0, len(sch.Groups))
-	for id := range sch.Groups {
+	groupMap := make(map[int32]struct{})
+	for _, sch := range schedules {
+		for id := range sch.Groups {
+			groupMap[id] = struct{}{}
+		}
+	}
+
+	if len(groupMap) == 0 {
+		s.mu.RLock()
+		if s.cache != nil {
+			for id := range s.cache.Groups {
+				groupMap[id] = struct{}{}
+			}
+		}
+		s.mu.RUnlock()
+
+		if len(groupMap) == 0 {
+			sch, err := s.scheduleRepo.GetLatest(ctx)
+			if err != nil {
+				if errors.Is(err, domainerr.ErrScheduleNotFound) {
+					return []int32{}, nil
+				}
+				return nil, fmt.Errorf("%s: %w", op, err)
+			}
+			s.SetCache(sch)
+			for id := range sch.Groups {
+				groupMap[id] = struct{}{}
+			}
+		}
+	}
+
+	ids := make([]int32, 0, len(groupMap))
+	for id := range groupMap {
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
-	return ids, nil
+
+	s.mu.Lock()
+	s.allGroups = ids
+	s.mu.Unlock()
+
+	cp := make([]int32, len(ids))
+	copy(cp, ids)
+	return cp, nil
+}
+
+func (s *ScheduleService) HasGroup(ctx context.Context, groupID int32) (bool, error) {
+	const op = "service.ScheduleService.HasGroup"
+
+	ids, err := s.GetAllGroupIDs(ctx)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", op, err)
+	}
+	return slices.Contains(ids, groupID), nil
 }
 
 func (s *ScheduleService) GetAllWeeks(ctx context.Context) ([]time.Time, error) {

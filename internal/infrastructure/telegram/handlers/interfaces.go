@@ -14,6 +14,7 @@ type ScheduleService interface {
 	GetAvailableWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error)
 	GetAllWeeks(ctx context.Context) ([]time.Time, error)
 	GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error)
+	HasGroup(ctx context.Context, groupID int32) (bool, error)
 }
 
 type TeacherService interface {

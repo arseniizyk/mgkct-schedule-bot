@@ -62,20 +62,42 @@ func Cancel(log *slog.Logger, sm StateManager) tele.HandlerFunc {
 	}
 }
 
-func SetGroup(log *slog.Logger, userRepo UserRepo, sm StateManager) tele.HandlerFunc {
+func SetGroup(log *slog.Logger, schedSvc ScheduleService, userRepo UserRepo, sm StateManager) tele.HandlerFunc {
 	return func(c tele.Context) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
 		args := c.Args()
 		if len(args) == 0 {
-			if err := sm.Set(c.Chat().ID, state.WaitingGroup); err != nil {
-				log.Error("failed setting state", "error", err)
-				return c.Send(messages.Internal)
+			if sm != nil {
+				if err := sm.Set(c.Chat().ID, state.WaitingGroup); err != nil {
+					log.Error("failed setting state", "error", err)
+					return c.Send(messages.Internal)
+				}
 			}
 			return c.Send(messages.WaitingGroup)
 		}
 
 		groupID, err := strconv.Atoi(args[0])
 		if err != nil || groupID <= 0 {
+			if sm != nil {
+				_ = sm.Set(c.Chat().ID, state.WaitingGroup)
+			}
 			return c.Send(messages.OnlyNumbers)
+		}
+
+		if schedSvc != nil {
+			exists, err := schedSvc.HasGroup(ctx, int32(groupID))
+			if err != nil {
+				log.Error("failed checking group existence in SetGroup", "group_id", groupID, "error", err)
+				return c.Send(messages.Internal)
+			}
+			if !exists {
+				if sm != nil {
+					_ = sm.Set(c.Chat().ID, state.WaitingGroup)
+				}
+				return c.Send(fmt.Sprintf("%s. %s", messages.GroupNotFound, messages.WaitingGroup))
+			}
 		}
 
 		if len(args) == 1 {
@@ -86,9 +108,6 @@ func SetGroup(log *slog.Logger, userRepo UserRepo, sm StateManager) tele.Handler
 		if err != nil || subgroup < 0 || subgroup > 2 {
 			return c.Send(fmt.Sprintf(messages.SelectSubgroup, groupID), keyboard.InlineSubgroupKeyboard(groupID))
 		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
 
 		if err := userRepo.SetUserGroup(ctx, c.Chat().ID, groupID, subgroup); err != nil {
 			log.Error("failed saving user group", "error", err)
