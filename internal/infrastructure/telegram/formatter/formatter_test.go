@@ -900,3 +900,81 @@ func TestFormatTeacherScheduleWeek_DayRelativeLabels(t *testing.T) {
 		assert.Contains(t, res, "(завтра)")
 	}
 }
+
+func TestFormatTeacherSchedule_NoDuplicatePipesBeforeCabinet(t *testing.T) {
+	teacher := &entities.Teacher{
+		Name: "Иванов И. И.",
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{
+						// Без типа пары (Type = "")
+						Pairs: []*entities.Pair{
+							{Name: "Иностранный язык", Type: "", Group: "251", Class: "501"},
+						},
+					},
+					{
+						// Без группы (Group = "")
+						Pairs: []*entities.Pair{
+							{Name: "Консультация", Type: "к", Group: "", Class: "501"},
+						},
+					},
+					{
+						// Без типа и без группы (Type = "", Group = "")
+						Pairs: []*entities.Pair{
+							{Name: "Консультация", Type: "", Group: "", Class: "501"},
+						},
+					},
+					{
+						// Все поля заполнены
+						Pairs: []*entities.Pair{
+							{Name: "Математика", Type: "лк", Group: "251", Class: "501"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := FormatTeacherScheduleDayAt(teacher, 0)
+	require.NoError(t, err)
+
+	assert.NotContains(t, got, "|  |")
+	assert.NotContains(t, got, "|   |")
+	assert.Contains(t, got, "1: Иностранный язык | 251 | 501")
+	assert.Contains(t, got, "2: Консультация | к | 501")
+	assert.Contains(t, got, "3: Консультация | 501")
+	assert.Contains(t, got, "4: Математика | лк | 251 | 501")
+}
+
+func TestFormatScheduleGroup_NoDuplicatePipes(t *testing.T) {
+	group := &entities.Group{
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{
+						// Пара без типа пары
+						Pairs: []*entities.Pair{
+							{Name: "История", Type: "", Group: "Иванов И. И.", Class: "205"},
+						},
+					},
+					{
+						// Пара без преподавателя
+						Pairs: []*entities.Pair{
+							{Name: "Физкультура", Type: "пз", Group: "", Class: "с/з"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := FormatScheduleDayAt(group, 0)
+	require.NoError(t, err)
+
+	assert.NotContains(t, got, "|  |")
+	assert.Contains(t, got, "1: История | Иванов И. И. | 205")
+	assert.Contains(t, got, "2: Физкультура | пз | с/з")
+}
