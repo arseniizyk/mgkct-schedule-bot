@@ -84,9 +84,9 @@ func (n *Notifier) HandleNewWeek(ctx context.Context, week time.Time) error {
 		case <-n.throttle:
 			switch {
 			case u.Group != 0:
-				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated, keyboard.InlineScheduleKeyboard(u.Group))
+				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated, keyboard.InlineScheduleKeyboard(u.Group, week))
 			case u.TeacherName != "":
-				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.TeacherWeekUpdated, keyboard.InlineTeacherScheduleKeyboard(u.TeacherName))
+				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.TeacherWeekUpdated, keyboard.InlineTeacherScheduleKeyboard(u.TeacherName, week))
 			default:
 				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated)
 			}
@@ -126,7 +126,7 @@ func (n *Notifier) HandleGroupScheduleUpdate(ctx context.Context, group *entitie
 	}
 
 	chunks := formatter.SplitMessage(msgText, 4096)
-	kbd := keyboard.InlineScheduleKeyboard(int(group.ID))
+	kbd := keyboard.InlineScheduleKeyboard(int(group.ID), group.Week)
 
 	for _, chatID := range userIDs {
 		for i, chunk := range chunks {
@@ -182,7 +182,7 @@ func (n *Notifier) HandleTeacherScheduleUpdate(ctx context.Context, teacher *ent
 	}
 
 	chunks := formatter.SplitMessage(msgText, 4096)
-	kbd := keyboard.InlineTeacherScheduleKeyboard(teacher.Name)
+	kbd := keyboard.InlineTeacherScheduleKeyboard(teacher.Name, teacher.Week)
 
 	for _, chatID := range userIDs {
 		for i, chunk := range chunks {

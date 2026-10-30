@@ -204,6 +204,24 @@ func TestTeacher_TypoSuggestions(t *testing.T) {
 		require.Len(t, markup.InlineKeyboard, 1)
 		assert.Equal(t, "Анципов Е. Ю.", markup.InlineKeyboard[0][0].Text)
 		assert.Equal(t, keyboard.TeacherSetSelect, markup.InlineKeyboard[0][0].Unique)
+
+		st, ok := sm.Get(123)
+		assert.True(t, ok, "state should be set to WaitingTeacher to allow re-entry")
+		assert.Equal(t, state.WaitingTeacher, st)
+
+		// Повторный ввод имени преподавателя через текстовый ввод
+		statesH := handlers.StatesHandler(log, repo, sm, tSvc, nil, nil, nil, nil, nil)
+		c2 := &mockContext{chatID: 123, text: "Анципов Е. Ю."}
+		err = statesH(c2)
+		require.NoError(t, err)
+		assert.Equal(t, messages.TeacherSaved, c2.sentWhat)
+
+		saved, err := repo.GetTeacher(context.Background(), 123)
+		require.NoError(t, err)
+		assert.Equal(t, "Анципов Е. Ю.", saved)
+
+		_, hasState := sm.Get(123)
+		assert.False(t, hasState)
 	})
 
 	t.Run("WaitingTeacher state with typo suggests keyboard with TeacherSetSelect", func(t *testing.T) {
@@ -229,6 +247,24 @@ func TestTeacher_TypoSuggestions(t *testing.T) {
 		require.NotNil(t, markup)
 		assert.Equal(t, "Анципов Е. Ю.", markup.InlineKeyboard[0][0].Text)
 		assert.Equal(t, keyboard.TeacherSetSelect, markup.InlineKeyboard[0][0].Unique)
+
+		st, ok := sm.Get(123)
+		assert.True(t, ok, "state should be set to WaitingTeacher to allow re-entry")
+		assert.Equal(t, state.WaitingTeacher, st)
+
+		// Повторный ввод имени преподавателя через текстовый ввод
+		statesH := handlers.StatesHandler(log, repo, sm, tSvc, nil, nil, nil, nil, nil)
+		c2 := &mockContext{chatID: 123, text: "Анципов Е. Ю."}
+		err = statesH(c2)
+		require.NoError(t, err)
+		assert.Equal(t, messages.TeacherSaved, c2.sentWhat)
+
+		saved, err := repo.GetTeacher(context.Background(), 123)
+		require.NoError(t, err)
+		assert.Equal(t, "Анципов Е. Ю.", saved)
+
+		_, hasState := sm.Get(123)
+		assert.False(t, hasState)
 	})
 
 	t.Run("TeacherSetSelect callback saves teacher, clears state and sends ReplyScheduleKeyboard", func(t *testing.T) {

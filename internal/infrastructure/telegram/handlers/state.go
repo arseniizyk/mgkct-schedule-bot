@@ -42,7 +42,7 @@ func StatesHandler(
 
 		switch userState {
 		case state.WaitingGroup:
-			return handleWaitingGroup(ctx, log, c, userRepo, sm)
+			return handleWaitingGroup(ctx, log, c, schedSvc, userRepo, sm)
 		case state.WaitingTeacher:
 			return handleWaitingTeacher(ctx, log, c, userRepo, sm, teacherSvc)
 		case state.WaitingTeacherSchedule:
@@ -68,7 +68,7 @@ func StatesHandler(
 	}
 }
 
-func handleWaitingGroup(ctx context.Context, log *slog.Logger, c tele.Context, userRepo UserRepo, sm StateManager) error {
+func handleWaitingGroup(ctx context.Context, log *slog.Logger, c tele.Context, schedSvc ScheduleService, userRepo UserRepo, sm StateManager) error {
 	chatID := c.Chat().ID
 	fields := strings.Fields(c.Text())
 	if len(fields) == 0 {
@@ -78,6 +78,17 @@ func handleWaitingGroup(ctx context.Context, log *slog.Logger, c tele.Context, u
 	groupID, err := strconv.Atoi(fields[0])
 	if err != nil || groupID <= 0 {
 		return c.Send(messages.OnlyNumbers)
+	}
+
+	if schedSvc != nil {
+		exists, err := schedSvc.HasGroup(ctx, int32(groupID))
+		if err != nil {
+			log.Error("failed checking group existence in handleWaitingGroup", "group_id", groupID, "error", err)
+			return c.Send(messages.Internal)
+		}
+		if !exists {
+			return c.Send(fmt.Sprintf("%s. %s", messages.GroupNotFound, messages.WaitingGroup))
+		}
 	}
 
 	if len(fields) >= 2 {
