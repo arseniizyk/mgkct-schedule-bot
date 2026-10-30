@@ -443,9 +443,7 @@ func formatSubjects(subjects []*entities.Subject, start int) string {
 		pairs := subject.Pairs
 		if len(pairs) == 1 && len(pairs[0].Name) > 0 && !unicode.IsDigit(rune(pairs[0].Name[0])) {
 			p := pairs[0]
-			fmt.Fprintf(&sb, "%d: %s | %s | %s", i+1, escapeMD(p.Name), escapeMD(p.Type), escapeMD(p.Group))
-			sb.WriteString(formatClass(p.Class))
-			sb.WriteString("\n")
+			fmt.Fprintf(&sb, "%d: %s\n", i+1, formatPair(p))
 			continue
 		}
 
@@ -456,8 +454,7 @@ func formatSubjects(subjects []*entities.Subject, start int) string {
 			} else {
 				sb.WriteString("├─ ")
 			}
-			fmt.Fprintf(&sb, "%s | %s | %s", escapeMD(p.Name), escapeMD(p.Type), escapeMD(p.Group))
-			sb.WriteString(formatClass(p.Class))
+			sb.WriteString(formatPair(p))
 			sb.WriteString("\n")
 		}
 	}
@@ -465,11 +462,24 @@ func formatSubjects(subjects []*entities.Subject, start int) string {
 	return sb.String()
 }
 
-func formatClass(class string) string {
-	if class != "-" && class != "" {
-		return " | " + escapeMD(class)
+func formatPair(p *entities.Pair) string {
+	if p == nil {
+		return ""
 	}
-	return ""
+	var parts []string
+	if name := strings.TrimSpace(p.Name); name != "" && name != "-" && name != "—" && name != "–" {
+		parts = append(parts, escapeMD(name))
+	}
+	if pType := strings.TrimSpace(p.Type); pType != "" && pType != "-" && pType != "—" && pType != "–" {
+		parts = append(parts, escapeMD(pType))
+	}
+	if grp := strings.TrimSpace(p.Group); grp != "" && grp != "-" && grp != "—" && grp != "–" {
+		parts = append(parts, escapeMD(grp))
+	}
+	if cls := strings.TrimSpace(p.Class); cls != "" && cls != "-" && cls != "—" && cls != "–" {
+		parts = append(parts, escapeMD(cls))
+	}
+	return strings.Join(parts, " | ")
 }
 
 var mdEscaper = strings.NewReplacer(
@@ -641,9 +651,7 @@ func formatTeacherSubjects(subjects []*entities.Subject, start int) string {
 		pairs := subject.Pairs
 		if len(pairs) == 1 && len(pairs[0].Name) > 0 && !unicode.IsDigit(rune(pairs[0].Name[0])) {
 			p := pairs[0]
-			fmt.Fprintf(&sb, "%d: %s | %s | %s", i+1, escapeMD(p.Name), escapeMD(p.Type), escapeMD(p.Group))
-			sb.WriteString(formatClass(p.Class))
-			sb.WriteString("\n")
+			fmt.Fprintf(&sb, "%d: %s\n", i+1, formatPair(p))
 			continue
 		}
 
@@ -654,8 +662,7 @@ func formatTeacherSubjects(subjects []*entities.Subject, start int) string {
 			} else {
 				sb.WriteString("├─ ")
 			}
-			fmt.Fprintf(&sb, "%s | %s | %s", escapeMD(p.Name), escapeMD(p.Type), escapeMD(p.Group))
-			sb.WriteString(formatClass(p.Class))
+			sb.WriteString(formatPair(p))
 			sb.WriteString("\n")
 		}
 	}
