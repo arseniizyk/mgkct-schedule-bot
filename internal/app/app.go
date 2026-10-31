@@ -671,9 +671,10 @@ func registerBotHandlers(
 	bot.Handle(kbd.BtnCalls, handlers.Calls())
 	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
 
-	// Инлайн-коллбэки и ввод текста
+	// Инлайн-коллбэки, ввод текста и инлайн-поиск
 	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr, bot, cfg.Bot.AdminIDs))
 	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc, scheduleSvc, analyticsSvc, subjectDict, bot, cfg.Bot.AdminIDs))
+	bot.Handle(tele.OnQuery, handlers.InlineQuery(log, scheduleSvc, teacherSvc, userRepo))
 }
 
 // buildPoller выбирает режим получения обновлений от Telegram.
