@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
@@ -44,6 +45,9 @@ type TeacherService struct {
 	facultyRepo FacultyRepository
 	dict        SubjectDictionary
 	nowFunc     func() time.Time
+
+	mu         sync.RWMutex
+	weeksCache map[string]*entities.Teacher
 }
 
 func NewTeacherService(
@@ -57,6 +61,7 @@ func NewTeacherService(
 		repo:        repo,
 		facultyRepo: facultyRepo,
 		dict:        dict,
+		weeksCache:  make(map[string]*entities.Teacher),
 	}
 }
 
@@ -98,6 +103,16 @@ func (s *TeacherService) GetTeacherScheduleByWeek(ctx context.Context, name stri
 	const op = "service.TeacherService.GetTeacherScheduleByWeek"
 	log := s.log.With("operation", op, "name", name, "week", week)
 
+	cacheKey := fmt.Sprintf("%s:%s", name, week.Format("2006-01-02"))
+	s.mu.RLock()
+	if s.weeksCache != nil {
+		if t, ok := s.weeksCache[cacheKey]; ok && t != nil {
+			s.mu.RUnlock()
+			return t, nil
+		}
+	}
+	s.mu.RUnlock()
+
 	t, err := s.repo.GetByWeek(ctx, name, week)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrWeekNotFound) {
@@ -107,6 +122,13 @@ func (s *TeacherService) GetTeacherScheduleByWeek(ctx context.Context, name stri
 		log.ErrorContext(ctx, "failed get by week", "error", err)
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
+
+	s.mu.Lock()
+	if s.weeksCache == nil {
+		s.weeksCache = make(map[string]*entities.Teacher)
+	}
+	s.weeksCache[cacheKey] = t
+	s.mu.Unlock()
 
 	return t, nil
 }

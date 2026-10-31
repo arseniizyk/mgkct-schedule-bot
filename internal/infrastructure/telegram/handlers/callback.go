@@ -214,36 +214,95 @@ func handleTeacherSetSelect(ctx context.Context, log *slog.Logger, c tele.Contex
 	return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
 }
 
-func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
-	raw := dataFromCallbackData(data)
+func parseGroupDayNavData(raw string) (groupID int, dateStr string, dayIdx int, subgroup int, hasSubgroup bool, err error) {
 	parts := strings.Split(raw, ":")
 	if len(parts) < 2 {
-		return fmt.Errorf("invalid day nav data: %s", raw)
+		return 0, "", 0, 0, false, fmt.Errorf("invalid day nav data: %s", raw)
 	}
 
-	groupID, err := strconv.Atoi(parts[0])
+	groupID, err = strconv.Atoi(parts[0])
 	if err != nil {
-		return err
-	}
-	dayIdx, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return err
+		return 0, "", 0, 0, false, fmt.Errorf("invalid group id in %s: %w", raw, err)
 	}
 
-	group, err := svc.GetGroupLatestSchedule(ctx, int32(groupID))
-	if err != nil {
-		return err
-	}
-
-	subgroup := 0
-	if len(parts) >= 3 {
-		if sg, err := strconv.Atoi(parts[2]); err == nil {
-			subgroup = sg
+	switch len(parts) {
+	case 2:
+		dayIdx, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, "", 0, 0, false, err
 		}
-	} else if userRepo != nil {
+		return groupID, "", dayIdx, 0, false, nil
+
+	case 3:
+		if idx, err := strconv.Atoi(parts[1]); err == nil {
+			sg, sgErr := strconv.Atoi(parts[2])
+			if sgErr != nil {
+				return 0, "", 0, 0, false, sgErr
+			}
+			return groupID, "", idx, sg, true, nil
+		}
+		dayIdx, err = strconv.Atoi(parts[2])
+		if err != nil {
+			return 0, "", 0, 0, false, err
+		}
+		return groupID, parts[1], dayIdx, 0, false, nil
+
+	default: // >= 4
+		dateStr = parts[1]
+		dayIdx, err = strconv.Atoi(parts[2])
+		if err != nil {
+			return 0, "", 0, 0, false, err
+		}
+		sg, err := strconv.Atoi(parts[3])
+		if err != nil {
+			return 0, "", 0, 0, false, err
+		}
+		return groupID, dateStr, dayIdx, sg, true, nil
+	}
+}
+
+func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
+	raw := dataFromCallbackData(data)
+	groupID, dateStr, dayIdx, subgroup, hasSubgroup, err := parseGroupDayNavData(raw)
+	if err != nil {
+		return err
+	}
+
+	if !hasSubgroup && userRepo != nil {
 		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
 			subgroup = userSg
 		}
+	}
+
+	var group *entities.Group
+	if dateStr != "" {
+		if date, parseErr := time.Parse("02.01.2006", dateStr); parseErr == nil {
+			group, err = svc.GetGroupScheduleByWeek(ctx, int32(groupID), date)
+		}
+	}
+	if group == nil {
+		group, err = svc.GetGroupLatestSchedule(ctx, int32(groupID))
+	}
+	if err != nil {
+		return err
+	}
+
+	if dayIdx < 0 {
+		dayIdx = len(group.Days) - 1
+	}
+	if dayIdx < 0 {
+		dayIdx = 0
+	}
+	if dayIdx >= len(group.Days) {
+		dayIdx = len(group.Days) - 1
+	}
+
+	weeks, err := svc.GetAvailableWeeks(ctx, group.Week)
+	if err != nil {
+		weeks = entities.WeekNavigation{}
+	}
+	if weeks.Current.IsZero() {
+		weeks.Current = group.Week
 	}
 
 	msg, err := formatter.FormatScheduleDayAtForSubgroup(group, dayIdx, subgroup)
@@ -251,7 +310,7 @@ func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data st
 		return err
 	}
 
-	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineDayKeyboard(groupID, dayIdx, len(group.Days), subgroup))
+	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineDayKeyboard(groupID, dayIdx, len(group.Days), subgroup, weeks))
 }
 
 func handleWeekSubgroup(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
@@ -366,21 +425,63 @@ func renderWeek(ctx context.Context, c tele.Context, svc ScheduleService, groupI
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup))
 }
 
+func parseTeacherDayNavData(raw string) (teacherName string, dateStr string, dayIdx int, err error) {
+	left, dayStr, found := strings.CutLast(raw, ":")
+	if !found {
+		return "", "", 0, fmt.Errorf("invalid teacher day nav data: %s", raw)
+	}
+
+	dayIdx, err = strconv.Atoi(dayStr)
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	name, possibleDate, hasDate := strings.CutLast(left, ":")
+	if hasDate {
+		if _, parseErr := time.Parse("02.01.2006", possibleDate); parseErr == nil {
+			return name, possibleDate, dayIdx, nil
+		}
+	}
+
+	return left, "", dayIdx, nil
+}
+
 func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
-	teacherName, dayStr, found := strings.CutLast(raw, ":")
-	if !found {
-		return fmt.Errorf("invalid teacher day nav data: %s", raw)
-	}
-
-	dayIdx, err := strconv.Atoi(dayStr)
+	teacherName, dateStr, dayIdx, err := parseTeacherDayNavData(raw)
 	if err != nil {
 		return err
 	}
 
-	teacher, err := svc.GetTeacherLatestSchedule(ctx, teacherName)
+	var teacher *entities.Teacher
+	if dateStr != "" {
+		if date, parseErr := time.Parse("02.01.2006", dateStr); parseErr == nil {
+			teacher, err = svc.GetTeacherScheduleByWeek(ctx, teacherName, date)
+		}
+	}
+	if teacher == nil {
+		teacher, err = svc.GetTeacherLatestSchedule(ctx, teacherName)
+	}
 	if err != nil {
 		return err
+	}
+
+	if dayIdx < 0 {
+		dayIdx = len(teacher.Days) - 1
+	}
+	if dayIdx < 0 {
+		dayIdx = 0
+	}
+	if dayIdx >= len(teacher.Days) {
+		dayIdx = len(teacher.Days) - 1
+	}
+
+	weeks, err := svc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+	if err != nil {
+		weeks = entities.WeekNavigation{}
+	}
+	if weeks.Current.IsZero() {
+		weeks.Current = teacher.Week
 	}
 
 	msg, err := formatter.FormatTeacherScheduleDayAt(teacher, dayIdx)
@@ -393,7 +494,7 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 		msg = formatter.FormatTeacherProfile(member) + msg
 	}
 
-	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherDayKeyboard(teacherName, dayIdx, len(teacher.Days)))
+	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherDayKeyboard(teacherName, dayIdx, len(teacher.Days), weeks))
 }
 
 func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
