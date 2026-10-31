@@ -34,12 +34,14 @@ const (
 	CabinetPrevDay     = "cab_prevday"
 	CabinetNextDay     = "cab_nextday"
 
-	ArchiveSelect  = "arch_sel"
-	ArchiveBack    = "arch_back"
-	NotifyToggle   = "notify_toggle"
-	SubgroupSelect = "subgroup_set"
-	DaySubgroup    = "day_sg"
-	WeekSubgroup   = "week_sg"
+	ArchiveSelect    = "arch_sel"
+	ArchiveBack      = "arch_back"
+	NotifyToggle     = "notify_toggle"
+	SubgroupSelect   = "subgroup_set"
+	DaySubgroup      = "day_sg"
+	WeekSubgroup     = "week_sg"
+	WeekImage        = "week_img"
+	TeacherWeekImage = "t_week_img"
 
 	RoleSelect  = "role_sel"
 	RoleStudent = "student"
@@ -49,6 +51,7 @@ const (
 	BroadcastCancel  = "bcast_cancel"
 
 	btnCurrentWeek = "📆 Неделя"
+	btnWeekImage   = "🖼 Картинкой"
 	btnPrev        = "◀️"
 	btnNext        = "▶️"
 )
@@ -230,6 +233,11 @@ func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int
 		markup.Data(sg2Title, WeekSubgroup, fmt.Sprintf("%d:%s:2", groupID, dateStr)),
 	))
 
+	// 3-й ряд: 🖼 Картинкой
+	rows = append(rows, markup.Row(
+		markup.Data(btnWeekImage, WeekImage, fmt.Sprintf("%d:%s:%d", groupID, dateStr, subgroup)),
+	))
+
 	markup.Inline(rows...)
 	return markup
 }
@@ -290,22 +298,36 @@ func InlineTeacherDayKeyboard(teacherName string, dayIdx, dayCount int, weeksOpt
 
 func InlineTeacherWeekKeyboard(teacherName string, weeks entities.WeekNavigation) *tele.ReplyMarkup {
 	markup := &tele.ReplyMarkup{}
-	var row []tele.Btn
+	var rows []tele.Row
 
+	var navRow []tele.Btn
 	hasNav := !weeks.Prev.IsZero() || !weeks.Next.IsZero()
 
 	if !weeks.Prev.IsZero() {
-		row = append(row, markup.Data(btnPrev, TeacherPrevWeek, fmt.Sprintf("%s:%s", teacherName, weeks.Prev.Format("02.01.2006"))))
+		navRow = append(navRow, markup.Data(btnPrev, TeacherPrevWeek, fmt.Sprintf("%s:%s", teacherName, weeks.Prev.Format("02.01.2006"))))
 	}
 	if hasNav {
-		row = append(row, markup.Data("Текущая", TeacherCurrentWeek, teacherName))
+		navRow = append(navRow, markup.Data("Текущая", TeacherCurrentWeek, teacherName))
 	}
 	if !weeks.Next.IsZero() {
-		row = append(row, markup.Data(btnNext, TeacherNextWeek, fmt.Sprintf("%s:%s", teacherName, weeks.Next.Format("02.01.2006"))))
+		navRow = append(navRow, markup.Data(btnNext, TeacherNextWeek, fmt.Sprintf("%s:%s", teacherName, weeks.Next.Format("02.01.2006"))))
 	}
 
-	if len(row) > 0 {
-		markup.Inline(markup.Row(row...))
+	if len(navRow) > 0 {
+		rows = append(rows, markup.Row(navRow...))
+	}
+
+	dateStr := "current"
+	if !weeks.Current.IsZero() {
+		dateStr = weeks.Current.Format("02.01.2006")
+	}
+
+	rows = append(rows, markup.Row(
+		markup.Data(btnWeekImage, TeacherWeekImage, fmt.Sprintf("%s:%s", teacherName, dateStr)),
+	))
+
+	if len(rows) > 0 {
+		markup.Inline(rows...)
 	}
 	return markup
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/dictionary"
 	httpserver "github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/parser"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/renderer"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/handlers"
 	kbd "github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
@@ -247,16 +248,23 @@ func (a *App) listenEvents(ctx context.Context) {
 			switch event.Type {
 			case service.EventNewWeek:
 				log.Info("Received EventNewWeek, broadcasting to users", "week", event.Week)
+				renderer.GetDefaultCache().Clear()
 				if err := a.notifier.HandleNewWeek(ctx, event.Week); err != nil {
 					log.Error("failed broadcasting new week", "error", err)
 				}
 			case service.EventGroupScheduleUpdated:
 				log.Info("Received EventGroupScheduleUpdated", "group_id", event.Group.ID)
+				if event.Group != nil {
+					renderer.GetDefaultCache().InvalidateGroup(event.Group.ID)
+				}
 				if err := a.notifier.HandleGroupScheduleUpdate(ctx, event.Group, event.Diff); err != nil {
 					log.Error("failed broadcasting group update", "group_id", event.Group.ID, "error", err)
 				}
 			case service.EventTeacherScheduleUpdated:
 				log.Info("Received EventTeacherScheduleUpdated", "name", event.Teacher.Name)
+				if event.Teacher != nil {
+					renderer.GetDefaultCache().InvalidateTeacher(event.Teacher.Name)
+				}
 				if err := a.notifier.HandleTeacherScheduleUpdate(ctx, event.Teacher, event.Diff); err != nil {
 					log.Error("failed broadcasting teacher update", "name", event.Teacher.Name, "error", err)
 				}
@@ -637,6 +645,8 @@ func registerBotHandlers(
 	bot.Handle("/group", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/day", handlers.Day(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/week", handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/pic", handlers.ScheduleImage(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/image", handlers.ScheduleImage(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo, stateMgr))

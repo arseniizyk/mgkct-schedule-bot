@@ -216,15 +216,21 @@ func TestInlineTeacherDayKeyboard_CrossWeek(t *testing.T) {
 func TestInlineWeekKeyboard(t *testing.T) {
 	current := time.Date(2026, time.August, 24, 0, 0, 0, 0, time.UTC)
 
-	t.Run("no weeks available has subgroup row", func(t *testing.T) {
+	t.Run("no weeks available has subgroup row and image button", func(t *testing.T) {
 		m := InlineWeekKeyboard(99, entities.WeekNavigation{}, 0)
-		if m == nil || len(m.InlineKeyboard) != 1 {
-			t.Fatalf("expected 1 row (subgroups), got %+v", m)
+		if m == nil || len(m.InlineKeyboard) != 2 {
+			t.Fatalf("expected 2 rows (subgroups and image button), got %+v", m)
 		}
 		sgDatas := btnFull(t, m.InlineKeyboard[0])
 		wantSg := []string{"week_sg|99:current:1", "week_sg|99:current:0", "week_sg|99:current:2"}
 		if strings.Join(sgDatas, ",") != strings.Join(wantSg, ",") {
 			t.Errorf("subgroup buttons = %v, want %v", sgDatas, wantSg)
+		}
+
+		imgDatas := btnFull(t, m.InlineKeyboard[1])
+		wantImg := []string{"week_img|99:current:0"}
+		if strings.Join(imgDatas, ",") != strings.Join(wantImg, ",") {
+			t.Errorf("img button = %v, want %v", imgDatas, wantImg)
 		}
 	})
 
@@ -247,6 +253,12 @@ func TestInlineWeekKeyboard(t *testing.T) {
 		wantSg := []string{"week_sg|88:24.08.2026:1", "week_sg|88:24.08.2026:0", "week_sg|88:24.08.2026:2"}
 		if strings.Join(sgDatas, ",") != strings.Join(wantSg, ",") {
 			t.Errorf("subgroup buttons = %v, want %v", sgDatas, wantSg)
+		}
+
+		imgDatas := btnFull(t, m.InlineKeyboard[2])
+		wantImg := []string{"week_img|88:24.08.2026:0"}
+		if strings.Join(imgDatas, ",") != strings.Join(wantImg, ",") {
+			t.Errorf("img button = %v, want %v", imgDatas, wantImg)
 		}
 	})
 }
@@ -467,5 +479,45 @@ func TestInlineRoleKeyboard(t *testing.T) {
 	}
 	if btnTeacher.Data != RoleTeacher {
 		t.Errorf("teacher btn.Data = %q, want %q", btnTeacher.Data, RoleTeacher)
+	}
+}
+
+func TestInlineTeacherWeekKeyboard(t *testing.T) {
+	curr := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	prev := curr.AddDate(0, 0, -7)
+	next := curr.AddDate(0, 0, 7)
+
+	weeks := entities.WeekNavigation{
+		Current: curr,
+		Prev:    prev,
+		Next:    next,
+	}
+
+	m := InlineTeacherWeekKeyboard("Камлюк В. С.", weeks)
+	if m == nil {
+		t.Fatal("expected non-nil keyboard")
+	}
+
+	// Ожидается как минимум строка навигации и строка с кнопкой "Картинкой"
+	if len(m.InlineKeyboard) < 2 {
+		t.Fatalf("expected at least 2 rows, got %d", len(m.InlineKeyboard))
+	}
+
+	// Проверяем строку с кнопкой картинки
+	lastRow := m.InlineKeyboard[len(m.InlineKeyboard)-1]
+	if len(lastRow) != 1 {
+		t.Fatalf("expected 1 button in last row, got %d", len(lastRow))
+	}
+
+	imgBtn := lastRow[0]
+	if imgBtn.Unique != TeacherWeekImage {
+		t.Errorf("imgBtn.Unique = %q, want %q", imgBtn.Unique, TeacherWeekImage)
+	}
+	if imgBtn.Text != btnWeekImage {
+		t.Errorf("imgBtn.Text = %q, want %q", imgBtn.Text, btnWeekImage)
+	}
+	expectedData := "Камлюк В. С.:02.11.2026"
+	if imgBtn.Data != expectedData {
+		t.Errorf("imgBtn.Data = %q, want %q", imgBtn.Data, expectedData)
 	}
 }
