@@ -26,16 +26,18 @@ type ScheduleService struct {
 	log          *slog.Logger
 	scheduleRepo ScheduleRepository
 
-	mu        sync.RWMutex
-	cache     *entities.Schedule
-	allGroups []int32
-	nowFunc   func() time.Time
+	mu         sync.RWMutex
+	cache      *entities.Schedule
+	weeksCache map[string]*entities.Schedule
+	allGroups  []int32
+	nowFunc    func() time.Time
 }
 
 func NewScheduleService(log *slog.Logger, scheduleRepo ScheduleRepository) *ScheduleService {
 	return &ScheduleService{
 		log:          log,
 		scheduleRepo: scheduleRepo,
+		weeksCache:   make(map[string]*entities.Schedule),
 	}
 }
 
@@ -97,6 +99,18 @@ func (s *ScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID in
 	const op = "service.ScheduleService.GetGroupScheduleByWeek"
 	log := s.log.With("operation", op, "group_id", groupID, "week", week)
 
+	weekKey := week.Format("2006-01-02")
+	s.mu.RLock()
+	if s.weeksCache != nil {
+		if sch, ok := s.weeksCache[weekKey]; ok && sch != nil {
+			if group, exists := sch.Groups[groupID]; exists {
+				s.mu.RUnlock()
+				return group, nil
+			}
+		}
+	}
+	s.mu.RUnlock()
+
 	sch, err := s.scheduleRepo.GetByWeek(ctx, week)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrWeekNotFound) {
@@ -106,6 +120,13 @@ func (s *ScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID in
 		log.ErrorContext(ctx, "failed get by week", "error", err)
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
+
+	s.mu.Lock()
+	if s.weeksCache == nil {
+		s.weeksCache = make(map[string]*entities.Schedule)
+	}
+	s.weeksCache[weekKey] = sch
+	s.mu.Unlock()
 
 	group, ok := sch.Groups[groupID]
 	if !ok {
@@ -125,6 +146,17 @@ func (s *ScheduleService) SetCache(sch *entities.Schedule) {
 	defer s.mu.Unlock()
 	s.cache = sch
 	s.allGroups = nil
+	if sch != nil {
+		if s.weeksCache == nil {
+			s.weeksCache = make(map[string]*entities.Schedule)
+		}
+		for _, g := range sch.Groups {
+			if !g.Week.IsZero() {
+				s.weeksCache[g.Week.Format("2006-01-02")] = sch
+				break
+			}
+		}
+	}
 }
 
 func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {

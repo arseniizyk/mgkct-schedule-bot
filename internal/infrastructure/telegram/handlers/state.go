@@ -186,12 +186,16 @@ func handleWaitingTeacherDay(ctx context.Context, log *slog.Logger, c tele.Conte
 	}
 	msg := profile + formatter.FormatTeacherScheduleDay(teacher)
 	dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
+	weeks, _ := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+	if weeks.Current.IsZero() {
+		weeks.Current = teacher.Week
+	}
 
 	return c.Send(
 		msg,
 		tele.ModeMarkdown,
 		keyboard.ReplyScheduleKeyboard,
-		keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days)),
+		keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days), weeks),
 	)
 }
 
