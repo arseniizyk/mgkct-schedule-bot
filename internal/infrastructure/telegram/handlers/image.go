@@ -37,8 +37,12 @@ func ScheduleImage(
 				return sendGroupWeekImage(ctx, log, c, schedSvc, groupID, subgroup)
 			}
 
-			teacherName := strings.Join(args, " ")
-			return sendTeacherWeekImage(ctx, log, c, teacherSvc, teacherName)
+			teacherQuery := strings.Join(args, " ")
+			matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, teacherQuery)
+			if !ok {
+				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, teacherQuery, candidates)
+			}
+			return sendTeacherWeekImage(ctx, log, c, teacherSvc, matched)
 		}
 
 		teacherName, err := userRepo.GetTeacher(ctx, c.Chat().ID)

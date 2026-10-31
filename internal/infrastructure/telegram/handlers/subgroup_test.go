@@ -344,6 +344,9 @@ func (m *mockTeacherService) GetAvailableWeeks(ctx context.Context, name string,
 	return entities.WeekNavigation{}, nil
 }
 func (m *mockTeacherService) GetAllTeacherNames(ctx context.Context) ([]string, error) {
+	if m.teacher == nil {
+		return nil, nil
+	}
 	return []string{m.teacher.Name}, nil
 }
 func (m *mockTeacherService) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
@@ -353,6 +356,9 @@ func (m *mockTeacherService) GetTeacherArchiveSchedule(ctx context.Context, name
 	return m.teacher, nil
 }
 func (m *mockTeacherService) ValidateTeacher(ctx context.Context, name string) (string, []string, bool) {
+	if m.teacher == nil {
+		return "", nil, false
+	}
 	return m.teacher.Name, nil, true
 }
 func (m *mockTeacherService) FindSimilarTeachers(ctx context.Context, name string, limit int) ([]string, error) {
