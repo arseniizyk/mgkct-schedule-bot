@@ -33,6 +33,7 @@ type ScraperService struct {
 	scheduleRepo  ScheduleRepository
 	teacherRepo   TeacherScheduleRepository
 	scheduleSvc   *ScheduleService
+	teacherCache  TeacherScheduleCacheInvalidator
 	facultyParser FacultyParser
 	facultyRepo   FacultyRepository
 
@@ -48,6 +49,11 @@ type ScraperService struct {
 	consecutiveErrors   int
 	adminAlerted        bool
 	lastAlertTime       time.Time
+}
+
+type TeacherScheduleCacheInvalidator interface {
+	InvalidateTeacherWeek(name string, week time.Time)
+	ClearWeeksCache()
 }
 
 func NewScraperService(
@@ -80,6 +86,12 @@ func (s *ScraperService) SetFaculty(facultyParser FacultyParser, facultyRepo Fac
 	defer s.mu.Unlock()
 	s.facultyParser = facultyParser
 	s.facultyRepo = facultyRepo
+}
+
+func (s *ScraperService) SetTeacherCache(cache TeacherScheduleCacheInvalidator) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.teacherCache = cache
 }
 
 func (s *ScraperService) SetNowFunc(f func() time.Time) {
@@ -454,6 +466,12 @@ func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers [
 		if err := s.teacherRepo.Save(ctx, t.Name, t.Week, t); err != nil {
 			log.ErrorContext(ctx, "failed saving teacher schedule", "name", t.Name, "error", err)
 			continue
+		}
+		s.mu.RLock()
+		tc := s.teacherCache
+		s.mu.RUnlock()
+		if tc != nil {
+			tc.InvalidateTeacherWeek(t.Name, t.Week)
 		}
 	}
 

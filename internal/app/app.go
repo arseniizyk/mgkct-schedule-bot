@@ -82,6 +82,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		scheduleSvc,
 	)
 	scraperSvc.SetFaculty(facultyParser, facultyRepo)
+	scraperSvc.SetTeacherCache(teacherSvc)
 
 	// 4. Telegram Бот
 	poller, webhookHandler := buildPoller(cfg)

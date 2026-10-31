@@ -32,12 +32,16 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 
 				msg := formatter.FormatScheduleDay(group)
 				dayIdx := formatter.EffectiveDayIndex(group)
+				weeks, _ := schedSvc.GetAvailableWeeks(ctx, group.Week)
+				if weeks.Current.IsZero() {
+					weeks.Current = group.Week
+				}
 
 				return c.Send(
 					msg,
 					tele.ModeMarkdown,
 					keyboard.ReplyScheduleKeyboard,
-					keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), 0),
+					keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), 0, weeks),
 				)
 			}
 
@@ -56,12 +60,16 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 
 			msg := formatter.FormatTeacherScheduleDay(teacher)
 			dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
+			weeks, _ := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+			if weeks.Current.IsZero() {
+				weeks.Current = teacher.Week
+			}
 
 			return c.Send(
 				msg,
 				tele.ModeMarkdown,
 				keyboard.ReplyScheduleKeyboard,
-				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days)),
+				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days), weeks),
 			)
 		}
 
@@ -76,12 +84,16 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 
 			msg := formatter.FormatTeacherScheduleDay(teacher)
 			dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
+			weeks, _ := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+			if weeks.Current.IsZero() {
+				weeks.Current = teacher.Week
+			}
 
 			return c.Send(
 				msg,
 				tele.ModeMarkdown,
 				keyboard.ReplyScheduleKeyboard,
-				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days)),
+				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days), weeks),
 			)
 		}
 
@@ -100,12 +112,16 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 		filtered := formatter.FilterGroupForSubgroup(group, subgroup)
 		msg := formatter.FormatScheduleDay(filtered)
 		dayIdx := formatter.EffectiveDayIndex(filtered)
+		weeks, _ := schedSvc.GetAvailableWeeks(ctx, group.Week)
+		if weeks.Current.IsZero() {
+			weeks.Current = group.Week
+		}
 
 		return c.Send(
 			msg,
 			tele.ModeMarkdown,
 			keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), subgroup),
+			keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), subgroup, weeks),
 		)
 	}
 }
