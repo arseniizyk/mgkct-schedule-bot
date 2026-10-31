@@ -82,11 +82,11 @@ func TestInlineDayKeyboard(t *testing.T) {
 		t.Errorf("InlineDayKeyboard(0, ...) = %v, want nil", got)
 	}
 
-	t.Run("monday", func(t *testing.T) {
+	t.Run("monday without prev week hides prev button", func(t *testing.T) {
 		m := InlineDayKeyboard(88, 0, 6, 0)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
-		want := []string{"prevday|88:5:0", "currentweek|88:0", "nextday|88:1:0"}
+		want := []string{"currentweek|88:0", "nextday|88:1:0"}
 		if strings.Join(datas, ",") != strings.Join(want, ",") {
 			t.Errorf("nav buttons = %v, want %v", datas, want)
 		}
@@ -98,13 +98,117 @@ func TestInlineDayKeyboard(t *testing.T) {
 		}
 	})
 
-	t.Run("saturday wraps to monday", func(t *testing.T) {
+	t.Run("saturday without next week hides next button", func(t *testing.T) {
 		m := InlineDayKeyboard(88, 5, 6, 1)
 		datas := btnFull(t, m.InlineKeyboard[0])
 
-		want := []string{"prevday|88:4:1", "currentweek|88:1", "nextday|88:0:1"}
+		want := []string{"prevday|88:4:1", "currentweek|88:1"}
 		if strings.Join(datas, ",") != strings.Join(want, ",") {
 			t.Errorf("buttons = %v, want %v", datas, want)
+		}
+	})
+
+	t.Run("midweek has both prev and next", func(t *testing.T) {
+		m := InlineDayKeyboard(88, 2, 6, 0)
+		datas := btnFull(t, m.InlineKeyboard[0])
+
+		want := []string{"prevday|88:1:0", "currentweek|88:0", "nextday|88:3:0"}
+		if strings.Join(datas, ",") != strings.Join(want, ",") {
+			t.Errorf("buttons = %v, want %v", datas, want)
+		}
+	})
+
+	t.Run("monday with prev week points prev to previous week saturday", func(t *testing.T) {
+		prev := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
+		curr := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+		next := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
+
+		weeks := entities.WeekNavigation{
+			Prev:    prev,
+			Current: curr,
+			Next:    next,
+		}
+
+		m := InlineDayKeyboard(88, 0, 6, 0, weeks)
+		datas := btnFull(t, m.InlineKeyboard[0])
+
+		want := []string{"prevday|88:12.10.2026:-1:0", "nextweek|88:19.10.2026:0", "nextday|88:19.10.2026:1:0"}
+		if strings.Join(datas, ",") != strings.Join(want, ",") {
+			t.Errorf("nav buttons = %v, want %v", datas, want)
+		}
+
+		sgDatas := btnFull(t, m.InlineKeyboard[1])
+		wantSg := []string{"day_sg|88:19.10.2026:0:1", "day_sg|88:19.10.2026:0:0", "day_sg|88:19.10.2026:0:2"}
+		if strings.Join(sgDatas, ",") != strings.Join(wantSg, ",") {
+			t.Errorf("subgroup buttons = %v, want %v", sgDatas, wantSg)
+		}
+	})
+
+	t.Run("saturday with next week points next to next week monday", func(t *testing.T) {
+		prev := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
+		curr := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+		next := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
+
+		weeks := entities.WeekNavigation{
+			Prev:    prev,
+			Current: curr,
+			Next:    next,
+		}
+
+		m := InlineDayKeyboard(88, 5, 6, 2, weeks)
+		datas := btnFull(t, m.InlineKeyboard[0])
+
+		want := []string{"prevday|88:19.10.2026:4:2", "nextweek|88:19.10.2026:2", "nextday|88:26.10.2026:0:2"}
+		if strings.Join(datas, ",") != strings.Join(want, ",") {
+			t.Errorf("nav buttons = %v, want %v", datas, want)
+		}
+	})
+}
+
+func TestInlineTeacherDayKeyboard_CrossWeek(t *testing.T) {
+	prev := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
+	curr := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+	next := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
+
+	t.Run("monday with prev week", func(t *testing.T) {
+		weeks := entities.WeekNavigation{Prev: prev, Current: curr}
+		m := InlineTeacherDayKeyboard("Иванов И. И.", 0, 6, weeks)
+		datas := btnFull(t, m.InlineKeyboard[0])
+
+		want := []string{"t_prevday|Иванов И. И.:12.10.2026:-1", "t_nextweek|Иванов И. И.:19.10.2026", "t_nextday|Иванов И. И.:19.10.2026:1"}
+		if strings.Join(datas, ",") != strings.Join(want, ",") {
+			t.Errorf("nav buttons = %v, want %v", datas, want)
+		}
+	})
+
+	t.Run("saturday with next week", func(t *testing.T) {
+		weeks := entities.WeekNavigation{Current: curr, Next: next}
+		m := InlineTeacherDayKeyboard("Иванов И. И.", 5, 6, weeks)
+		datas := btnFull(t, m.InlineKeyboard[0])
+
+		want := []string{"t_prevday|Иванов И. И.:19.10.2026:4", "t_nextweek|Иванов И. И.:19.10.2026", "t_nextday|Иванов И. И.:26.10.2026:0"}
+		if strings.Join(datas, ",") != strings.Join(want, ",") {
+			t.Errorf("nav buttons = %v, want %v", datas, want)
+		}
+	})
+
+	t.Run("monday without prev week hides prev", func(t *testing.T) {
+		m := InlineTeacherDayKeyboard("Иванов И. И.", 0, 6)
+		datas := btnFull(t, m.InlineKeyboard[0])
+
+		want := []string{"t_currweek|Иванов И. И.", "t_nextday|Иванов И. И.:1"}
+		if strings.Join(datas, ",") != strings.Join(want, ",") {
+			t.Errorf("nav buttons = %v, want %v", datas, want)
+		}
+	})
+
+	t.Run("saturday without next week hides next", func(t *testing.T) {
+		m := InlineTeacherDayKeyboard("Иванов И. И.", 5, 6)
+		datas := btnFull(t, m.InlineKeyboard[0])
+
+		want := []string{"t_prevday|Иванов И. И.:4", "t_currweek|Иванов И. И."}
+		if strings.Join(datas, ",") != strings.Join(want, ",") {
+			t.Errorf("nav buttons = %v, want %v", datas, want)
 		}
 	})
 }

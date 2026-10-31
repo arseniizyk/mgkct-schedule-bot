@@ -99,23 +99,56 @@ func InlineScheduleKeyboard(groupID int, week ...time.Time) *tele.ReplyMarkup {
 	return markup
 }
 
-func InlineDayKeyboard(groupID, dayIdx, dayCount, subgroup int) *tele.ReplyMarkup {
+func InlineDayKeyboard(groupID, dayIdx, dayCount, subgroup int, weeksOpt ...entities.WeekNavigation) *tele.ReplyMarkup {
 	if groupID == 0 {
 		return nil
+	}
+
+	var weeks entities.WeekNavigation
+	if len(weeksOpt) > 0 {
+		weeks = weeksOpt[0]
 	}
 
 	markup := &tele.ReplyMarkup{}
 	var rows []tele.Row
 
-	if dayCount > 1 {
-		prev := (dayIdx + dayCount - 1) % dayCount
-		next := (dayIdx + 1) % dayCount
+	var navRow []tele.Btn
 
-		rows = append(rows, markup.Row(
-			markup.Data(btnPrev, PrevDay, fmt.Sprintf("%d:%d:%d", groupID, prev, subgroup)),
-			markup.Data(btnCurrentWeek, CurrentWeek, fmt.Sprintf("%d:%d", groupID, subgroup)),
-			markup.Data(btnNext, NextDay, fmt.Sprintf("%d:%d:%d", groupID, next, subgroup)),
-		))
+	// Кнопка НАЗАД (btnPrev)
+	if dayIdx > 0 {
+		data := fmt.Sprintf("%d:%d:%d", groupID, dayIdx-1, subgroup)
+		if !weeks.Current.IsZero() {
+			data = fmt.Sprintf("%d:%s:%d:%d", groupID, weeks.Current.Format("02.01.2006"), dayIdx-1, subgroup)
+		}
+		navRow = append(navRow, markup.Data(btnPrev, PrevDay, data))
+	} else if !weeks.Prev.IsZero() {
+		data := fmt.Sprintf("%d:%s:-1:%d", groupID, weeks.Prev.Format("02.01.2006"), subgroup)
+		navRow = append(navRow, markup.Data(btnPrev, PrevDay, data))
+	}
+
+	// Кнопка ПО ЦЕНТРУ (btnCurrentWeek / Вся неделя)
+	var weekBtn tele.Btn
+	if !weeks.Current.IsZero() {
+		weekBtn = markup.Data(btnCurrentWeek, NextWeek, fmt.Sprintf("%d:%s:%d", groupID, weeks.Current.Format("02.01.2006"), subgroup))
+	} else {
+		weekBtn = markup.Data(btnCurrentWeek, CurrentWeek, fmt.Sprintf("%d:%d", groupID, subgroup))
+	}
+	navRow = append(navRow, weekBtn)
+
+	// Кнопка ВПЕРЕД (btnNext)
+	if dayIdx < dayCount-1 {
+		data := fmt.Sprintf("%d:%d:%d", groupID, dayIdx+1, subgroup)
+		if !weeks.Current.IsZero() {
+			data = fmt.Sprintf("%d:%s:%d:%d", groupID, weeks.Current.Format("02.01.2006"), dayIdx+1, subgroup)
+		}
+		navRow = append(navRow, markup.Data(btnNext, NextDay, data))
+	} else if !weeks.Next.IsZero() {
+		data := fmt.Sprintf("%d:%s:0:%d", groupID, weeks.Next.Format("02.01.2006"), subgroup)
+		navRow = append(navRow, markup.Data(btnNext, NextDay, data))
+	}
+
+	if len(navRow) > 1 || (len(navRow) == 1 && dayCount > 1) {
+		rows = append(rows, navRow)
 	}
 
 	// 2-й ряд: 1 подгруппа | Вся группа | 2 подгруппа
@@ -131,11 +164,20 @@ func InlineDayKeyboard(groupID, dayIdx, dayCount, subgroup int) *tele.ReplyMarku
 		sg0Title = "• Вся группа •"
 	}
 
+	datePrefix := ""
+	if !weeks.Current.IsZero() {
+		datePrefix = weeks.Current.Format("02.01.2006") + ":"
+	}
+
 	rows = append(rows, markup.Row(
-		markup.Data(sg1Title, DaySubgroup, fmt.Sprintf("%d:%d:1", groupID, dayIdx)),
-		markup.Data(sg0Title, DaySubgroup, fmt.Sprintf("%d:%d:0", groupID, dayIdx)),
-		markup.Data(sg2Title, DaySubgroup, fmt.Sprintf("%d:%d:2", groupID, dayIdx)),
+		markup.Data(sg1Title, DaySubgroup, fmt.Sprintf("%d:%s%d:1", groupID, datePrefix, dayIdx)),
+		markup.Data(sg0Title, DaySubgroup, fmt.Sprintf("%d:%s%d:0", groupID, datePrefix, dayIdx)),
+		markup.Data(sg2Title, DaySubgroup, fmt.Sprintf("%d:%s%d:2", groupID, datePrefix, dayIdx)),
 	))
+
+	if len(rows) == 0 {
+		return nil
+	}
 
 	markup.Inline(rows...)
 	return markup
@@ -192,21 +234,57 @@ func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int
 	return markup
 }
 
-func InlineTeacherDayKeyboard(teacherName string, dayIdx, dayCount int) *tele.ReplyMarkup {
-	if dayCount <= 1 {
+func InlineTeacherDayKeyboard(teacherName string, dayIdx, dayCount int, weeksOpt ...entities.WeekNavigation) *tele.ReplyMarkup {
+	if teacherName == "" || dayCount <= 0 {
 		return nil
 	}
 
+	var weeks entities.WeekNavigation
+	if len(weeksOpt) > 0 {
+		weeks = weeksOpt[0]
+	}
+
 	markup := &tele.ReplyMarkup{}
-	prev := (dayIdx + dayCount - 1) % dayCount
-	next := (dayIdx + 1) % dayCount
+	var navRow []tele.Btn
 
-	markup.Inline(markup.Row(
-		markup.Data(btnPrev, TeacherPrevDay, fmt.Sprintf("%s:%d", teacherName, prev)),
-		markup.Data(btnCurrentWeek, TeacherCurrentWeek, teacherName),
-		markup.Data(btnNext, TeacherNextDay, fmt.Sprintf("%s:%d", teacherName, next)),
-	))
+	// Кнопка НАЗАД (btnPrev)
+	if dayIdx > 0 {
+		data := fmt.Sprintf("%s:%d", teacherName, dayIdx-1)
+		if !weeks.Current.IsZero() {
+			data = fmt.Sprintf("%s:%s:%d", teacherName, weeks.Current.Format("02.01.2006"), dayIdx-1)
+		}
+		navRow = append(navRow, markup.Data(btnPrev, TeacherPrevDay, data))
+	} else if !weeks.Prev.IsZero() {
+		data := fmt.Sprintf("%s:%s:-1", teacherName, weeks.Prev.Format("02.01.2006"))
+		navRow = append(navRow, markup.Data(btnPrev, TeacherPrevDay, data))
+	}
 
+	// Кнопка ПО ЦЕНТРУ (btnCurrentWeek / Вся неделя)
+	var weekBtn tele.Btn
+	if !weeks.Current.IsZero() {
+		weekBtn = markup.Data(btnCurrentWeek, TeacherNextWeek, fmt.Sprintf("%s:%s", teacherName, weeks.Current.Format("02.01.2006")))
+	} else {
+		weekBtn = markup.Data(btnCurrentWeek, TeacherCurrentWeek, teacherName)
+	}
+	navRow = append(navRow, weekBtn)
+
+	// Кнопка ВПЕРЕД (btnNext)
+	if dayIdx < dayCount-1 {
+		data := fmt.Sprintf("%s:%d", teacherName, dayIdx+1)
+		if !weeks.Current.IsZero() {
+			data = fmt.Sprintf("%s:%s:%d", teacherName, weeks.Current.Format("02.01.2006"), dayIdx+1)
+		}
+		navRow = append(navRow, markup.Data(btnNext, TeacherNextDay, data))
+	} else if !weeks.Next.IsZero() {
+		data := fmt.Sprintf("%s:%s:0", teacherName, weeks.Next.Format("02.01.2006"))
+		navRow = append(navRow, markup.Data(btnNext, TeacherNextDay, data))
+	}
+
+	if len(navRow) <= 1 && dayCount <= 1 {
+		return nil
+	}
+
+	markup.Inline(markup.Row(navRow...))
 	return markup
 }
 
@@ -279,20 +357,28 @@ func InlineTeacherSetSuggestionsKeyboard(teachers []string) *tele.ReplyMarkup {
 }
 
 func InlineCabinetDayKeyboard(cabinet string, dayIdx, dayCount int) *tele.ReplyMarkup {
-	if dayCount <= 1 {
+	if cabinet == "" || dayCount <= 1 {
 		return nil
 	}
 
 	markup := &tele.ReplyMarkup{}
-	prev := (dayIdx + dayCount - 1) % dayCount
-	next := (dayIdx + 1) % dayCount
+	var navRow []tele.Btn
 
-	markup.Inline(markup.Row(
-		markup.Data(btnPrev, CabinetPrevDay, fmt.Sprintf("%s:%d", cabinet, prev)),
-		markup.Data(btnCurrentWeek, CabinetCurrentWeek, cabinet),
-		markup.Data(btnNext, CabinetNextDay, fmt.Sprintf("%s:%d", cabinet, next)),
-	))
+	if dayIdx > 0 {
+		navRow = append(navRow, markup.Data(btnPrev, CabinetPrevDay, fmt.Sprintf("%s:%d", cabinet, dayIdx-1)))
+	}
 
+	navRow = append(navRow, markup.Data(btnCurrentWeek, CabinetCurrentWeek, cabinet))
+
+	if dayIdx < dayCount-1 {
+		navRow = append(navRow, markup.Data(btnNext, CabinetNextDay, fmt.Sprintf("%s:%d", cabinet, dayIdx+1)))
+	}
+
+	if len(navRow) <= 1 {
+		return nil
+	}
+
+	markup.Inline(markup.Row(navRow...))
 	return markup
 }
 

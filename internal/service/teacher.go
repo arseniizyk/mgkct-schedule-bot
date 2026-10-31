@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
@@ -38,12 +39,22 @@ type SubjectDictionary interface {
 	Search(query string) []entities.SubjectInfo
 }
 
+const teacherCacheTTL = 5 * time.Minute
+
+type teacherCacheItem struct {
+	teacher  *entities.Teacher
+	cachedAt time.Time
+}
+
 type TeacherService struct {
 	log         *slog.Logger
 	repo        TeacherScheduleRepository
 	facultyRepo FacultyRepository
 	dict        SubjectDictionary
 	nowFunc     func() time.Time
+
+	mu         sync.RWMutex
+	weeksCache map[string]teacherCacheItem
 }
 
 func NewTeacherService(
@@ -57,6 +68,7 @@ func NewTeacherService(
 		repo:        repo,
 		facultyRepo: facultyRepo,
 		dict:        dict,
+		weeksCache:  make(map[string]teacherCacheItem),
 	}
 }
 
@@ -98,6 +110,16 @@ func (s *TeacherService) GetTeacherScheduleByWeek(ctx context.Context, name stri
 	const op = "service.TeacherService.GetTeacherScheduleByWeek"
 	log := s.log.With("operation", op, "name", name, "week", week)
 
+	cacheKey := fmt.Sprintf("%s:%s", name, week.Format("2006-01-02"))
+	s.mu.RLock()
+	if s.weeksCache != nil {
+		if item, ok := s.weeksCache[cacheKey]; ok && item.teacher != nil && time.Since(item.cachedAt) < teacherCacheTTL {
+			s.mu.RUnlock()
+			return item.teacher, nil
+		}
+	}
+	s.mu.RUnlock()
+
 	t, err := s.repo.GetByWeek(ctx, name, week)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrWeekNotFound) {
@@ -108,7 +130,38 @@ func (s *TeacherService) GetTeacherScheduleByWeek(ctx context.Context, name stri
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
+	s.mu.Lock()
+	if s.weeksCache == nil {
+		s.weeksCache = make(map[string]teacherCacheItem)
+	}
+	now := time.Now()
+	for k, v := range s.weeksCache {
+		if now.Sub(v.cachedAt) >= teacherCacheTTL {
+			delete(s.weeksCache, k)
+		}
+	}
+	s.weeksCache[cacheKey] = teacherCacheItem{
+		teacher:  t,
+		cachedAt: now,
+	}
+	s.mu.Unlock()
+
 	return t, nil
+}
+
+// ClearWeeksCache принудительно очищает in-memory кэш недель преподавателей.
+func (s *TeacherService) ClearWeeksCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.weeksCache = make(map[string]teacherCacheItem)
+}
+
+// InvalidateTeacherWeek удаляет конкретную неделю преподавателя из кэша.
+func (s *TeacherService) InvalidateTeacherWeek(name string, week time.Time) {
+	cacheKey := fmt.Sprintf("%s:%s", name, week.Format("2006-01-02"))
+	s.mu.Lock()
+	delete(s.weeksCache, cacheKey)
+	s.mu.Unlock()
 }
 
 func (s *TeacherService) GetAllTeacherNames(ctx context.Context) ([]string, error) {
