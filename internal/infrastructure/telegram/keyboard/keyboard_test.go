@@ -216,15 +216,21 @@ func TestInlineTeacherDayKeyboard_CrossWeek(t *testing.T) {
 func TestInlineWeekKeyboard(t *testing.T) {
 	current := time.Date(2026, time.August, 24, 0, 0, 0, 0, time.UTC)
 
-	t.Run("no weeks available has subgroup row", func(t *testing.T) {
+	t.Run("no weeks available has subgroup row and image button", func(t *testing.T) {
 		m := InlineWeekKeyboard(99, entities.WeekNavigation{}, 0)
-		if m == nil || len(m.InlineKeyboard) != 1 {
-			t.Fatalf("expected 1 row (subgroups), got %+v", m)
+		if m == nil || len(m.InlineKeyboard) != 2 {
+			t.Fatalf("expected 2 rows (subgroups and image button), got %+v", m)
 		}
 		sgDatas := btnFull(t, m.InlineKeyboard[0])
 		wantSg := []string{"week_sg|99:current:1", "week_sg|99:current:0", "week_sg|99:current:2"}
 		if strings.Join(sgDatas, ",") != strings.Join(wantSg, ",") {
 			t.Errorf("subgroup buttons = %v, want %v", sgDatas, wantSg)
+		}
+
+		imgDatas := btnFull(t, m.InlineKeyboard[1])
+		wantImg := []string{"week_img|99:current:0"}
+		if strings.Join(imgDatas, ",") != strings.Join(wantImg, ",") {
+			t.Errorf("img button = %v, want %v", imgDatas, wantImg)
 		}
 	})
 
@@ -247,6 +253,12 @@ func TestInlineWeekKeyboard(t *testing.T) {
 		wantSg := []string{"week_sg|88:24.08.2026:1", "week_sg|88:24.08.2026:0", "week_sg|88:24.08.2026:2"}
 		if strings.Join(sgDatas, ",") != strings.Join(wantSg, ",") {
 			t.Errorf("subgroup buttons = %v, want %v", sgDatas, wantSg)
+		}
+
+		imgDatas := btnFull(t, m.InlineKeyboard[2])
+		wantImg := []string{"week_img|88:24.08.2026:0"}
+		if strings.Join(imgDatas, ",") != strings.Join(wantImg, ",") {
+			t.Errorf("img button = %v, want %v", imgDatas, wantImg)
 		}
 	})
 }
