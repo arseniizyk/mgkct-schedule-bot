@@ -12,7 +12,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/image v0.0.0-20190802002840-cff245a6509b
+	golang.org/x/image v0.41.0
 	gopkg.in/telebot.v4 v4.0.0-beta.10
 	modernc.org/sqlite v1.60.1
 )
