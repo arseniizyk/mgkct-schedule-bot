@@ -5,11 +5,14 @@ go 1.27.0
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/PuerkitoBio/goquery v1.13.0
+	github.com/fogleman/gg v1.3.0
 	github.com/gocolly/colly v1.2.0
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/joho/godotenv v1.5.1
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/stretchr/testify v1.12.1
+	golang.org/x/image v0.0.0-20190802002840-cff245a6509b
 	gopkg.in/telebot.v4 v4.0.0-beta.10
 	modernc.org/sqlite v1.60.1
 )
