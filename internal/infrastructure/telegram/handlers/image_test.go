@@ -200,3 +200,129 @@ func TestScheduleImageCommand(t *testing.T) {
 	assert.True(t, found)
 	assert.Equal(t, "telegram_file_id_test_123", cachedID)
 }
+
+func TestScheduleImageCommand_Teacher(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	renderer.GetDefaultCache().Clear()
+
+	teacher := &entities.Teacher{
+		Name: "Камлюк В. С.",
+		Week: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник | 02.11.2026",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{Name: "НЭОПИМ", Type: "Лек", Class: "3-114", Group: "80"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	schedSvc := &mockNavScheduleSvc{}
+	teacherSvc := &mockTeacherService{
+		teacher: teacher,
+	}
+	userRepo := newMockUserRepo()
+
+	imgCmdHandler := handlers.ScheduleImage(log, schedSvc, teacherSvc, userRepo)
+
+	t.Run("valid teacher query", func(t *testing.T) {
+		api := &mockAPI{}
+		c := &mockImageTeleContext{
+			args: []string{"Камлюк"},
+			api:  api,
+		}
+		err := imgCmdHandler(c)
+		require.NoError(t, err)
+		require.NotNil(t, api.sentWhat)
+		photo, ok := api.sentWhat.(*tele.Photo)
+		require.True(t, ok)
+		assert.NotNil(t, photo.File.FileReader)
+
+		// Кэш FileID
+		cacheKey := renderer.TeacherKey(teacher.Name, teacher.Week)
+		cachedID, found := renderer.GetDefaultCache().GetFileID(cacheKey)
+		assert.True(t, found)
+		assert.Equal(t, "telegram_file_id_test_123", cachedID)
+	})
+
+	t.Run("invalid teacher query", func(t *testing.T) {
+		emptyTeacherSvc := &mockTeacherService{teacher: nil}
+		emptyHandler := handlers.ScheduleImage(log, schedSvc, emptyTeacherSvc, userRepo)
+
+		c := &mockImageTeleContext{
+			args: []string{"Несуществующий"},
+			api:  &mockAPI{},
+		}
+		err := emptyHandler(c)
+		require.NoError(t, err)
+		assert.Contains(t, c.sentWhat, "не найден")
+	})
+}
+
+func TestHandleTeacherWeekImageCallback(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	renderer.GetDefaultCache().Clear()
+
+	teacher := &entities.Teacher{
+		Name: "Камлюк В. С.",
+		Week: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник | 02.11.2026",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{Name: "НЭОПИМ", Type: "Лек", Class: "3-114", Group: "80"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	schedSvc := &mockNavScheduleSvc{}
+	teacherSvc := &mockTeacherService{
+		teacher: teacher,
+	}
+	userRepo := newMockUserRepo()
+
+	api := &mockAPI{}
+	cbHandler := handlers.CallbacksHandler(log, schedSvc, teacherSvc, nil, userRepo, nil, api, []int64{1})
+
+	// 1-й вызов: генерация и кэширование
+	c1 := &mockImageTeleContext{
+		data: fmt.Sprintf("%s|Камлюк В. С.:current", keyboard.TeacherWeekImage),
+		api:  api,
+	}
+
+	err := cbHandler(c1)
+	require.NoError(t, err)
+	assert.True(t, c1.responded)
+	assert.NotNil(t, api.sentWhat)
+	photo, ok := api.sentWhat.(*tele.Photo)
+	require.True(t, ok)
+	assert.NotNil(t, photo.File.FileReader)
+
+	// Проверяем кэш FileID
+	cacheKey := renderer.TeacherKey(teacher.Name, teacher.Week)
+	cachedID, found := renderer.GetDefaultCache().GetFileID(cacheKey)
+	assert.True(t, found)
+	assert.Equal(t, "telegram_file_id_test_123", cachedID)
+
+	// 2-й вызов: отдача из кэша
+	c2 := &mockImageTeleContext{
+		data: fmt.Sprintf("%s|Камлюк В. С.:current", keyboard.TeacherWeekImage),
+		api:  api,
+	}
+	err = cbHandler(c2)
+	require.NoError(t, err)
+	assert.True(t, c2.responded)
+	cachedPhoto, ok := c2.sentWhat.(*tele.Photo)
+	require.True(t, ok)
+	assert.Equal(t, "telegram_file_id_test_123", cachedPhoto.File.FileID)
+}

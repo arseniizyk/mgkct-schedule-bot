@@ -481,3 +481,43 @@ func TestInlineRoleKeyboard(t *testing.T) {
 		t.Errorf("teacher btn.Data = %q, want %q", btnTeacher.Data, RoleTeacher)
 	}
 }
+
+func TestInlineTeacherWeekKeyboard(t *testing.T) {
+	curr := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	prev := curr.AddDate(0, 0, -7)
+	next := curr.AddDate(0, 0, 7)
+
+	weeks := entities.WeekNavigation{
+		Current: curr,
+		Prev:    prev,
+		Next:    next,
+	}
+
+	m := InlineTeacherWeekKeyboard("Камлюк В. С.", weeks)
+	if m == nil {
+		t.Fatal("expected non-nil keyboard")
+	}
+
+	// Ожидается как минимум строка навигации и строка с кнопкой "Картинкой"
+	if len(m.InlineKeyboard) < 2 {
+		t.Fatalf("expected at least 2 rows, got %d", len(m.InlineKeyboard))
+	}
+
+	// Проверяем строку с кнопкой картинки
+	lastRow := m.InlineKeyboard[len(m.InlineKeyboard)-1]
+	if len(lastRow) != 1 {
+		t.Fatalf("expected 1 button in last row, got %d", len(lastRow))
+	}
+
+	imgBtn := lastRow[0]
+	if imgBtn.Unique != TeacherWeekImage {
+		t.Errorf("imgBtn.Unique = %q, want %q", imgBtn.Unique, TeacherWeekImage)
+	}
+	if imgBtn.Text != btnWeekImage {
+		t.Errorf("imgBtn.Text = %q, want %q", imgBtn.Text, btnWeekImage)
+	}
+	expectedData := "Камлюк В. С.:02.11.2026"
+	if imgBtn.Data != expectedData {
+		t.Errorf("imgBtn.Data = %q, want %q", imgBtn.Data, expectedData)
+	}
+}

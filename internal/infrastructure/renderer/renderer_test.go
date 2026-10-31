@@ -168,9 +168,68 @@ func TestRenderGroupWeek(t *testing.T) {
 		t.Fatalf("Invalid PNG header: %v", pngBytes[:8])
 	}
 
+	// Тест рендеринга для конкретной подгруппы (заголовок с подгруппой)
+	pngBytesSg, err := RenderGroupWeek(group, 1)
+	if err != nil {
+		t.Fatalf("RenderGroupWeek subgroup 1 failed: %v", err)
+	}
+	if len(pngBytesSg) < 8 || string(pngBytesSg[:8]) != string(pngMagic) {
+		t.Fatalf("Invalid PNG header for subgroup: %v", pngBytesSg[:8])
+	}
+
 	outPath := filepath.Join(t.TempDir(), "schedule_pure_go_rendered.png")
 	if err := os.WriteFile(outPath, pngBytes, 0644); err != nil {
 		t.Fatalf("Failed to save image: %v", err)
+	}
+}
+
+func TestRenderTeacherWeek(t *testing.T) {
+	teacher := &entities.Teacher{
+		Name: "Камлюк В. С.",
+		Week: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник | 02.11.2026",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{Name: "НЭОПИМ", Type: "ЛР", Class: "3-114", Group: "80"},
+						},
+					},
+					{
+						Pairs: []*entities.Pair{
+							{Name: "НЭОПИМ", Type: "Лек", Class: "3-114", Group: "88"},
+						},
+					},
+				},
+			},
+			{
+				Name: "Вторник | 03.11.2026",
+				Subjects: []*entities.Subject{
+					{IsEmpty: true},
+					{
+						Pairs: []*entities.Pair{
+							{Name: "НЭОПИМ", Type: "ЛР", Class: "3-114", Group: "80"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	pngBytes, err := RenderTeacherWeek(teacher)
+	if err != nil {
+		t.Fatalf("RenderTeacherWeek failed: %v", err)
+	}
+
+	pngMagic := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	if len(pngBytes) < 8 || string(pngBytes[:8]) != string(pngMagic) {
+		t.Fatalf("Invalid PNG header: %v", pngBytes[:8])
+	}
+
+	// Nil teacher
+	if _, err := RenderTeacherWeek(nil); err == nil {
+		t.Error("expected error for nil teacher, got nil")
 	}
 }
 
