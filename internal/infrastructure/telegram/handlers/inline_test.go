@@ -153,9 +153,11 @@ func (m *mockInlineTeacherService) GetFacultyMember(ctx context.Context, teacher
 
 func TestInlineQuery(t *testing.T) {
 	log := slog.Default()
-	now := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC) // Monday
+	loc := time.FixedZone("MSK", 3*3600)
+	now := time.Date(2026, 10, 26, 12, 0, 0, 0, loc) // Monday
 	nextWk := now.AddDate(0, 0, 7)
 	prevWk := now.AddDate(0, 0, -7)
+	fixedClock := func() time.Time { return now }
 
 	mockSched := &mockInlineScheduleService{
 		groups: map[int32]*entities.Group{
@@ -220,7 +222,7 @@ func TestInlineQuery(t *testing.T) {
 
 	t.Run("Empty query with no saved user data returns help cards", func(t *testing.T) {
 		repo := newMockUserRepo()
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "https://example.com/app")
+		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
 		c := &mockInlineContext{
 			query: &tele.Query{
@@ -248,7 +250,7 @@ func TestInlineQuery(t *testing.T) {
 		repo := newMockUserRepo()
 		_ = repo.SetUserGroup(context.Background(), 100, 88, 0)
 
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "https://example.com/app")
+		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
 		c := &mockInlineContext{
 			query: &tele.Query{
@@ -280,7 +282,7 @@ func TestInlineQuery(t *testing.T) {
 		repo := newMockUserRepo()
 		_ = repo.SetTeacher(context.Background(), 200, "Кулецкая Ю. Н.")
 
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "https://example.com/app")
+		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
 		c := &mockInlineContext{
 			query: &tele.Query{
@@ -304,9 +306,9 @@ func TestInlineQuery(t *testing.T) {
 		assert.Contains(t, art1.Text, "Информатика")
 	})
 
-	t.Run("Group query with valid group ID returns available weeks sorted DESC", func(t *testing.T) {
+	t.Run("Group query with valid group ID returns available weeks sorted DESC with single switch button", func(t *testing.T) {
 		repo := newMockUserRepo()
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "https://example.com/app")
+		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
 		c := &mockInlineContext{
 			query: &tele.Query{
@@ -324,8 +326,12 @@ func TestInlineQuery(t *testing.T) {
 		art0 := c.queryResponse.Results[0].(*tele.ArticleResult)
 		assert.Contains(t, art0.Title, "Следующая неделя (02.11 – 07.11)")
 		assert.Equal(t, "Группа 88", art0.Description)
-		assert.NotNil(t, art0.ReplyMarkup)
-		assert.NotEmpty(t, art0.ReplyMarkup.InlineKeyboard)
+		require.NotNil(t, art0.ReplyMarkup)
+		require.NotEmpty(t, art0.ReplyMarkup.InlineKeyboard)
+
+		// Под сообщением ровно одна кнопка "Другое расписание"
+		require.Len(t, art0.ReplyMarkup.InlineKeyboard[0], 1)
+		assert.Equal(t, "🔍 Другое расписание", art0.ReplyMarkup.InlineKeyboard[0][0].Text)
 
 		art1 := c.queryResponse.Results[1].(*tele.ArticleResult)
 		assert.Contains(t, art1.Title, "Текущая неделя (26.10 – 31.10)")
@@ -334,9 +340,37 @@ func TestInlineQuery(t *testing.T) {
 		assert.Contains(t, art2.Title, "Предыдущая неделя (19.10 – 24.10)")
 	})
 
+	t.Run("Group query with many weeks respects maxWeeks limit of 4", func(t *testing.T) {
+		repo := newMockUserRepo()
+		manyWeeksSched := &mockInlineScheduleService{
+			groups: mockSched.groups,
+			allWeeks: []time.Time{
+				now.AddDate(0, 0, 14),
+				now.AddDate(0, 0, 7),
+				now,
+				now.AddDate(0, 0, -7),
+				now.AddDate(0, 0, -14),
+				now.AddDate(0, 0, -21),
+			},
+		}
+
+		h := handlers.InlineQueryWithClock(log, manyWeeksSched, mockTeacher, repo, fixedClock)
+		c := &mockInlineContext{
+			query: &tele.Query{
+				Text:   "88",
+				Sender: &tele.User{ID: 300},
+			},
+		}
+
+		err := h(c)
+		require.NoError(t, err)
+		require.NotNil(t, c.queryResponse)
+		assert.Len(t, c.queryResponse.Results, 4) // maxWeeks = 4
+	})
+
 	t.Run("Group query with subgroup returns formatted text for subgroup", func(t *testing.T) {
 		repo := newMockUserRepo()
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "")
+		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
 		c := &mockInlineContext{
 			query: &tele.Query{
@@ -356,7 +390,7 @@ func TestInlineQuery(t *testing.T) {
 
 	t.Run("Group query with unknown group returns not found card", func(t *testing.T) {
 		repo := newMockUserRepo()
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "")
+		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
 		c := &mockInlineContext{
 			query: &tele.Query{
@@ -376,7 +410,7 @@ func TestInlineQuery(t *testing.T) {
 
 	t.Run("Teacher query with exact match returns weeks", func(t *testing.T) {
 		repo := newMockUserRepo()
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "https://example.com/app")
+		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
 		c := &mockInlineContext{
 			query: &tele.Query{
@@ -399,13 +433,29 @@ func TestInlineQuery(t *testing.T) {
 		assert.Equal(t, "Кулецкая Ю. Н.", art1.Description)
 	})
 
-	t.Run("Teacher query with candidate match returns candidates", func(t *testing.T) {
+	t.Run("Teacher query with candidate match limits to maxCandidates 10", func(t *testing.T) {
 		repo := newMockUserRepo()
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "")
+		manyCandidates := make([]string, 15)
+		for i := range 15 {
+			manyCandidates[i] = fmt.Sprintf("Преподаватель %d", i+1)
+		}
+		candTeacher := &mockInlineTeacherService{
+			teachers: map[string]*entities.Teacher{},
+			candidatesMap: map[string][]string{
+				"Преп": manyCandidates,
+			},
+		}
+		for _, cand := range manyCandidates {
+			candTeacher.teachers[cand] = &entities.Teacher{
+				Name: cand,
+				Week: now,
+			}
+		}
 
+		h := handlers.InlineQueryWithClock(log, mockSched, candTeacher, repo, fixedClock)
 		c := &mockInlineContext{
 			query: &tele.Query{
-				Text:   "Кулец",
+				Text:   "Преп",
 				Sender: &tele.User{ID: 400},
 			},
 		}
@@ -413,15 +463,12 @@ func TestInlineQuery(t *testing.T) {
 		err := h(c)
 		require.NoError(t, err)
 		require.NotNil(t, c.queryResponse)
-		assert.Len(t, c.queryResponse.Results, 1)
-
-		art0 := c.queryResponse.Results[0].(*tele.ArticleResult)
-		assert.Equal(t, "Кулецкая Ю. Н.", art0.Title)
+		assert.Len(t, c.queryResponse.Results, 10) // capped at maxCandidates = 10
 	})
 
 	t.Run("Teacher query with unknown teacher returns not found card", func(t *testing.T) {
 		repo := newMockUserRepo()
-		h := handlers.InlineQuery(log, mockSched, mockTeacher, repo, "")
+		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
 		c := &mockInlineContext{
 			query: &tele.Query{

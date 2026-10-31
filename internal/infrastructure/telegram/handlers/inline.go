@@ -23,8 +23,22 @@ func InlineQuery(
 	schedSvc ScheduleService,
 	teacherSvc TeacherService,
 	userRepo UserRepo,
-	webAppURL string,
 ) tele.HandlerFunc {
+	return InlineQueryWithClock(log, schedSvc, teacherSvc, userRepo, time.Now)
+}
+
+// InlineQueryWithClock позволяет инжектировать функцию времени для детерминированных тестов
+func InlineQueryWithClock(
+	log *slog.Logger,
+	schedSvc ScheduleService,
+	teacherSvc TeacherService,
+	userRepo UserRepo,
+	nowFunc func() time.Time,
+) tele.HandlerFunc {
+	if nowFunc == nil {
+		nowFunc = time.Now
+	}
+
 	return func(c tele.Context) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
@@ -38,7 +52,7 @@ func InlineQuery(
 
 		// 1. Пустой запрос: если пользователь привязал группу/преподавателя — показываем их, иначе подсказку
 		if rawQuery == "" {
-			results := buildEmptyQueryResults(ctx, log, c, schedSvc, teacherSvc, userRepo, webAppURL)
+			results := buildEmptyQueryResults(ctx, log, c, schedSvc, teacherSvc, userRepo, nowFunc)
 			return c.Answer(&tele.QueryResponse{
 				Results:    results,
 				CacheTime:  30,
@@ -56,7 +70,7 @@ func InlineQuery(
 				}
 			}
 
-			results := buildGroupQueryResults(ctx, log, schedSvc, groupID, subgroup, webAppURL)
+			results := buildGroupQueryResults(ctx, log, schedSvc, groupID, subgroup, nowFunc)
 			return c.Answer(&tele.QueryResponse{
 				Results:   results,
 				CacheTime: 60,
@@ -64,7 +78,7 @@ func InlineQuery(
 		}
 
 		// 3. Запрос преподавателя (поиск по фамилии / ФИО)
-		results := buildTeacherQueryResults(ctx, log, teacherSvc, rawQuery, webAppURL)
+		results := buildTeacherQueryResults(ctx, log, teacherSvc, rawQuery, nowFunc)
 		return c.Answer(&tele.QueryResponse{
 			Results:   results,
 			CacheTime: 60,
@@ -79,7 +93,7 @@ func buildEmptyQueryResults(
 	schedSvc ScheduleService,
 	teacherSvc TeacherService,
 	userRepo UserRepo,
-	webAppURL string,
+	nowFunc func() time.Time,
 ) tele.Results {
 	if c.Query() == nil || c.Query().Sender == nil || userRepo == nil {
 		return buildDefaultHelpResults()
@@ -89,7 +103,7 @@ func buildEmptyQueryResults(
 
 	// Проверяем, сохранен ли преподаватель
 	if teacherName, err := userRepo.GetTeacher(ctx, userID); err == nil && teacherName != "" {
-		res := buildTeacherQueryResults(ctx, log, teacherSvc, teacherName, webAppURL)
+		res := buildTeacherQueryResults(ctx, log, teacherSvc, teacherName, nowFunc)
 		if len(res) > 0 {
 			return res
 		}
@@ -97,7 +111,7 @@ func buildEmptyQueryResults(
 
 	// Проверяем, сохранена ли группа
 	if groupID, subgroup, err := userRepo.GroupAndSubgroupByChatID(ctx, userID); err == nil && groupID > 0 {
-		res := buildGroupQueryResults(ctx, log, schedSvc, groupID, subgroup, webAppURL)
+		res := buildGroupQueryResults(ctx, log, schedSvc, groupID, subgroup, nowFunc)
 		if len(res) > 0 {
 			return res
 		}
@@ -132,7 +146,7 @@ func buildGroupQueryResults(
 	schedSvc ScheduleService,
 	groupID int,
 	subgroup int,
-	webAppURL string,
+	nowFunc func() time.Time,
 ) tele.Results {
 	hasGroup, err := schedSvc.HasGroup(ctx, int32(groupID))
 	if err != nil || !hasGroup {
@@ -159,12 +173,12 @@ func buildGroupQueryResults(
 		return allWeeks[i].After(allWeeks[j])
 	})
 
-	const maxWeeks = 10
+	const maxWeeks = 4
 	if len(allWeeks) > maxWeeks {
 		allWeeks = allWeeks[:maxWeeks]
 	}
 
-	curMonday := currentWeekMonday(time.Now())
+	curMonday := currentWeekMonday(nowFunc())
 	results := make(tele.Results, 0, len(allWeeks))
 
 	for i, w := range allWeeks {
@@ -190,7 +204,7 @@ func buildGroupQueryResults(
 		article.SetResultID(hashResultID(fmt.Sprintf("grp:%d:%s:%d:%d", groupID, w.Format("2006-01-02"), subgroup, i)))
 		article.SetParseMode(tele.ModeMarkdown)
 
-		if markup := buildInlineMessageMarkup(webAppURL); markup != nil {
+		if markup := buildInlineMessageMarkup(); markup != nil {
 			article.SetReplyMarkup(markup)
 		}
 
@@ -205,11 +219,16 @@ func buildTeacherQueryResults(
 	log *slog.Logger,
 	teacherSvc TeacherService,
 	query string,
-	webAppURL string,
+	nowFunc func() time.Time,
 ) tele.Results {
 	matched, candidates, ok := teacherSvc.ValidateTeacher(ctx, query)
 	if !ok {
 		if len(candidates) > 0 {
+			const maxCandidates = 10
+			if len(candidates) > maxCandidates {
+				candidates = candidates[:maxCandidates]
+			}
+
 			results := make(tele.Results, 0, len(candidates))
 			for i, cand := range candidates {
 				latest, err := teacherSvc.GetTeacherLatestSchedule(ctx, cand)
@@ -224,7 +243,7 @@ func buildTeacherQueryResults(
 				}
 				article.SetResultID(hashResultID(fmt.Sprintf("cand:%s:%d", cand, i)))
 				article.SetParseMode(tele.ModeMarkdown)
-				if markup := buildInlineMessageMarkup(webAppURL); markup != nil {
+				if markup := buildInlineMessageMarkup(); markup != nil {
 					article.SetReplyMarkup(markup)
 				}
 				results = append(results, article)
@@ -255,12 +274,12 @@ func buildTeacherQueryResults(
 		return allWeeks[i].After(allWeeks[j])
 	})
 
-	const maxWeeks = 10
+	const maxWeeks = 4
 	if len(allWeeks) > maxWeeks {
 		allWeeks = allWeeks[:maxWeeks]
 	}
 
-	curMonday := currentWeekMonday(time.Now())
+	curMonday := currentWeekMonday(nowFunc())
 	results := make(tele.Results, 0, len(allWeeks))
 
 	for i, w := range allWeeks {
@@ -281,7 +300,7 @@ func buildTeacherQueryResults(
 		article.SetResultID(hashResultID(fmt.Sprintf("tch:%s:%s:%d", matched, w.Format("2006-01-02"), i)))
 		article.SetParseMode(tele.ModeMarkdown)
 
-		if markup := buildInlineMessageMarkup(webAppURL); markup != nil {
+		if markup := buildInlineMessageMarkup(); markup != nil {
 			article.SetReplyMarkup(markup)
 		}
 
@@ -334,21 +353,10 @@ func buildNotFoundArticle(id, title, desc string) *tele.ArticleResult {
 	return article
 }
 
-func buildInlineMessageMarkup(webAppURL string) *tele.ReplyMarkup {
+func buildInlineMessageMarkup() *tele.ReplyMarkup {
 	markup := &tele.ReplyMarkup{}
-	var buttons []tele.Btn
-
-	if webAppURL != "" {
-		buttons = append(buttons, markup.WebApp("📱 Mini App", &tele.WebApp{URL: webAppURL}))
-	}
-	buttons = append(buttons, markup.QueryChat("🔍 Другое расписание", ""))
-
-	if len(buttons) > 0 {
-		markup.Inline(markup.Row(buttons...))
-		return markup
-	}
-
-	return nil
+	markup.Inline(markup.Row(markup.QueryChat("🔍 Другое расписание", "")))
+	return markup
 }
 
 func hashResultID(key string) string {
