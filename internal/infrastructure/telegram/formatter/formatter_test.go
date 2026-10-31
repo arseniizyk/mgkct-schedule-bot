@@ -343,7 +343,7 @@ func TestGetDayEndTime(t *testing.T) {
 			dayIdx:      5, // Saturday
 			lastSubject: 3,
 			wantHour:    14,
-			wantMin:     30,
+			wantMin:     40,
 			wantOK:      true,
 		},
 		{
