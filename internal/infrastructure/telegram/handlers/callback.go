@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/renderer"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
@@ -46,78 +48,11 @@ func CallbacksHandler(
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		var err error
-		switch {
-		// Рассылка администратора
-		case strings.Contains(data, keyboard.BroadcastConfirm), strings.Contains(data, keyboard.BroadcastCancel):
+		if strings.Contains(data, keyboard.BroadcastConfirm) || strings.Contains(data, keyboard.BroadcastCancel) {
 			return HandleBroadcastCallback(ctx, log, c, data, userRepo, bot, sm, adminIDs)
-
-		// Выбор роли
-		case strings.Contains(data, keyboard.RoleSelect):
-			if sm != nil {
-				err = handleRoleSelect(ctx, log, c, data, sm)
-			}
-
-		// Уведомления
-		case strings.Contains(data, keyboard.NotifyToggle):
-			if userRepo != nil {
-				err = handleNotifyToggle(ctx, log, c, data, userRepo)
-			}
-
-		// Выбор подгруппы
-		case strings.Contains(data, keyboard.SubgroupSelect):
-			if userRepo != nil {
-				err = handleSubgroupSelect(ctx, log, c, data, userRepo, sm)
-			}
-
-		// Кабинеты
-		case strings.Contains(data, keyboard.CabinetPrevDay), strings.Contains(data, keyboard.CabinetNextDay):
-			if analyticsSvc != nil {
-				err = handleCabinetDayNav(ctx, log, c, data, analyticsSvc)
-			}
-		case strings.Contains(data, keyboard.CabinetCurrentWeek):
-			if analyticsSvc != nil {
-				err = handleCabinetWeek(ctx, log, c, data, analyticsSvc)
-			}
-
-		// Архив
-		case strings.Contains(data, keyboard.ArchiveBack):
-			err = handleArchiveBack(ctx, log, c, data, schedSvc, teacherSvc)
-		case strings.Contains(data, keyboard.ArchiveSelect):
-			err = handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc, userRepo)
-
-		// Закрепление преподавателя
-		case strings.Contains(data, keyboard.TeacherSetSelect):
-			if userRepo != nil {
-				err = handleTeacherSetSelect(ctx, log, c, data, userRepo, sm)
-			}
-
-		// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
-		case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
-			err = handleTeacherDayNav(ctx, log, c, data, teacherSvc, userRepo)
-		case strings.Contains(data, keyboard.TeacherCurrentWeek):
-			err = handleTeacherCurrentWeek(ctx, log, c, data, teacherSvc, userRepo)
-		case strings.Contains(data, keyboard.TeacherPrevWeek), strings.Contains(data, keyboard.TeacherNextWeek):
-			err = handleTeacherWeekNav(ctx, log, c, data, teacherSvc, userRepo)
-
-		// Группы
-		case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay),
-			strings.Contains(data, keyboard.DaySubgroup),
-			strings.Contains(data, "prevday"), strings.Contains(data, "nextday"):
-			err = handleDayNav(ctx, log, c, data, schedSvc, userRepo)
-		case strings.Contains(data, keyboard.WeekSubgroup):
-			err = handleWeekSubgroup(ctx, log, c, data, schedSvc, userRepo)
-		case strings.Contains(data, keyboard.CurrentWeek), strings.Contains(data, "currentweek"):
-			err = handleCurrentWeek(ctx, log, c, data, schedSvc, userRepo)
-		case strings.Contains(data, keyboard.PrevWeek), strings.Contains(data, keyboard.NextWeek),
-			strings.Contains(data, "prevweek"), strings.Contains(data, "nextweek"):
-			err = handleWeekNav(ctx, log, c, data, schedSvc, userRepo)
-
-		default:
-			log.Warn("unexpected callback", "data", data)
-			return c.Respond(&tele.CallbackResponse{Text: messages.Internal, ShowAlert: true})
 		}
 
+		err := dispatchCallback(ctx, log, c, data, schedSvc, teacherSvc, analyticsSvc, userRepo, sm, adminIDs)
 		if err != nil {
 			if strings.Contains(err.Error(), "message is not modified") {
 				return c.Respond()
@@ -128,6 +63,92 @@ func CallbacksHandler(
 
 		return c.Respond()
 	}
+}
+
+func dispatchCallback(
+	ctx context.Context,
+	log *slog.Logger,
+	c tele.Context,
+	data string,
+	schedSvc ScheduleService,
+	teacherSvc TeacherService,
+	analyticsSvc AnalyticsService,
+	userRepo UserRepo,
+	sm StateManager,
+	adminIDs []int64,
+) error {
+	switch {
+	// Выбор роли
+	case strings.Contains(data, keyboard.RoleSelect):
+		if sm != nil {
+			return handleRoleSelect(ctx, log, c, data, sm)
+		}
+
+	// Уведомления
+	case strings.Contains(data, keyboard.NotifyToggle):
+		if userRepo != nil {
+			return handleNotifyToggle(ctx, log, c, data, userRepo)
+		}
+
+	// Выбор подгруппы
+	case strings.Contains(data, keyboard.SubgroupSelect):
+		if userRepo != nil {
+			return handleSubgroupSelect(ctx, log, c, data, userRepo, sm)
+		}
+
+	// Кабинеты
+	case strings.Contains(data, keyboard.CabinetPrevDay), strings.Contains(data, keyboard.CabinetNextDay):
+		if analyticsSvc != nil {
+			return handleCabinetDayNav(ctx, log, c, data, analyticsSvc)
+		}
+	case strings.Contains(data, keyboard.CabinetCurrentWeek):
+		if analyticsSvc != nil {
+			return handleCabinetWeek(ctx, log, c, data, analyticsSvc)
+		}
+
+	// Архив
+	case strings.Contains(data, keyboard.ArchiveBack):
+		return handleArchiveBack(ctx, log, c, data, schedSvc, teacherSvc)
+	case strings.Contains(data, keyboard.ArchiveSelect):
+		return handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc, userRepo)
+
+	// Закрепление преподавателя
+	case strings.Contains(data, keyboard.TeacherSetSelect):
+		if userRepo != nil {
+			return handleTeacherSetSelect(ctx, log, c, data, userRepo, sm)
+		}
+
+	// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
+	case strings.Contains(data, keyboard.TeacherWeekImage):
+		return handleTeacherWeekImage(ctx, log, c, data, teacherSvc)
+	case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
+		return handleTeacherDayNav(ctx, log, c, data, teacherSvc, userRepo)
+	case strings.Contains(data, keyboard.TeacherCurrentWeek):
+		return handleTeacherCurrentWeek(ctx, log, c, data, teacherSvc, userRepo)
+	case strings.Contains(data, keyboard.TeacherPrevWeek), strings.Contains(data, keyboard.TeacherNextWeek):
+		return handleTeacherWeekNav(ctx, log, c, data, teacherSvc, userRepo)
+
+	// Группы
+	case strings.Contains(data, keyboard.WeekImage):
+		return handleWeekImage(ctx, log, c, data, schedSvc, userRepo)
+	case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay),
+		strings.Contains(data, keyboard.DaySubgroup),
+		strings.Contains(data, "prevday"), strings.Contains(data, "nextday"):
+		return handleDayNav(ctx, log, c, data, schedSvc, userRepo)
+	case strings.Contains(data, keyboard.WeekSubgroup):
+		return handleWeekSubgroup(ctx, log, c, data, schedSvc, userRepo)
+	case strings.Contains(data, keyboard.CurrentWeek), strings.Contains(data, "currentweek"):
+		return handleCurrentWeek(ctx, log, c, data, schedSvc, userRepo)
+	case strings.Contains(data, keyboard.PrevWeek), strings.Contains(data, keyboard.NextWeek),
+		strings.Contains(data, "prevweek"), strings.Contains(data, "nextweek"):
+		return handleWeekNav(ctx, log, c, data, schedSvc, userRepo)
+
+	default:
+		log.Warn("unexpected callback", "data", data)
+		return c.Respond(&tele.CallbackResponse{Text: messages.Internal, ShowAlert: true})
+	}
+
+	return nil
 }
 
 func handleRoleSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, sm StateManager) error {
@@ -427,6 +448,135 @@ func renderWeek(ctx context.Context, c tele.Context, svc ScheduleService, groupI
 	}
 
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup))
+}
+
+func handleWeekImage(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
+	raw := dataFromCallbackData(data)
+	parts := strings.Split(raw, ":")
+	if len(parts) < 1 || parts[0] == "" {
+		return fmt.Errorf("invalid week image data: %s", raw)
+	}
+
+	groupID, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return err
+	}
+
+	dateStr := "current"
+	if len(parts) >= 2 && parts[1] != "" {
+		dateStr = parts[1]
+	}
+
+	subgroup := 0
+	if len(parts) >= 3 {
+		if sg, err := strconv.Atoi(parts[2]); err == nil {
+			subgroup = sg
+		}
+	} else if userRepo != nil {
+		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
+			subgroup = userSg
+		}
+	}
+
+	var group *entities.Group
+	if dateStr == "current" {
+		group, err = svc.GetGroupLatestSchedule(ctx, int32(groupID))
+	} else {
+		var d time.Time
+		d, err = time.Parse("02.01.2006", dateStr)
+		if err == nil {
+			group, err = svc.GetGroupScheduleByWeek(ctx, int32(groupID), d)
+		}
+	}
+	if err != nil {
+		return err
+	}
+
+	cacheKey := renderer.GroupKey(group.ID, group.Week, subgroup)
+	cache := renderer.GetDefaultCache()
+	if fileID, ok := cache.GetFileID(cacheKey); ok {
+		photo := &tele.Photo{
+			FileID: fileID,
+		}
+		_ = c.Respond()
+		return c.Send(photo)
+	}
+
+	imgBytes, err := renderer.RenderGroupWeek(group, subgroup)
+	if err != nil {
+		return err
+	}
+
+	photo := &tele.Photo{
+		File: tele.FromReader(bytes.NewReader(imgBytes)),
+	}
+	_ = c.Respond()
+	sentMsg, err := c.Bot().Send(c.Recipient(), photo)
+	if err != nil {
+		return err
+	}
+
+	if sentMsg != nil && sentMsg.Photo != nil && sentMsg.Photo.FileID != "" {
+		cache.SetFileID(cacheKey, sentMsg.Photo.FileID)
+	}
+
+	return nil
+}
+
+func handleTeacherWeekImage(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
+	raw := dataFromCallbackData(data)
+	left, dateStr, found := strings.CutLast(raw, ":")
+	teacherName := raw
+	if found {
+		teacherName = left
+	} else {
+		dateStr = "current"
+	}
+
+	var teacher *entities.Teacher
+	var err error
+	if dateStr == "current" || dateStr == "" {
+		teacher, err = svc.GetTeacherLatestSchedule(ctx, teacherName)
+	} else {
+		var d time.Time
+		d, err = time.Parse("02.01.2006", dateStr)
+		if err == nil {
+			teacher, err = svc.GetTeacherScheduleByWeek(ctx, teacherName, d)
+		}
+	}
+	if err != nil {
+		return err
+	}
+
+	cacheKey := renderer.TeacherKey(teacher.Name, teacher.Week)
+	cache := renderer.GetDefaultCache()
+	if fileID, ok := cache.GetFileID(cacheKey); ok {
+		photo := &tele.Photo{
+			FileID: fileID,
+		}
+		_ = c.Respond()
+		return c.Send(photo)
+	}
+
+	imgBytes, err := renderer.RenderTeacherWeek(teacher)
+	if err != nil {
+		return err
+	}
+
+	photo := &tele.Photo{
+		File: tele.FromReader(bytes.NewReader(imgBytes)),
+	}
+	_ = c.Respond()
+	sentMsg, err := c.Bot().Send(c.Recipient(), photo)
+	if err != nil {
+		return err
+	}
+
+	if sentMsg != nil && sentMsg.Photo != nil && sentMsg.Photo.FileID != "" {
+		cache.SetFileID(cacheKey, sentMsg.Photo.FileID)
+	}
+
+	return nil
 }
 
 func parseTeacherDayNavData(raw string) (teacherName string, dateStr string, dayIdx int, err error) {
