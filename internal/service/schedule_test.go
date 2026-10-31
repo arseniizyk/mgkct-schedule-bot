@@ -132,3 +132,53 @@ func TestScheduleService_GetAllGroupIDs_And_HasGroup(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
+
+func TestScheduleService_WeeksCache_TTL_And_Invalidation(t *testing.T) {
+	ctx := context.Background()
+	w1, _ := time.Parse("2006-01-02", "2026-10-12")
+
+	schedRepo := &mockScheduleRepo{schedules: make(map[time.Time]*entities.Schedule)}
+	_ = schedRepo.Save(ctx, w1, &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			101: {ID: 101, Week: w1},
+		},
+	})
+
+	svc := service.NewScheduleService(slog.Default(), schedRepo)
+
+	// 1. Читаем группу — попадает в кэш
+	grp1, err := svc.GetGroupScheduleByWeek(ctx, 101, w1)
+	require.NoError(t, err)
+	assert.Equal(t, int32(101), grp1.ID)
+
+	// 2. Модифицируем запись в репозитории
+	_ = schedRepo.Save(ctx, w1, &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			101: {ID: 101, Week: w1, Days: []*entities.Day{{Name: "Понедельник"}}},
+		},
+	})
+
+	// 3. Должен вернуть закэшированную версию без дней
+	cachedGrp, err := svc.GetGroupScheduleByWeek(ctx, 101, w1)
+	require.NoError(t, err)
+	assert.Empty(t, cachedGrp.Days, "должна возвращаться закэшированная версия")
+
+	// 4. Очищаем кэш через ClearWeeksCache
+	svc.ClearWeeksCache()
+
+	// 5. Теперь читается обновленная версия из репозитория
+	freshGrp, err := svc.GetGroupScheduleByWeek(ctx, 101, w1)
+	require.NoError(t, err)
+	assert.Len(t, freshGrp.Days, 1, "после очистки кэша должна прочитаться свежая версия")
+
+	// 6. SetCache также инвалидирует кэш остальных недель
+	svc.SetCache(&entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			102: {ID: 102, Week: w1.AddDate(0, 0, 7)},
+		},
+	})
+	// Проверяем, что кэш w1 сброшен
+	freshGrp2, err := svc.GetGroupScheduleByWeek(ctx, 101, w1)
+	require.NoError(t, err)
+	assert.Len(t, freshGrp2.Days, 1)
+}

@@ -22,13 +22,20 @@ type ScheduleRepository interface {
 	GetWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error)
 }
 
+const scheduleCacheTTL = 5 * time.Minute
+
+type scheduleCacheItem struct {
+	schedule *entities.Schedule
+	cachedAt time.Time
+}
+
 type ScheduleService struct {
 	log          *slog.Logger
 	scheduleRepo ScheduleRepository
 
 	mu         sync.RWMutex
 	cache      *entities.Schedule
-	weeksCache map[string]*entities.Schedule
+	weeksCache map[string]scheduleCacheItem
 	allGroups  []int32
 	nowFunc    func() time.Time
 }
@@ -37,7 +44,7 @@ func NewScheduleService(log *slog.Logger, scheduleRepo ScheduleRepository) *Sche
 	return &ScheduleService{
 		log:          log,
 		scheduleRepo: scheduleRepo,
-		weeksCache:   make(map[string]*entities.Schedule),
+		weeksCache:   make(map[string]scheduleCacheItem),
 	}
 }
 
@@ -102,8 +109,8 @@ func (s *ScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID in
 	weekKey := week.Format("2006-01-02")
 	s.mu.RLock()
 	if s.weeksCache != nil {
-		if sch, ok := s.weeksCache[weekKey]; ok && sch != nil {
-			if group, exists := sch.Groups[groupID]; exists {
+		if item, ok := s.weeksCache[weekKey]; ok && item.schedule != nil && time.Since(item.cachedAt) < scheduleCacheTTL {
+			if group, exists := item.schedule.Groups[groupID]; exists {
 				s.mu.RUnlock()
 				return group, nil
 			}
@@ -123,9 +130,18 @@ func (s *ScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID in
 
 	s.mu.Lock()
 	if s.weeksCache == nil {
-		s.weeksCache = make(map[string]*entities.Schedule)
+		s.weeksCache = make(map[string]scheduleCacheItem)
 	}
-	s.weeksCache[weekKey] = sch
+	now := time.Now()
+	for k, v := range s.weeksCache {
+		if now.Sub(v.cachedAt) >= scheduleCacheTTL {
+			delete(s.weeksCache, k)
+		}
+	}
+	s.weeksCache[weekKey] = scheduleCacheItem{
+		schedule: sch,
+		cachedAt: now,
+	}
 	s.mu.Unlock()
 
 	group, ok := sch.Groups[groupID]
@@ -146,17 +162,26 @@ func (s *ScheduleService) SetCache(sch *entities.Schedule) {
 	defer s.mu.Unlock()
 	s.cache = sch
 	s.allGroups = nil
+	// Сбрасываем кэш недель при обновлении расписания в БД
+	s.weeksCache = make(map[string]scheduleCacheItem)
 	if sch != nil {
-		if s.weeksCache == nil {
-			s.weeksCache = make(map[string]*entities.Schedule)
-		}
 		for _, g := range sch.Groups {
 			if !g.Week.IsZero() {
-				s.weeksCache[g.Week.Format("2006-01-02")] = sch
+				s.weeksCache[g.Week.Format("2006-01-02")] = scheduleCacheItem{
+					schedule: sch,
+					cachedAt: time.Now(),
+				}
 				break
 			}
 		}
 	}
+}
+
+// ClearWeeksCache принудительно очищает in-memory кэш недель.
+func (s *ScheduleService) ClearWeeksCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.weeksCache = make(map[string]scheduleCacheItem)
 }
 
 func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {

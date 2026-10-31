@@ -266,6 +266,19 @@ func TestCrossWeekGroupDayNavigation(t *testing.T) {
 		assert.Contains(t, ctx.editedWhat, "W2")
 		assert.Contains(t, ctx.editedWhat, "Вторник")
 	})
+
+	t.Run("non-existent date returns error and does not silently fallback to latest", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID:   123,
+			callback: &tele.Callback{Data: "\f" + keyboard.NextDay + "|101:01.01.2030:0:0"},
+		}
+
+		err := cbHandler(ctx)
+		require.NoError(t, err)
+		assert.Nil(t, ctx.editedWhat, "сообщение не должно редактироваться расписанием другой недели")
+		require.NotNil(t, ctx.responded)
+		assert.True(t, ctx.responded.ShowAlert, "пользователю должен показаться алерт об ошибке")
+	})
 }
 
 func TestCrossWeekTeacherDayNavigation(t *testing.T) {
@@ -350,5 +363,18 @@ func TestCrossWeekTeacherDayNavigation(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, ctx.editedWhat, "TW2")
 		assert.Contains(t, ctx.editedWhat, "Вторник")
+	})
+
+	t.Run("non-existent teacher date returns error and does not silently fallback to latest", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID:   123,
+			callback: &tele.Callback{Data: "\f" + keyboard.TeacherNextDay + "|Иванов И. И.:01.01.2030:0"},
+		}
+
+		err := cbHandler(ctx)
+		require.NoError(t, err)
+		assert.Nil(t, ctx.editedWhat, "сообщение не должно редактироваться расписанием другой недели")
+		require.NotNil(t, ctx.responded)
+		assert.True(t, ctx.responded.ShowAlert, "пользователю должен показаться алерт об ошибке")
 	})
 }

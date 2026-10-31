@@ -204,3 +204,48 @@ func TestTeacherService_FindSimilarTeachers(t *testing.T) {
 		assert.Empty(t, suggestions)
 	})
 }
+
+func TestTeacherService_WeeksCache_TTL_And_Invalidation(t *testing.T) {
+	ctx := context.Background()
+	week, _ := time.Parse("2006-01-02", "2026-10-12")
+
+	tRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+	_ = tRepo.Save(ctx, "Иванов И. И.", week, &entities.Teacher{
+		Name: "Иванов И. И.",
+		Week: week,
+		Days: []*entities.Day{},
+	})
+
+	svc := service.NewTeacherService(slog.Default(), tRepo, nil, nil)
+
+	// 1. Читаем — попадает в кэш
+	t1, err := svc.GetTeacherScheduleByWeek(ctx, "Иванов И. И.", week)
+	require.NoError(t, err)
+	assert.Equal(t, "Иванов И. И.", t1.Name)
+
+	// 2. Модифицируем в репозитории
+	_ = tRepo.Save(ctx, "Иванов И. И.", week, &entities.Teacher{
+		Name: "Иванов И. И.",
+		Week: week,
+		Days: []*entities.Day{{Name: "Понедельник"}},
+	})
+
+	// 3. Должна возвращаться закэшированная версия
+	cachedT, err := svc.GetTeacherScheduleByWeek(ctx, "Иванов И. И.", week)
+	require.NoError(t, err)
+	assert.Empty(t, cachedT.Days, "должна возвращаться закэшированная версия")
+
+	// 4. Инвалидируем конкретного преподавателя
+	svc.InvalidateTeacherWeek("Иванов И. И.", week)
+
+	// 5. Теперь возвращается свежая версия
+	freshT, err := svc.GetTeacherScheduleByWeek(ctx, "Иванов И. И.", week)
+	require.NoError(t, err)
+	assert.Len(t, freshT.Days, 1, "после инвалидации должна возвращаться свежая версия")
+
+	// 6. Проверяем ClearWeeksCache
+	svc.ClearWeeksCache()
+	freshT2, err := svc.GetTeacherScheduleByWeek(ctx, "Иванов И. И.", week)
+	require.NoError(t, err)
+	assert.Len(t, freshT2.Days, 1)
+}

@@ -276,15 +276,19 @@ func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data st
 
 	var group *entities.Group
 	if dateStr != "" {
-		if date, parseErr := time.Parse("02.01.2006", dateStr); parseErr == nil {
-			group, err = svc.GetGroupScheduleByWeek(ctx, int32(groupID), date)
+		date, parseErr := time.Parse("02.01.2006", dateStr)
+		if parseErr != nil {
+			return parseErr
 		}
-	}
-	if group == nil {
+		group, err = svc.GetGroupScheduleByWeek(ctx, int32(groupID), date)
+		if err != nil {
+			return err
+		}
+	} else {
 		group, err = svc.GetGroupLatestSchedule(ctx, int32(groupID))
-	}
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 
 	if dayIdx < 0 {
@@ -455,15 +459,19 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 
 	var teacher *entities.Teacher
 	if dateStr != "" {
-		if date, parseErr := time.Parse("02.01.2006", dateStr); parseErr == nil {
-			teacher, err = svc.GetTeacherScheduleByWeek(ctx, teacherName, date)
+		date, parseErr := time.Parse("02.01.2006", dateStr)
+		if parseErr != nil {
+			return parseErr
 		}
-	}
-	if teacher == nil {
+		teacher, err = svc.GetTeacherScheduleByWeek(ctx, teacherName, date)
+		if err != nil {
+			return err
+		}
+	} else {
 		teacher, err = svc.GetTeacherLatestSchedule(ctx, teacherName)
-	}
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 
 	if dayIdx < 0 {
