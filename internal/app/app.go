@@ -47,6 +47,7 @@ type App struct {
 	scheduleSvc *service.ScheduleService
 	teacherSvc  *service.TeacherService
 	digestRepo  *repository.DigestSentRepository
+	actWorker   *activityWorker
 }
 
 func New(log *slog.Logger, cfg *config.Config) (*App, error) {
@@ -125,12 +126,13 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	}
 
 	stateMgr := state.NewMemoryManager()
+	actWorker := newActivityWorker(log, userRepo)
 
 	// Middleware: обновление активности пользователя и сброс состояния при командах
 	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
 		return func(c tele.Context) error {
 			if sender := c.Sender(); sender != nil && sender.ID != 0 {
-				touchUserActivity(log, userRepo, sender.ID)
+				actWorker.Touch(sender.ID)
 			}
 
 			if c.Message() != nil && strings.HasPrefix(c.Message().Text, "/") {
@@ -194,6 +196,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		scheduleSvc: scheduleSvc,
 		teacherSvc:  teacherSvc,
 		digestRepo:  digestRepo,
+		actWorker:   actWorker,
 	}, nil
 }
 
@@ -228,6 +231,11 @@ func (a *App) Run() error {
 	// 5. Периодическая очистка устаревших состояний диалога
 	workersWg.Go(func() {
 		a.stateMgr.StartCleanup(ctx, 5*time.Minute)
+	})
+
+	// 6. Фоновый воркер обновления активности пользователей
+	workersWg.Go(func() {
+		a.actWorker.Run(ctx)
 	})
 
 	// 4. Запуск HTTP сервера (Healthcheck, REST API, WebApp)
@@ -775,12 +783,4 @@ func buildPoller(cfg *config.Config) (tele.Poller, http.Handler) {
 	}
 
 	return wh, wh
-}
-
-func touchUserActivity(log *slog.Logger, userRepo *repository.UserRepository, chatID int64) {
-	actCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := userRepo.UpdateActivity(actCtx, chatID); err != nil {
-		log.Debug("failed updating user activity", "chat_id", chatID, "error", err)
-	}
 }

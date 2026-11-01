@@ -13,6 +13,8 @@ import (
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 )
 
+const sqliteTimeLayout = "2006-01-02 15:04:05"
+
 type UserRepository struct {
 	db *sql.DB
 	sb sq.StatementBuilderType
@@ -434,7 +436,7 @@ func (r *UserRepository) GetNotifyEvening(ctx context.Context, chatID int64) (bo
 func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.User, error) {
 	const op = "repository.UserRepository.AllUsersWithUsernames"
 
-	query := r.sb.Select("chat_id, username, group_id, subgroup, teacher_name, last_activity_at").
+	query := r.sb.Select("chat_id, username, group_id, subgroup, teacher_name, notify_evening, last_activity_at").
 		From("users").
 		OrderBy("group_id ASC NULLS LAST, subgroup ASC, teacher_name ASC NULLS LAST")
 
@@ -458,10 +460,11 @@ func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.
 			groupID        sql.NullInt64
 			subgroup       sql.NullInt64
 			teacherName    sql.NullString
+			notifyEvening  int
 			lastActivityAt sql.NullString
 		)
 
-		if err := rows.Scan(&chatID, &username, &groupID, &subgroup, &teacherName, &lastActivityAt); err != nil {
+		if err := rows.Scan(&chatID, &username, &groupID, &subgroup, &teacherName, &notifyEvening, &lastActivityAt); err != nil {
 			return nil, fmt.Errorf("%s: failed scanning row: %w", op, err)
 		}
 
@@ -487,11 +490,10 @@ func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.
 
 		var actTime *time.Time
 		if lastActivityAt.Valid && lastActivityAt.String != "" {
-			for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339, "2006-01-02T15:04:05Z"} {
-				if t, err := time.Parse(layout, lastActivityAt.String); err == nil {
-					actTime = &t
-					break
-				}
+			if t, err := time.Parse(sqliteTimeLayout, lastActivityAt.String); err == nil {
+				actTime = &t
+			} else if t, err := time.Parse(time.RFC3339, lastActivityAt.String); err == nil {
+				actTime = &t
 			}
 		}
 
@@ -501,6 +503,7 @@ func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.
 			Group:          group,
 			Subgroup:       sg,
 			TeacherName:    tn,
+			NotifyEvening:  notifyEvening == 1,
 			LastActivityAt: actTime,
 		})
 	}
@@ -624,7 +627,8 @@ func (r *UserRepository) GetActivityStats(ctx context.Context) (entities.Activit
 		"COUNT(CASE WHEN last_activity_at >= datetime('now', '-1 day') THEN 1 END) AS dau, " +
 		"COUNT(CASE WHEN last_activity_at >= datetime('now', '-7 days') THEN 1 END) AS wau, " +
 		"COUNT(CASE WHEN last_activity_at >= datetime('now', '-30 days') THEN 1 END) AS mau " +
-		"FROM users"
+		"FROM users " +
+		"WHERE last_activity_at >= datetime('now', '-30 days')"
 
 	var stats entities.ActivityStats
 	if err := r.db.QueryRowContext(ctx, query).Scan(&stats.DAU, &stats.WAU, &stats.MAU); err != nil {
