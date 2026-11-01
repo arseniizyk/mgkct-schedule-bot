@@ -164,19 +164,36 @@ func TestUserRepository_ActivityTracking(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 
-	// 1. Сохраняем пользователя
-	err := repo.SaveUser(ctx, entities.User{ChatID: 9991, Username: "user1"})
+	// 1. Создаем пользователя без активности (last_activity_at IS NULL)
+	_, err := db.ExecContext(ctx, "INSERT INTO users (chat_id, username, last_activity_at) VALUES (9991, 'user1', NULL)")
 	require.NoError(t, err)
 
-	// 2. Обновляем активность
-	err = repo.UpdateActivity(ctx, 9991)
-	require.NoError(t, err)
-
-	// 3. Проверяем AllUsersWithUsernames
+	// Проверяем, что изначально активности нет
 	users, err := repo.AllUsersWithUsernames(ctx)
 	require.NoError(t, err)
 	require.Len(t, users, 1)
-	assert.NotNil(t, users[0].LastActivityAt)
+	assert.Nil(t, users[0].LastActivityAt)
+
+	// 2. Вызываем UpdateActivity — поле должно заполниться
+	err = repo.UpdateActivity(ctx, 9991)
+	require.NoError(t, err)
+
+	users, err = repo.AllUsersWithUsernames(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	require.NotNil(t, users[0].LastActivityAt)
+	firstActivity := *users[0].LastActivityAt
+
+	// 3. Вызываем UpdateActivity повторно менее чем через 5 минут
+	// Поле НЕ должно измениться благодаря троттлингу в БД
+	err = repo.UpdateActivity(ctx, 9991)
+	require.NoError(t, err)
+
+	users, err = repo.AllUsersWithUsernames(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	require.NotNil(t, users[0].LastActivityAt)
+	assert.Equal(t, firstActivity, *users[0].LastActivityAt)
 
 	// 4. Проверяем GetActivityStats
 	stats, err := repo.GetActivityStats(ctx)

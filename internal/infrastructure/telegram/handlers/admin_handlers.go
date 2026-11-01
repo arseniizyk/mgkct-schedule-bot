@@ -59,15 +59,26 @@ func BotInfo(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 		}
 
 		total := len(users)
-		var withGroup, withTeacher, noGroup int
+		var withGroup, withTeacher, noGroup, digestActive, digestDisabled int
 		for _, u := range users {
+			hasTarget := false
 			switch {
 			case u.Group > 0:
 				withGroup++
+				hasTarget = true
 			case u.TeacherName != "":
 				withTeacher++
+				hasTarget = true
 			default:
 				noGroup++
+			}
+
+			if hasTarget {
+				if u.NotifyEvening {
+					digestActive++
+				} else {
+					digestDisabled++
+				}
 			}
 		}
 
@@ -85,16 +96,19 @@ func BotInfo(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 				"  • Студентов (с группой): %d\n"+
 				"  • Преподавателей: %d\n"+
 				"  • Без группы: %d\n\n"+
-				"📊 <b>Активность:</b>\n"+
+				"📬 <b>Рассылка расписания:</b>\n"+
+				"  • Получают вечерний дайджест: %d\n"+
+				"  • Отключили / заблокировали: %d\n\n"+
+				"📱 <b>Интерактивная активность (клики/команды):</b>\n"+
 				"  • За 24 часа (DAU): %d\n"+
 				"  • За 7 дней (WAU): %d\n"+
 				"  • За 30 дней (MAU): %d\n\n"+
 				"⏰ <b>Время сервера:</b> %s MSK",
 			total, withGroup, withTeacher, noGroup,
+			digestActive, digestDisabled,
 			actStats.DAU, actStats.WAU, actStats.MAU,
 			now.Format("15:04, Mon 02.01.2006"),
 		)
-
 		return c.Send(msg, tele.ModeHTML)
 	}
 }
