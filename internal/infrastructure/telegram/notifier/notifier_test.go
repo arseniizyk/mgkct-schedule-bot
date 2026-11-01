@@ -12,6 +12,9 @@ import (
 	"golang.org/x/time/rate"
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
@@ -540,4 +543,58 @@ func TestNotifier_ForbiddenDeactivatesNotifications(t *testing.T) {
 	if store.deactivatedChatID != 1002 {
 		t.Errorf("expected chatID 1002 to be deactivated, got %d", store.deactivatedChatID)
 	}
+}
+
+type countingFailBot struct {
+	sendCalls int
+}
+
+func (m *countingFailBot) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
+	m.sendCalls++
+	return nil, tele.ErrBlockedByUser
+}
+
+type chunkTestStore struct {
+	mockUserStore
+}
+
+func (m *chunkTestStore) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {
+	return []int64{2001}, nil
+}
+
+func TestNotifier_HandleGroupScheduleUpdate_BreaksChunkLoopOnError(t *testing.T) {
+	bot := &countingFailBot{}
+	store := &chunkTestStore{}
+	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))
+
+	// Создаем diff с очень большим текстом, чтобы он разделился минимум на 2 чанка (>4096 символов)
+	var pairs []entities.PairDiff
+	for i := range 50 {
+		pairs = append(pairs, entities.PairDiff{
+			Number: i + 1,
+			SubgroupDiffs: []entities.SubgroupDiff{
+				{
+					Subgroup: "1 п/г",
+					Type:     entities.ChangeTypeModified,
+					OldPair:  &entities.Pair{Name: "Длинное старое название дисциплины для деления на чанки", Class: "1-101", Group: "Преподаватель"},
+					NewPair:  &entities.Pair{Name: "Длинное новое название дисциплины для деления на чанки", Class: "2-202", Group: "Другой преподаватель"},
+				},
+			},
+		})
+	}
+	diff := &entities.ScheduleDiff{
+		Title: "Группа 101",
+		Days: []entities.DayDiff{
+			{
+				DayName: "Понедельник",
+				Pairs:   pairs,
+			},
+		},
+	}
+
+	err := n.HandleGroupScheduleUpdate(context.Background(), &entities.Group{ID: 101}, diff)
+	require.NoError(t, err)
+
+	// Так как первый чанк вернул ошибку, бот должен прервать цикл чанков через break и сделать ровно 1 вызов
+	assert.Equal(t, 1, bot.sendCalls, "должен быть отправлен только первый чанк, последующие должны быть отменены")
 }
