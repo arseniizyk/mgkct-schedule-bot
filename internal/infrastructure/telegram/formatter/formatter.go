@@ -95,10 +95,10 @@ func formatScheduleDayWithTag(day *entities.Day, tag string) string {
 
 	skip := 0
 	if first >= secondShiftMinIndex {
-		fmt.Fprintf(&sb, "*%s %s%s\n*", escapeMD(day.Name), messages.SecondShift, tag)
+		fmt.Fprintf(&sb, "*%s %s%s*\n", escapeMD(day.Name), messages.SecondShift, tag)
 		skip = first
 	} else {
-		fmt.Fprintf(&sb, "*%s%s\n*", escapeMD(day.Name), tag)
+		fmt.Fprintf(&sb, "*%s%s*\n", escapeMD(day.Name), tag)
 	}
 
 	sb.WriteString(formatSubjects(day.Subjects, skip))
@@ -574,10 +574,10 @@ func formatTeacherScheduleDayWithTag(day *entities.Day, tag string) string {
 
 	skip := 0
 	if first >= secondShiftMinIndex {
-		fmt.Fprintf(&sb, "*%s %s%s\n*", escapeMD(day.Name), messages.SecondShift, tag)
+		fmt.Fprintf(&sb, "*%s %s%s*\n", escapeMD(day.Name), messages.SecondShift, tag)
 		skip = first
 	} else {
-		fmt.Fprintf(&sb, "*%s%s\n*", escapeMD(day.Name), tag)
+		fmt.Fprintf(&sb, "*%s%s*\n", escapeMD(day.Name), tag)
 	}
 
 	sb.WriteString(formatTeacherSubjects(day.Subjects, skip))

@@ -161,7 +161,27 @@ func (s *ScheduleService) SetCache(sch *entities.Schedule) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cache = sch
-	s.allGroups = nil
+	if sch != nil && len(s.allGroups) > 0 {
+		var added bool
+		groupSet := make(map[int32]struct{}, len(s.allGroups)+len(sch.Groups))
+		for _, id := range s.allGroups {
+			groupSet[id] = struct{}{}
+		}
+		for id := range sch.Groups {
+			if _, ok := groupSet[id]; !ok {
+				groupSet[id] = struct{}{}
+				added = true
+			}
+		}
+		if added {
+			merged := make([]int32, 0, len(groupSet))
+			for id := range groupSet {
+				merged = append(merged, id)
+			}
+			slices.Sort(merged)
+			s.allGroups = merged
+		}
+	}
 	// Сбрасываем кэш недель при обновлении расписания в БД
 	s.weeksCache = make(map[string]scheduleCacheItem)
 	if sch != nil {

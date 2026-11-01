@@ -143,9 +143,42 @@
     haptic('light');
   });
 
-  // Calculate day index based on current local day & time
-  function getInitialDayIndex() {
+  // Get current Date object representing Europe/Minsk (UTC+3)
+  function getMinskDate() {
     const now = new Date();
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Europe/Minsk',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hourCycle: 'h23',
+      });
+      const parts = formatter.formatToParts(now);
+      const p = {};
+      for (const part of parts) {
+        p[part.type] = part.value;
+      }
+      return new Date(
+        parseInt(p.year, 10),
+        parseInt(p.month, 10) - 1,
+        parseInt(p.day, 10),
+        parseInt(p.hour, 10),
+        parseInt(p.minute, 10),
+        parseInt(p.second, 10)
+      );
+    } catch (e) {
+      const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+      return new Date(utc + 3 * 3600000);
+    }
+  }
+
+  // Calculate day index based on current Minsk (UTC+3) day & time
+  function getInitialDayIndex() {
+    const now = getMinskDate();
     const day = now.getDay(); // 0 is Sunday, 1 is Monday ... 6 is Saturday
     if (day === 0) return 0; // Sunday -> show Monday
     const idx = day - 1; // 0..5
@@ -156,23 +189,21 @@
     return Math.min(idx, 5);
   }
 
-  // Check if given pair number is current right now
+  // Check if given pair number is current right now in Europe/Minsk (UTC+3)
   function isPairNow(pairNum) {
     if (!state.calls || state.calls.length === 0) return false;
     const call = state.calls.find(c => c.number === pairNum);
     if (!call) return false;
 
-    const now = new Date();
+    const now = getMinskDate();
     const [startH, startM] = call.start.split(':').map(Number);
     const [endH, endM] = call.end.split(':').map(Number);
 
-    const startTime = new Date();
-    startTime.setHours(startH, startM, 0, 0);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
 
-    const endTime = new Date();
-    endTime.setHours(endH, endM, 0, 0);
-
-    return now >= startTime && now <= endTime;
+    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
   }
 
   // Format Date for Week button
@@ -380,7 +411,7 @@
 
   retryBtn.addEventListener('click', () => {
     haptic('light');
-    loadSchedule();
+    init();
   });
 
   // Update Week Navigation Label & Buttons
@@ -404,15 +435,15 @@
     }
   }
 
-  // Check if the given day object matches today's real date
+  // Check if the given day object matches today's real date in Europe/Minsk (UTC+3)
   function isDayToday(day) {
     if (!day) return false;
 
+    const now = getMinskDate();
     // 1. Try parsing exact date from day.name (e.g. "Понедельник | 12.10.2026")
     if (day.name) {
       const match = day.name.match(/(\d{2})\.(\d{2})\.(\d{4})/);
       if (match) {
-        const now = new Date();
         const d = parseInt(match[1], 10);
         const m = parseInt(match[2], 10) - 1;
         const y = parseInt(match[3], 10);
@@ -421,7 +452,6 @@
     }
 
     // 2. Fallback: compare day index and week date
-    const now = new Date();
     const dayOfWeek = (now.getDay() + 6) % 7; // Monday = 0 ... Sunday = 6
     if (dayOfWeek > 5) return false;
     if (state.currentDayIdx !== dayOfWeek) return false;
@@ -655,11 +685,15 @@
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // Initialize App Data
   async function init() {
+    errorState.classList.add('hidden');
+    loadingIndicator.classList.remove('hidden');
+
     syncTheme();
     state.currentDayIdx = getInitialDayIndex();
 

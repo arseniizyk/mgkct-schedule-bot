@@ -292,3 +292,46 @@ func TestFindLastLessonIndex(t *testing.T) {
 		t.Errorf("expected -1 for empty Saturday, got %d", idx)
 	}
 }
+
+func TestRenderGroupWeek_ConcurrencyAndSingleflight(t *testing.T) {
+	group := &entities.Group{
+		ID:   99,
+		Week: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник | 02.11.2026",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{Name: "Тест", Type: "Лек", Class: "101", Group: "Препод"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	const goroutines = 10
+	errCh := make(chan error, goroutines)
+
+	for range goroutines {
+		go func() {
+			bytes, err := RenderGroupWeek(group, 0)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if len(bytes) == 0 {
+				errCh <- os.ErrInvalid
+				return
+			}
+			errCh <- nil
+		}()
+	}
+
+	for range goroutines {
+		if err := <-errCh; err != nil {
+			t.Fatalf("concurrent render failed: %v", err)
+		}
+	}
+}
