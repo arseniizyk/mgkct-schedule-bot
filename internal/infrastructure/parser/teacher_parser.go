@@ -20,7 +20,7 @@ const teacherURL = `https://mgkct.minskedu.gov.by/personnel/for-teachers/weekly-
 
 var (
 	ErrBadTeacher = errors.New("bad teacher")
-	teacherRe     = regexp.MustCompile(`Преподаватель\s*[-–]\s*(.+)`)
+	teacherRe     = regexp.MustCompile(`Преподаватель\s*[-–—]\s*(.+)`)
 )
 
 type TeacherParser struct {
@@ -61,7 +61,11 @@ func (tp *TeacherParser) Parse(ctx context.Context) ([]*entities.Teacher, error)
 	var teachers []*entities.Teacher
 
 	col.OnError(func(r *colly.Response, err error) {
-		log.ErrorContext(ctx, "visit error", "url", r.Request.URL, "error", err)
+		var urlStr string
+		if r != nil && r.Request != nil && r.Request.URL != nil {
+			urlStr = r.Request.URL.String()
+		}
+		log.ErrorContext(ctx, "visit error", "url", urlStr, "error", err)
 	})
 
 	col.OnHTML("h2", func(e *colly.HTMLElement) {
@@ -74,7 +78,7 @@ func (tp *TeacherParser) Parse(ctx context.Context) ([]*entities.Teacher, error)
 			return
 		}
 
-		h3Sel := e.DOM.NextAllFiltered("h3").First()
+		h3Sel := e.DOM.NextUntil("h2").Filter("h3").First()
 		if h3Sel.Length() == 0 {
 			log.WarnContext(ctx, "no h3 found after h2 for teacher", "name", teacherName)
 			return
@@ -86,7 +90,7 @@ func (tp *TeacherParser) Parse(ctx context.Context) ([]*entities.Teacher, error)
 			return
 		}
 
-		tableSel := e.DOM.NextAllFiltered("table").First()
+		tableSel := e.DOM.NextUntil("h2").Filter("table").First()
 		if tableSel.Length() == 0 {
 			log.WarnContext(ctx, "no table found after h2 for teacher", "name", teacherName)
 			return
@@ -216,16 +220,15 @@ func parseTeacherPairs(nameParts, classParts []string) []*entities.Pair {
 func splitTeacherCellSubject(raw string) (group, subject string) {
 	raw = cleanText(raw)
 
-	idx := strings.Index(raw, " - ")
-	if idx < 0 {
-		idx = strings.Index(raw, " – ")
+	if g, s, found := strings.Cut(raw, " - "); found {
+		return strings.TrimSpace(g), strings.TrimSpace(s)
 	}
-	if idx < 0 {
-		return "", raw
+	if g, s, found := strings.Cut(raw, " – "); found {
+		return strings.TrimSpace(g), strings.TrimSpace(s)
+	}
+	if g, s, found := strings.Cut(raw, " — "); found {
+		return strings.TrimSpace(g), strings.TrimSpace(s)
 	}
 
-	group = strings.TrimSpace(raw[:idx])
-	subject = strings.TrimSpace(raw[idx+3:])
-
-	return group, subject
+	return "", raw
 }

@@ -113,10 +113,10 @@ func computeDayGroupDiff(
 	dayName := getDayName(oldGroupDays(oldGroup), newGroupDays(newGroup), dayIdx)
 
 	var oldSubjects, newSubjects []*entities.Subject
-	if oldGroup != nil && dayIdx < len(oldGroup.Days) {
+	if oldGroup != nil && dayIdx < len(oldGroup.Days) && oldGroup.Days[dayIdx] != nil {
 		oldSubjects = oldGroup.Days[dayIdx].Subjects
 	}
-	if newGroup != nil && dayIdx < len(newGroup.Days) {
+	if newGroup != nil && dayIdx < len(newGroup.Days) && newGroup.Days[dayIdx] != nil {
 		newSubjects = newGroup.Days[dayIdx].Subjects
 	}
 
@@ -227,10 +227,10 @@ func computeDayTeacherDiff(
 	dayName := getDayName(oldTeacherDays(oldTeacher), newTeacherDays(newTeacher), dayIdx)
 
 	var oldSubjects, newSubjects []*entities.Subject
-	if oldTeacher != nil && dayIdx < len(oldTeacher.Days) {
+	if oldTeacher != nil && dayIdx < len(oldTeacher.Days) && oldTeacher.Days[dayIdx] != nil {
 		oldSubjects = oldTeacher.Days[dayIdx].Subjects
 	}
-	if newTeacher != nil && dayIdx < len(newTeacher.Days) {
+	if newTeacher != nil && dayIdx < len(newTeacher.Days) && newTeacher.Days[dayIdx] != nil {
 		newSubjects = newTeacher.Days[dayIdx].Subjects
 	}
 
@@ -312,7 +312,7 @@ func makeAllAddedDiffs(pairs []*entities.Pair) []entities.SubgroupDiff {
 	var diffs []entities.SubgroupDiff
 	for _, np := range pairs {
 		diffs = append(diffs, entities.SubgroupDiff{
-			Subgroup: extractSubgroup(np.Group),
+			Subgroup: extractSubgroupFromPair(np),
 			Type:     entities.ChangeTypeAdded,
 			NewPair:  np,
 		})
@@ -324,7 +324,7 @@ func makeAllRemovedDiffs(pairs []*entities.Pair) []entities.SubgroupDiff {
 	var diffs []entities.SubgroupDiff
 	for _, op := range pairs {
 		diffs = append(diffs, entities.SubgroupDiff{
-			Subgroup: extractSubgroup(op.Group),
+			Subgroup: extractSubgroupFromPair(op),
 			Type:     entities.ChangeTypeRemoved,
 			OldPair:  op,
 		})
@@ -336,14 +336,14 @@ func handleSubgroupTransition(oldPairs, newPairs []*entities.Pair) []entities.Su
 	var diffs []entities.SubgroupDiff
 	for _, op := range oldPairs {
 		diffs = append(diffs, entities.SubgroupDiff{
-			Subgroup: extractSubgroup(op.Group),
+			Subgroup: extractSubgroupFromPair(op),
 			Type:     entities.ChangeTypeRemoved,
 			OldPair:  op,
 		})
 	}
 	for _, np := range newPairs {
 		diffs = append(diffs, entities.SubgroupDiff{
-			Subgroup: extractSubgroup(np.Group),
+			Subgroup: extractSubgroupFromPair(np),
 			Type:     entities.ChangeTypeAdded,
 			NewPair:  np,
 		})
@@ -357,14 +357,14 @@ func compareSubgroups(oldPairs, newPairs []*entities.Pair) []entities.SubgroupDi
 	var sgKeys []string
 
 	for _, p := range oldPairs {
-		sg := extractSubgroup(p.Group)
+		sg := extractSubgroupFromPair(p)
 		oldBySg[sg] = p
 		if !slices.Contains(sgKeys, sg) {
 			sgKeys = append(sgKeys, sg)
 		}
 	}
 	for _, p := range newPairs {
-		sg := extractSubgroup(p.Group)
+		sg := extractSubgroupFromPair(p)
 		newBySg[sg] = p
 		if !slices.Contains(sgKeys, sg) {
 			sgKeys = append(sgKeys, sg)
@@ -573,10 +573,10 @@ func getDayName(oldDays, newDays []*entities.Day, dayIdx int) string {
 	if dayIdx < len(dayNames) {
 		return dayNames[dayIdx]
 	}
-	if newDays != nil && dayIdx < len(newDays) && newDays[dayIdx].Name != "" {
+	if newDays != nil && dayIdx < len(newDays) && newDays[dayIdx] != nil && newDays[dayIdx].Name != "" {
 		return cleanDayName(newDays[dayIdx].Name)
 	}
-	if oldDays != nil && dayIdx < len(oldDays) && oldDays[dayIdx].Name != "" {
+	if oldDays != nil && dayIdx < len(oldDays) && oldDays[dayIdx] != nil && oldDays[dayIdx].Name != "" {
 		return cleanDayName(oldDays[dayIdx].Name)
 	}
 	return ""
@@ -618,9 +618,26 @@ func extractNonEmptyPairs(subj *entities.Subject) []*entities.Pair {
 	return res
 }
 
+func extractSubgroupFromPair(p *entities.Pair) string {
+	if p == nil {
+		return ""
+	}
+	if sg := extractSubgroup(p.Group); sg != "" {
+		return sg
+	}
+	name := strings.TrimSpace(p.Name)
+	if strings.HasPrefix(name, "1.") || strings.HasPrefix(name, "1. ") {
+		return "1 п/г"
+	}
+	if strings.HasPrefix(name, "2.") || strings.HasPrefix(name, "2. ") {
+		return "2 п/г"
+	}
+	return ""
+}
+
 func hasSubgroups(pairs []*entities.Pair) bool {
 	for _, p := range pairs {
-		if extractSubgroup(p.Group) != "" {
+		if extractSubgroupFromPair(p) != "" {
 			return true
 		}
 	}
