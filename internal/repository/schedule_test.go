@@ -50,7 +50,7 @@ func TestScheduleRepository_GetByWeek_StrictMatch(t *testing.T) {
 	// 2. Future week (2026-11-09) must return ErrWeekNotFound (not 2026-11-02!)
 	futureDate, _ := time.Parse("2006-01-02", "2026-11-09")
 	schedFuture, err := repo.GetByWeek(ctx, futureDate)
-	assert.ErrorIs(t, err, domainerr.ErrWeekNotFound)
+	require.ErrorIs(t, err, domainerr.ErrWeekNotFound)
 	assert.Nil(t, schedFuture)
 }
 
