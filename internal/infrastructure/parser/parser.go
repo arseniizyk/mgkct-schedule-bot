@@ -66,7 +66,11 @@ func (p *Parser) Parse(ctx context.Context) (map[time.Time]*entities.Schedule, e
 	schedules := make(map[time.Time]*entities.Schedule)
 
 	col.OnError(func(r *colly.Response, err error) {
-		log.ErrorContext(ctx, "visit error", "url", r.Request.URL, "error", err)
+		var urlStr string
+		if r != nil && r.Request != nil && r.Request.URL != nil {
+			urlStr = r.Request.URL.String()
+		}
+		log.ErrorContext(ctx, "visit error", "url", urlStr, "error", err)
 	})
 
 	col.OnHTML("h2", func(e *colly.HTMLElement) {
@@ -79,7 +83,7 @@ func (p *Parser) Parse(ctx context.Context) (map[time.Time]*entities.Schedule, e
 			return
 		}
 
-		h3Sel := e.DOM.NextAllFiltered("h3").First()
+		h3Sel := e.DOM.NextUntil("h2").Filter("h3").First()
 		if h3Sel.Length() == 0 {
 			log.WarnContext(ctx, "no h3 found after h2 for group", "group", groupNum)
 			return
@@ -91,7 +95,7 @@ func (p *Parser) Parse(ctx context.Context) (map[time.Time]*entities.Schedule, e
 			return
 		}
 
-		tableSel := e.DOM.NextAllFiltered("table").First()
+		tableSel := e.DOM.NextUntil("h2").Filter("table").First()
 		if tableSel.Length() == 0 {
 			log.WarnContext(ctx, "no table found after h2 for group", "group", groupNum)
 			return
@@ -147,6 +151,9 @@ func parseGroup(text string) (int32, error) {
 
 func parseWeek(text string) (time.Time, error) {
 	layout := "02.01.2006"
+
+	text = strings.ReplaceAll(text, "–", "-")
+	text = strings.ReplaceAll(text, "—", "-")
 
 	parts := strings.Split(text, " - ")
 	if len(parts) == 0 {
