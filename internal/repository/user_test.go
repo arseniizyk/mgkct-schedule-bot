@@ -27,7 +27,8 @@ func setupTestDB(t *testing.T) (*sql.DB, *repository.UserRepository) {
 		subgroup INTEGER NOT NULL DEFAULT 0,
 		teacher_name TEXT,
 		state TEXT NOT NULL DEFAULT '',
-		notify_evening INTEGER NOT NULL DEFAULT 1
+		notify_evening INTEGER NOT NULL DEFAULT 1,
+		last_activity_at DATETIME
 	);`)
 	require.NoError(t, err)
 
@@ -156,4 +157,48 @@ func TestUserRepository_AllUsersWithUsernames_And_CountUsers(t *testing.T) {
 	}
 	assert.True(t, foundAlice)
 	assert.True(t, foundTeacher)
+}
+
+func TestUserRepository_ActivityTracking(t *testing.T) {
+	db, repo := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// 1. Создаем пользователя без активности (last_activity_at IS NULL)
+	_, err := db.ExecContext(ctx, "INSERT INTO users (chat_id, username, last_activity_at) VALUES (9991, 'user1', NULL)")
+	require.NoError(t, err)
+
+	// Проверяем, что изначально активности нет
+	users, err := repo.AllUsersWithUsernames(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	assert.Nil(t, users[0].LastActivityAt)
+
+	// 2. Вызываем UpdateActivity — поле должно заполниться
+	err = repo.UpdateActivity(ctx, 9991)
+	require.NoError(t, err)
+
+	users, err = repo.AllUsersWithUsernames(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	require.NotNil(t, users[0].LastActivityAt)
+	firstActivity := *users[0].LastActivityAt
+
+	// 3. Вызываем UpdateActivity повторно менее чем через 5 минут
+	// Поле НЕ должно измениться благодаря троттлингу в БД
+	err = repo.UpdateActivity(ctx, 9991)
+	require.NoError(t, err)
+
+	users, err = repo.AllUsersWithUsernames(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	require.NotNil(t, users[0].LastActivityAt)
+	assert.Equal(t, firstActivity, *users[0].LastActivityAt)
+
+	// 4. Проверяем GetActivityStats
+	stats, err := repo.GetActivityStats(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.DAU)
+	assert.Equal(t, 1, stats.WAU)
+	assert.Equal(t, 1, stats.MAU)
 }

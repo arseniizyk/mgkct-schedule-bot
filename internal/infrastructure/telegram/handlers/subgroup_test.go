@@ -87,6 +87,14 @@ func (m *mockUserRepo) CountUsers(ctx context.Context) (int, error) {
 	return 0, nil
 }
 
+func (m *mockUserRepo) UpdateActivity(ctx context.Context, chatID int64) error {
+	return nil
+}
+
+func (m *mockUserRepo) GetActivityStats(ctx context.Context) (entities.ActivityStats, error) {
+	return entities.ActivityStats{}, nil
+}
+
 type mockContext struct {
 	tele.Context
 
