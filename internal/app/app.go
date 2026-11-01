@@ -126,9 +126,17 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 
 	stateMgr := state.NewMemoryManager()
 
-	// Сброс интерактивного состояния при вводе любой команды с "/"
+	// Middleware: обновление активности пользователя и сброс состояния при командах
 	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
 		return func(c tele.Context) error {
+			if sender := c.Sender(); sender != nil && sender.ID != 0 {
+				actCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if err := userRepo.UpdateActivity(actCtx, sender.ID); err != nil {
+					log.Debug("failed updating user activity", "chat_id", sender.ID, "error", err)
+				}
+				cancel()
+			}
+
 			if c.Message() != nil && strings.HasPrefix(c.Message().Text, "/") {
 				_ = stateMgr.Clear(c.Chat().ID)
 			}

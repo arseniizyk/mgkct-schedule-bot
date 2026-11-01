@@ -27,7 +27,8 @@ func setupTestDB(t *testing.T) (*sql.DB, *repository.UserRepository) {
 		subgroup INTEGER NOT NULL DEFAULT 0,
 		teacher_name TEXT,
 		state TEXT NOT NULL DEFAULT '',
-		notify_evening INTEGER NOT NULL DEFAULT 1
+		notify_evening INTEGER NOT NULL DEFAULT 1,
+		last_activity_at DATETIME
 	);`)
 	require.NoError(t, err)
 
@@ -156,4 +157,31 @@ func TestUserRepository_AllUsersWithUsernames_And_CountUsers(t *testing.T) {
 	}
 	assert.True(t, foundAlice)
 	assert.True(t, foundTeacher)
+}
+
+func TestUserRepository_ActivityTracking(t *testing.T) {
+	db, repo := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// 1. Сохраняем пользователя
+	err := repo.SaveUser(ctx, entities.User{ChatID: 9991, Username: "user1"})
+	require.NoError(t, err)
+
+	// 2. Обновляем активность
+	err = repo.UpdateActivity(ctx, 9991)
+	require.NoError(t, err)
+
+	// 3. Проверяем AllUsersWithUsernames
+	users, err := repo.AllUsersWithUsernames(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	assert.NotNil(t, users[0].LastActivityAt)
+
+	// 4. Проверяем GetActivityStats
+	stats, err := repo.GetActivityStats(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.DAU)
+	assert.Equal(t, 1, stats.WAU)
+	assert.Equal(t, 1, stats.MAU)
 }

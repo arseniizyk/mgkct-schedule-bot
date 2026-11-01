@@ -71,17 +71,27 @@ func BotInfo(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 			}
 		}
 
+		actStats, err := userRepo.GetActivityStats(ctx)
+		if err != nil {
+			log.Warn("failed getting activity stats for botinfo", "error", err)
+		}
+
 		minskLoc := time.FixedZone("MSK", 3*3600)
 		now := time.Now().In(minskLoc)
 
 		msg := fmt.Sprintf(
-			"ℹ️ <b>Информация о боте</b>\n\n"+
-				"👥 <b>Всего пользователей:</b> %d\n"+
-				"  • Студентов (с группой): %d\n"+
-				"  • Преподавателей: %d\n"+
-				"  • Без группы: %d\n\n"+
+			"ℹ️ <b>Информация о боте</b>\n\n" +
+				"👥 <b>Всего пользователей:</b> %d\n" +
+				"  • Студентов (с группой): %d\n" +
+				"  • Преподавателей: %d\n" +
+				"  • Без группы: %d\n\n" +
+				"📊 <b>Активность:</b>\n" +
+				"  • За 24 часа (DAU): %d\n" +
+				"  • За 7 дней (WAU): %d\n" +
+				"  • За 30 дней (MAU): %d\n\n" +
 				"⏰ <b>Время сервера:</b> %s MSK",
 			total, withGroup, withTeacher, noGroup,
+			actStats.DAU, actStats.WAU, actStats.MAU,
 			now.Format("15:04, Mon 02.01.2006"),
 		)
 
