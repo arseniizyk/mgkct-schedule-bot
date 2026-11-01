@@ -26,7 +26,7 @@ func Connect(ctx context.Context, cfg *config.DBConfig) (*sql.DB, error) {
 		}
 	}
 
-	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)", cfg.Path)
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_txlock=immediate&_pragma=foreign_keys(1)", cfg.Path)
 
 	database, err := sql.Open("sqlite", dsn)
 	if err != nil {

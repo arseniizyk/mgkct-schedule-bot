@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS schedules (
 
 -- +goose StatementBegin
 CREATE TRIGGER IF NOT EXISTS trg_schedules_set_updated_at AFTER UPDATE ON schedules
+WHEN OLD.updated_at = NEW.updated_at
 BEGIN
     UPDATE schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
@@ -28,6 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_teacher_schedules_name ON teacher_schedules(name)
 
 -- +goose StatementBegin
 CREATE TRIGGER IF NOT EXISTS trg_teacher_schedules_set_updated_at AFTER UPDATE ON teacher_schedules
+WHEN OLD.updated_at = NEW.updated_at
 BEGIN
     UPDATE teacher_schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
