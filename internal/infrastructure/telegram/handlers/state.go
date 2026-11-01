@@ -213,13 +213,13 @@ func handleWaitingCabinet(ctx context.Context, log *slog.Logger, c tele.Context,
 	if cabSched == nil {
 		if len(candidates) > 0 {
 			var sb strings.Builder
-			fmt.Fprintf(&sb, "По запросу *%s* найдено несколько кабинетов:\n\n", query)
+			fmt.Fprintf(&sb, "По запросу *%s* найдено несколько кабинетов:\n\n", formatter.EscapeMD(query))
 			for _, cand := range candidates {
 				fmt.Fprintf(&sb, "• `/cabinet %s`\n", cand)
 			}
 			return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
-		return c.Send(fmt.Sprintf("Кабинет *%s* не найден в расписании.", query), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		return c.Send(fmt.Sprintf("Кабинет *%s* не найден в расписании.", formatter.EscapeMD(query)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 	}
 
 	dayIdx := service.EffectiveEndingsDayIndex()
@@ -244,7 +244,7 @@ func handleWaitingSubject(c tele.Context, sm StateManager, subjectDict SubjectDi
 	cleaned, fullName, found := subjectDict.Resolve(query)
 	if found {
 		return c.Send(
-			fmt.Sprintf("📖 *%s*\n%s", cleaned, fullName),
+			fmt.Sprintf("📖 *%s*\n%s", formatter.EscapeMD(cleaned), formatter.EscapeMD(fullName)),
 			tele.ModeMarkdown,
 			keyboard.ReplyScheduleKeyboard,
 		)
@@ -253,16 +253,16 @@ func handleWaitingSubject(c tele.Context, sm StateManager, subjectDict SubjectDi
 	similar := subjectDict.Search(query)
 	if len(similar) > 0 {
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Предмет *%s* не найден. Возможно, вы имели в виду:\n\n", query)
+		fmt.Fprintf(&sb, "Предмет *%s* не найден. Возможно, вы имели в виду:\n\n", formatter.EscapeMD(query))
 		limit := min(len(similar), 8)
 		for i := range limit {
-			fmt.Fprintf(&sb, "• *%s* — %s\n", similar[i].ShortName, similar[i].FullName)
+			fmt.Fprintf(&sb, "• *%s* — %s\n", formatter.EscapeMD(similar[i].ShortName), formatter.EscapeMD(similar[i].FullName))
 		}
 		return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 	}
 
 	return c.Send(
-		fmt.Sprintf("Предмет *%s* не найден в справочнике колледжа.", query),
+		fmt.Sprintf("Предмет *%s* не найден в справочнике колледжа.", formatter.EscapeMD(query)),
 		tele.ModeMarkdown,
 		keyboard.ReplyScheduleKeyboard,
 	)
@@ -287,20 +287,20 @@ func handleWaitingArchive(ctx context.Context, c tele.Context, sm StateManager, 
 	if !ok {
 		if len(candidates) > 0 {
 			var sb strings.Builder
-			fmt.Fprintf(&sb, "По запросу *%s* найдено несколько преподавателей:\n\n", targetStr)
+			fmt.Fprintf(&sb, "По запросу *%s* найдено несколько преподавателей:\n\n", formatter.EscapeMD(targetStr))
 			for _, cand := range candidates {
 				fmt.Fprintf(&sb, "• `/archive %s`\n", cand)
 			}
 			return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
-		return c.Send(fmt.Sprintf("Преподаватель или группа *%s* не найдены в архиве.", targetStr), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		return c.Send(fmt.Sprintf("Преподаватель или группа *%s* не найдены в архиве.", formatter.EscapeMD(targetStr)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 	}
 
 	weeks, err := teacherSvc.GetAllWeeks(ctx, validatedName)
 	if err != nil || len(weeks) == 0 {
-		return c.Send(fmt.Sprintf("Архив расписаний для преподавателя *%s* пока пуст.", validatedName), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		return c.Send(fmt.Sprintf("Архив расписаний для преподавателя *%s* пока пуст.", formatter.EscapeMD(validatedName)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 	}
-	msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю:", validatedName)
+	msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю:", formatter.EscapeMD(validatedName))
 	kbd := keyboard.InlineArchiveWeeksKeyboard("t", validatedName, weeks)
 	return c.Send(msg, tele.ModeMarkdown, kbd)
 }

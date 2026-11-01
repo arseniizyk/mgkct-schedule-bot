@@ -9,7 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/time/rate"
 	tele "gopkg.in/telebot.v4"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
@@ -127,6 +131,9 @@ func (m *mockUserStore) UserIDsByTeacherName(ctx context.Context, teacherName st
 func (m *mockUserStore) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
 	return nil, nil
 }
+func (m *mockUserStore) SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error {
+	return nil
+}
 
 func TestNotifier_HandleNewWeek(t *testing.T) {
 	bot := &mockBotSender{}
@@ -137,17 +144,7 @@ func TestNotifier_HandleNewWeek(t *testing.T) {
 			{ChatID: 1003},
 		},
 	}
-	throttle := make(chan time.Time, 10)
-	for range 10 {
-		throttle <- time.Now()
-	}
-
-	n := &Notifier{
-		bot:       bot,
-		userStore: store,
-		throttle:  throttle,
-		log:       slog.Default(),
-	}
+	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))
 
 	targetWeek := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
 	ctx := context.Background()
@@ -457,3 +454,147 @@ var errNotFound = &notFoundError{}
 type notFoundError struct{}
 
 func (e *notFoundError) Error() string { return "not found" }
+
+type floodMockBot struct {
+	attempts int
+}
+
+func (m *floodMockBot) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
+	m.attempts++
+	if m.attempts == 1 {
+		return nil, tele.FloodError{
+			RetryAfter: 0,
+		}
+	}
+	return &tele.Message{}, nil
+}
+
+func TestNotifier_FloodWaitRetry(t *testing.T) {
+	bot := &floodMockBot{}
+	store := &mockUserStore{
+		users: []entities.User{
+			{ChatID: 1001, Group: 101},
+		},
+	}
+	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))
+
+	err := n.HandleNewWeek(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("expected nil error after retry, got %v", err)
+	}
+	if bot.attempts != 2 {
+		t.Errorf("expected 2 attempts after flood wait retry, got %d", bot.attempts)
+	}
+}
+
+type forbiddenMockBot struct{}
+
+func (m *forbiddenMockBot) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
+	return nil, tele.ErrBlockedByUser
+}
+
+type spyUserStore struct {
+	mockUserStore
+
+	deactivatedChatID int64
+}
+
+func (s *spyUserStore) SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error {
+	if !enabled {
+		s.deactivatedChatID = chatID
+	}
+	return nil
+}
+
+func (s *spyUserStore) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
+	return []entities.User{{ChatID: 1002, Group: 101}}, nil
+}
+
+func TestNotifier_ForbiddenDeactivatesNotifications(t *testing.T) {
+	bot := &forbiddenMockBot{}
+	store := &spyUserStore{}
+	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))
+
+	targetDate, _ := CalculateTomorrowDate(time.Now())
+	days := make([]*entities.Day, 6)
+	for i := range days {
+		days[i] = &entities.Day{
+			Name: "День",
+			Subjects: []*entities.Subject{
+				{Pairs: []*entities.Pair{{Name: "Математика"}}},
+			},
+		}
+	}
+	targetMonday := targetDate.AddDate(0, 0, -int(targetDate.Weekday()-time.Monday))
+
+	schedProv := &mockSchedProvider{
+		byWeekFunc: func(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
+			return &entities.Group{ID: 101, Week: targetMonday, Days: days}, nil
+		},
+		latestFunc: func(ctx context.Context, groupID int32) (*entities.Group, error) {
+			return &entities.Group{ID: 101, Week: targetMonday, Days: days}, nil
+		},
+	}
+
+	err := n.SendEveningDigest(context.Background(), schedProv, nil)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if store.deactivatedChatID != 1002 {
+		t.Errorf("expected chatID 1002 to be deactivated, got %d", store.deactivatedChatID)
+	}
+}
+
+type countingFailBot struct {
+	sendCalls int
+}
+
+func (m *countingFailBot) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
+	m.sendCalls++
+	return nil, tele.ErrBlockedByUser
+}
+
+type chunkTestStore struct {
+	mockUserStore
+}
+
+func (m *chunkTestStore) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {
+	return []int64{2001}, nil
+}
+
+func TestNotifier_HandleGroupScheduleUpdate_BreaksChunkLoopOnError(t *testing.T) {
+	bot := &countingFailBot{}
+	store := &chunkTestStore{}
+	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))
+
+	// Создаем diff с очень большим текстом, чтобы он разделился минимум на 2 чанка (>4096 символов)
+	var pairs []entities.PairDiff
+	for i := range 50 {
+		pairs = append(pairs, entities.PairDiff{
+			Number: i + 1,
+			SubgroupDiffs: []entities.SubgroupDiff{
+				{
+					Subgroup: "1 п/г",
+					Type:     entities.ChangeTypeModified,
+					OldPair:  &entities.Pair{Name: "Длинное старое название дисциплины для деления на чанки", Class: "1-101", Group: "Преподаватель"},
+					NewPair:  &entities.Pair{Name: "Длинное новое название дисциплины для деления на чанки", Class: "2-202", Group: "Другой преподаватель"},
+				},
+			},
+		})
+	}
+	diff := &entities.ScheduleDiff{
+		Title: "Группа 101",
+		Days: []entities.DayDiff{
+			{
+				DayName: "Понедельник",
+				Pairs:   pairs,
+			},
+		},
+	}
+
+	err := n.HandleGroupScheduleUpdate(context.Background(), &entities.Group{ID: 101}, diff)
+	require.NoError(t, err)
+
+	// Так как первый чанк вернул ошибку, бот должен прервать цикл чанков через break и сделать ровно 1 вызов
+	assert.Equal(t, 1, bot.sendCalls, "должен быть отправлен только первый чанк, последующие должны быть отменены")
+}

@@ -7,6 +7,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
@@ -35,7 +36,7 @@ func Subject(dict SubjectDict, sm StateManager) tele.HandlerFunc {
 		cleaned, fullName, found := dict.Resolve(query)
 		if found {
 			return c.Send(
-				fmt.Sprintf("📖 *%s*\n%s", cleaned, fullName),
+				fmt.Sprintf("📖 *%s*\n%s", formatter.EscapeMD(cleaned), formatter.EscapeMD(fullName)),
 				tele.ModeMarkdown,
 				keyboard.ReplyScheduleKeyboard,
 			)
@@ -45,16 +46,16 @@ func Subject(dict SubjectDict, sm StateManager) tele.HandlerFunc {
 		similar := dict.Search(query)
 		if len(similar) > 0 {
 			var sb strings.Builder
-			fmt.Fprintf(&sb, "Предмет *%s* не найден. Возможно, вы имели в виду:\n\n", query)
+			fmt.Fprintf(&sb, "Предмет *%s* не найден. Возможно, вы имели в виду:\n\n", formatter.EscapeMD(query))
 			limit := min(len(similar), 8)
 			for i := range limit {
-				fmt.Fprintf(&sb, "• *%s* — %s\n", similar[i].ShortName, similar[i].FullName)
+				fmt.Fprintf(&sb, "• *%s* — %s\n", formatter.EscapeMD(similar[i].ShortName), formatter.EscapeMD(similar[i].FullName))
 			}
 			return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
 
 		return c.Send(
-			fmt.Sprintf("Предмет *%s* не найден в справочнике колледжа.", query),
+			fmt.Sprintf("Предмет *%s* не найден в справочнике колледжа.", formatter.EscapeMD(query)),
 			tele.ModeMarkdown,
 			keyboard.ReplyScheduleKeyboard,
 		)

@@ -13,10 +13,13 @@ export default {
         return new Response('BACKEND_HOST environment variable is not configured', { status: 500 });
       }
 
-      // Валидация секретного токена на уровне Edge (защита от спуфинга и DoS)
+      // Валидация секретного токена на уровне Edge с constant-time сравнением (защита от timing attacks)
       if (env.WEBHOOK_SECRET) {
-        const secretHeader = request.headers.get('x-telegram-bot-api-secret-token');
-        if (secretHeader !== env.WEBHOOK_SECRET) {
+        const secretHeader = request.headers.get('x-telegram-bot-api-secret-token') || '';
+        const encoder = new TextEncoder();
+        const a = encoder.encode(secretHeader);
+        const b = encoder.encode(env.WEBHOOK_SECRET);
+        if (a.byteLength !== b.byteLength || !crypto.subtle.timingSafeEqual(a, b)) {
           return new Response('Unauthorized', { status: 401 });
         }
       }
@@ -50,10 +53,24 @@ export default {
         redirect: 'manual',
       });
 
-      return fetch(webhookRequest);
+      try {
+        return await fetch(webhookRequest);
+      } catch (err) {
+        return new Response(`Bad Gateway: ${err.message}`, { status: 502 });
+      }
     }
 
     // 2. Исходящие запросы от бота к Telegram API: проксируем в api.telegram.org
+    // Ограничение путей strictly to /bot${env.BOT_TOKEN}/* для исключения открытого прокси
+    if (env.BOT_TOKEN) {
+      const allowedPrefix = `/bot${env.BOT_TOKEN}/`;
+      if (!url.pathname.startsWith(allowedPrefix)) {
+        return new Response('Forbidden: invalid bot path', { status: 403 });
+      }
+    } else if (!/^\/bot[^/]+\//.test(url.pathname)) {
+      return new Response('Forbidden: bot token path required', { status: 403 });
+    }
+
     url.hostname = 'api.telegram.org';
     url.port = '443';
     url.protocol = 'https:';
@@ -61,13 +78,22 @@ export default {
     const egressHeaders = new Headers(request.headers);
     egressHeaders.set('Host', 'api.telegram.org');
 
-    const apiRequest = new Request(url.toString(), {
+    const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+    const apiRequestInit = {
       method: request.method,
       headers: egressHeaders,
-      body: request.body,
       redirect: 'follow',
-    });
+    };
+    if (hasBody) {
+      apiRequestInit.body = request.body;
+    }
 
-    return fetch(apiRequest);
+    const apiRequest = new Request(url.toString(), apiRequestInit);
+
+    try {
+      return await fetch(apiRequest);
+    } catch (err) {
+      return new Response(`Bad Gateway: ${err.message}`, { status: 502 });
+    }
   },
 };

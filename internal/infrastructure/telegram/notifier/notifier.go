@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"golang.org/x/time/rate"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
@@ -20,6 +21,11 @@ type UserStore interface {
 	UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error)
 	UserIDsByTeacherName(ctx context.Context, teacherName string) ([]int64, error)
 	UsersForEveningNotification(ctx context.Context) ([]entities.User, error)
+	SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error
+}
+
+type Limiter interface {
+	Wait(ctx context.Context) error
 }
 
 type ScheduleProvider interface {
@@ -42,21 +48,70 @@ type Notifier struct {
 	bot       BotSender
 	userStore UserStore
 	adminIDs  []int64
-	throttle  <-chan time.Time
+	limiter   Limiter
 }
 
-func New(log *slog.Logger, bot BotSender, userStore UserStore, adminIDs []int64) *Notifier {
-	// Лимит Telegram: около 30 сообщений в секунду.
-	// Используем тикер на 40ms (25 сообщений в секунду) для гарантированной защиты от 429 Too Many Requests.
-	ticker := time.NewTicker(40 * time.Millisecond)
+func New(log *slog.Logger, bot BotSender, userStore UserStore, adminIDs []int64, limiters ...Limiter) *Notifier {
+	var l Limiter
+	if len(limiters) > 0 && limiters[0] != nil {
+		l = limiters[0]
+	} else {
+		// Лимит Telegram: около 30 сообщений в секунду.
+		// Используем 25 сообщений в секунду для гарантированной защиты от 429 Too Many Requests.
+		l = rate.NewLimiter(rate.Limit(25), 1)
+	}
 
 	return &Notifier{
 		log:       log,
 		bot:       bot,
 		userStore: userStore,
 		adminIDs:  adminIDs,
-		throttle:  ticker.C,
+		limiter:   l,
 	}
+}
+
+func isForbidden(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, tele.ErrBlockedByUser) || errors.Is(err, tele.ErrUserIsDeactivated) {
+		return true
+	}
+	var teleErr *tele.Error
+	if errors.As(err, &teleErr) && teleErr.Code == 403 {
+		return true
+	}
+	return false
+}
+
+func sendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (*tele.Message, error)) (*tele.Message, error) {
+	const maxRetries = 3
+	var lastErr error
+	for range maxRetries {
+		msg, err := sendFunc()
+		if err == nil {
+			return msg, nil
+		}
+		lastErr = err
+		if floodErr, ok := errors.AsType[tele.FloodError](err); ok {
+			waitDur := time.Duration(floodErr.RetryAfter) * time.Second
+			if waitDur <= 0 {
+				waitDur = time.Second
+			}
+			log.WarnContext(ctx, "telegram flood wait 429 received, sleeping", "retry_after", waitDur)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(waitDur):
+				continue
+			}
+		}
+		return nil, err
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("max retries exceeded for flood wait: %w", lastErr)
+	}
+	return nil, errors.New("max retries exceeded for flood wait")
 }
 
 // UsersForNotification возвращает список пользователей, подписанных на уведомления о расписании на завтра.
@@ -77,19 +132,28 @@ func (n *Notifier) HandleNewWeek(ctx context.Context, week time.Time) error {
 	}
 
 	for _, u := range users {
-		select {
-		case <-ctx.Done():
+		if err := n.limiter.Wait(ctx); err != nil {
 			log.WarnContext(ctx, "broadcast cancelled by context")
 			return ctx.Err()
-		case <-n.throttle:
-			switch {
-			case u.Group != 0:
-				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated, keyboard.InlineScheduleKeyboard(u.Group, week))
-			case u.TeacherName != "":
-				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.TeacherWeekUpdated, keyboard.InlineTeacherScheduleKeyboard(u.TeacherName, week))
-			default:
-				_, _ = n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated)
-			}
+		}
+		var sendErr error
+		switch {
+		case u.Group != 0:
+			_, sendErr = sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+				return n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated, keyboard.InlineScheduleKeyboard(u.Group, week))
+			})
+		case u.TeacherName != "":
+			_, sendErr = sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+				return n.bot.Send(tele.ChatID(u.ChatID), messages.TeacherWeekUpdated, keyboard.InlineTeacherScheduleKeyboard(u.TeacherName, week))
+			})
+		default:
+			_, sendErr = sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+				return n.bot.Send(tele.ChatID(u.ChatID), messages.WeekUpdated)
+			})
+		}
+		if isForbidden(sendErr) {
+			_ = n.userStore.SetNotifyEvening(ctx, u.ChatID, false)
+			log.InfoContext(ctx, "user blocked bot or deactivated, disabled notifications", "chat_id", u.ChatID)
 		}
 	}
 
@@ -137,14 +201,19 @@ func (n *Notifier) HandleGroupScheduleUpdate(ctx context.Context, group *entitie
 				sendOpts = append(sendOpts, kbd)
 			}
 
-			select {
-			case <-ctx.Done():
+			if err := n.limiter.Wait(ctx); err != nil {
 				return ctx.Err()
-			case <-n.throttle:
-				_, err := n.bot.Send(tele.ChatID(chatID), chunk, sendOpts...)
-				if err != nil {
-					log.WarnContext(ctx, "failed sending group update to user", "chat_id", chatID, "error", err)
+			}
+			_, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+				return n.bot.Send(tele.ChatID(chatID), chunk, sendOpts...)
+			})
+			if sendErr != nil {
+				log.WarnContext(ctx, "failed sending group update to user", "chat_id", chatID, "error", sendErr)
+				if isForbidden(sendErr) {
+					_ = n.userStore.SetNotifyEvening(ctx, chatID, false)
+					log.InfoContext(ctx, "user blocked bot or deactivated, disabled notifications", "chat_id", chatID)
 				}
+				break
 			}
 		}
 	}
@@ -193,14 +262,19 @@ func (n *Notifier) HandleTeacherScheduleUpdate(ctx context.Context, teacher *ent
 				sendOpts = append(sendOpts, kbd)
 			}
 
-			select {
-			case <-ctx.Done():
+			if err := n.limiter.Wait(ctx); err != nil {
 				return ctx.Err()
-			case <-n.throttle:
-				_, err := n.bot.Send(tele.ChatID(chatID), chunk, sendOpts...)
-				if err != nil {
-					log.WarnContext(ctx, "failed sending teacher update to user", "chat_id", chatID, "error", err)
+			}
+			_, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+				return n.bot.Send(tele.ChatID(chatID), chunk, sendOpts...)
+			})
+			if sendErr != nil {
+				log.WarnContext(ctx, "failed sending teacher update to user", "chat_id", chatID, "error", sendErr)
+				if isForbidden(sendErr) {
+					_ = n.userStore.SetNotifyEvening(ctx, chatID, false)
+					log.InfoContext(ctx, "user blocked bot or deactivated, disabled notifications", "chat_id", chatID)
 				}
+				break
 			}
 		}
 	}
@@ -225,7 +299,9 @@ func (n *Notifier) HandleScraperError(ctx context.Context, err error, fails int)
 	)
 	var firstErr error
 	for _, adminID := range n.adminIDs {
-		if _, sendErr := n.bot.Send(tele.ChatID(adminID), msg, tele.ModeMarkdown); sendErr != nil && firstErr == nil {
+		if _, sendErr := sendWithFloodRetry(ctx, n.log, func() (*tele.Message, error) {
+			return n.bot.Send(tele.ChatID(adminID), msg, tele.ModeMarkdown)
+		}); sendErr != nil && firstErr == nil {
 			firstErr = sendErr
 		}
 	}
@@ -243,7 +319,9 @@ func (n *Notifier) HandleScraperRecovered(ctx context.Context) error {
 	)
 	var firstErr error
 	for _, adminID := range n.adminIDs {
-		if _, sendErr := n.bot.Send(tele.ChatID(adminID), msg, tele.ModeMarkdown); sendErr != nil && firstErr == nil {
+		if _, sendErr := sendWithFloodRetry(ctx, n.log, func() (*tele.Message, error) {
+			return n.bot.Send(tele.ChatID(adminID), msg, tele.ModeMarkdown)
+		}); sendErr != nil && firstErr == nil {
 			firstErr = sendErr
 		}
 	}
@@ -312,7 +390,7 @@ func FormatNextDayDigest(
 		}
 
 		filtered := formatter.FilterGroupForSubgroup(grp, user.Subgroup)
-		if dayIdx < 0 || dayIdx >= len(filtered.Days) || filtered.Days[dayIdx] == nil {
+		if filtered == nil || dayIdx < 0 || dayIdx >= len(filtered.Days) || filtered.Days[dayIdx] == nil {
 			return "", fmt.Errorf("dayIdx %d out of range", dayIdx)
 		}
 
@@ -383,15 +461,20 @@ func (n *Notifier) SendNextDayDigestForGroupSubgroup(
 	var sentIDs []int64
 	for _, u := range users {
 		if u.Group == targetGroup && u.Subgroup == targetSubgroup {
-			select {
-			case <-ctx.Done():
+			if err := n.limiter.Wait(ctx); err != nil {
 				return sentIDs, ctx.Err()
-			case <-n.throttle:
-				if _, sendErr := n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown); sendErr != nil {
-					log.WarnContext(ctx, "failed sending next day digest", "chat_id", u.ChatID, "error", sendErr)
-				} else {
-					sentIDs = append(sentIDs, u.ChatID)
+			}
+			_, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+				return n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown)
+			})
+			if sendErr != nil {
+				log.WarnContext(ctx, "failed sending next day digest", "chat_id", u.ChatID, "error", sendErr)
+				if isForbidden(sendErr) {
+					_ = n.userStore.SetNotifyEvening(ctx, u.ChatID, false)
+					log.InfoContext(ctx, "user blocked bot or deactivated, disabled evening notifications", "chat_id", u.ChatID)
 				}
+			} else {
+				sentIDs = append(sentIDs, u.ChatID)
 			}
 		}
 	}
@@ -424,15 +507,20 @@ func (n *Notifier) SendNextDayDigestForTeacher(
 	var sentIDs []int64
 	for _, u := range users {
 		if u.TeacherName == targetTeacher {
-			select {
-			case <-ctx.Done():
+			if err := n.limiter.Wait(ctx); err != nil {
 				return sentIDs, ctx.Err()
-			case <-n.throttle:
-				if _, sendErr := n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown); sendErr != nil {
-					log.WarnContext(ctx, "failed sending next day digest", "chat_id", u.ChatID, "error", sendErr)
-				} else {
-					sentIDs = append(sentIDs, u.ChatID)
+			}
+			_, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+				return n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown)
+			})
+			if sendErr != nil {
+				log.WarnContext(ctx, "failed sending next day digest", "chat_id", u.ChatID, "error", sendErr)
+				if isForbidden(sendErr) {
+					_ = n.userStore.SetNotifyEvening(ctx, u.ChatID, false)
+					log.InfoContext(ctx, "user blocked bot or deactivated, disabled evening notifications", "chat_id", u.ChatID)
 				}
+			} else {
+				sentIDs = append(sentIDs, u.ChatID)
 			}
 		}
 	}
@@ -492,21 +580,24 @@ func (n *Notifier) SendEveningDigest(
 			continue
 		}
 
-		select {
-		case <-ctx.Done():
+		if err := n.limiter.Wait(ctx); err != nil {
 			log.WarnContext(ctx, "evening digest cancelled by context")
 			return ctx.Err()
-		case <-n.throttle:
-			msg, err := FormatNextDayDigest(ctx, u, targetDate, dayIdx, schedProvider, teacherProvider)
-			if err != nil {
-				continue
+		}
+		msg, err := FormatNextDayDigest(ctx, u, targetDate, dayIdx, schedProvider, teacherProvider)
+		if err != nil {
+			continue
+		}
+		if _, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+			return n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown)
+		}); sendErr == nil {
+			sentCount++
+			if skip != nil {
+				skip[u.ChatID] = true
 			}
-			if _, sendErr := n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown); sendErr == nil {
-				sentCount++
-				if skip != nil {
-					skip[u.ChatID] = true
-				}
-			}
+		} else if isForbidden(sendErr) {
+			_ = n.userStore.SetNotifyEvening(ctx, u.ChatID, false)
+			log.InfoContext(ctx, "user blocked bot or deactivated, disabled evening notifications", "chat_id", u.ChatID)
 		}
 	}
 
