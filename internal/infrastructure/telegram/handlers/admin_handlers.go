@@ -258,11 +258,13 @@ func getBroadcastLimiter() Limiter {
 
 func sendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (*tele.Message, error)) (*tele.Message, error) {
 	const maxRetries = 3
+	var lastErr error
 	for range maxRetries {
 		msg, err := sendFunc()
 		if err == nil {
 			return msg, nil
 		}
+		lastErr = err
 		if floodErr, ok := errors.AsType[tele.FloodError](err); ok {
 			waitDur := time.Duration(floodErr.RetryAfter) * time.Second
 			if waitDur <= 0 {
@@ -277,6 +279,9 @@ func sendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (
 			}
 		}
 		return nil, err
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("max retries exceeded for flood wait: %w", lastErr)
 	}
 	return nil, errors.New("max retries exceeded for flood wait")
 }

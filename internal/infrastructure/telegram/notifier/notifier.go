@@ -86,11 +86,13 @@ func isForbidden(err error) bool {
 
 func sendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (*tele.Message, error)) (*tele.Message, error) {
 	const maxRetries = 3
+	var lastErr error
 	for range maxRetries {
 		msg, err := sendFunc()
 		if err == nil {
 			return msg, nil
 		}
+		lastErr = err
 		if floodErr, ok := errors.AsType[tele.FloodError](err); ok {
 			waitDur := time.Duration(floodErr.RetryAfter) * time.Second
 			if waitDur <= 0 {
@@ -105,6 +107,9 @@ func sendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (
 			}
 		}
 		return nil, err
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("max retries exceeded for flood wait: %w", lastErr)
 	}
 	return nil, errors.New("max retries exceeded for flood wait")
 }
@@ -208,6 +213,7 @@ func (n *Notifier) HandleGroupScheduleUpdate(ctx context.Context, group *entitie
 					_ = n.userStore.SetNotifyEvening(ctx, chatID, false)
 					log.InfoContext(ctx, "user blocked bot or deactivated, disabled notifications", "chat_id", chatID)
 				}
+				break
 			}
 		}
 	}
@@ -268,6 +274,7 @@ func (n *Notifier) HandleTeacherScheduleUpdate(ctx context.Context, teacher *ent
 					_ = n.userStore.SetNotifyEvening(ctx, chatID, false)
 					log.InfoContext(ctx, "user blocked bot or deactivated, disabled notifications", "chat_id", chatID)
 				}
+				break
 			}
 		}
 	}
