@@ -978,3 +978,37 @@ func TestFormatScheduleGroup_NoDuplicatePipes(t *testing.T) {
 	assert.Contains(t, got, "1: История | Иванов И. И. | 205")
 	assert.Contains(t, got, "2: Физкультура | пз | с/з")
 }
+
+func TestFormatScheduleDay_HeaderAsteriskNoDanglingNewline(t *testing.T) {
+	group := &entities.Group{
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Тест"}}},
+				},
+			},
+		},
+	}
+	teacher := &entities.Teacher{
+		Name: "Иванов И. И.",
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Тест"}}},
+				},
+			},
+		},
+	}
+
+	gotGroup, err := FormatScheduleDayAt(group, 0)
+	require.NoError(t, err)
+	assert.NotContains(t, gotGroup, "\n*", "заголовок не должен содержать закрывающую звездочку после перевода строки")
+	assert.Contains(t, gotGroup, "*Понедельник*\n")
+
+	gotTeacher, err := FormatTeacherScheduleDayAt(teacher, 0)
+	require.NoError(t, err)
+	assert.NotContains(t, gotTeacher, "\n*", "заголовок не должен содержать закрывающую звездочку после перевода строки")
+	assert.Contains(t, gotTeacher, "*Понедельник*\n")
+}

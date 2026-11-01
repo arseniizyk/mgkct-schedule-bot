@@ -38,6 +38,7 @@ type App struct {
 	cfg         *config.Config
 	database    *sql.DB
 	bot         *tele.Bot
+	stateMgr    *state.MemoryManager
 	scraper     *service.ScraperService
 	notifier    *notifier.Notifier
 	eventCh     chan service.Event
@@ -176,6 +177,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		cfg:         cfg,
 		database:    database,
 		bot:         bot,
+		stateMgr:    stateMgr,
 		scraper:     scraperSvc,
 		notifier:    notif,
 		eventCh:     eventCh,
@@ -212,6 +214,11 @@ func (a *App) Run() error {
 	// 4. Запуск фонового скрапера
 	workersWg.Go(func() {
 		a.scraper.Start(ctx, a.eventCh)
+	})
+
+	// 5. Периодическая очистка устаревших состояний диалога
+	workersWg.Go(func() {
+		a.stateMgr.StartCleanup(ctx, 5*time.Minute)
 	})
 
 	// 4. Запуск HTTP сервера (Healthcheck, REST API, WebApp)
@@ -460,7 +467,10 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 	defer ticker.Stop()
 
 	minskLoc := time.FixedZone("MSK", 3*3600)
-	var lastEveningDate string
+	var (
+		lastEveningDate string
+		lastCleanupDate string
+	)
 
 	for {
 		select {
@@ -471,10 +481,13 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 			todayStr := localTime.Format("2006-01-02")
 			todayWeekday := localTime.Weekday() // 0=Вс, 1=Пн, ... 6=Сб
 
-			// Очищаем устаревшие записи дайджеста (записи старше вчера)
-			yesterday := localTime.AddDate(0, 0, -1).Format("2006-01-02")
-			if err := a.digestRepo.DeleteOldEntries(ctx, yesterday); err != nil {
-				a.log.Warn("failed cleaning up old digest log entries", "error", err)
+			// Очищаем устаревшие записи дайджеста раз в сутки (записи старше вчера)
+			if lastCleanupDate != todayStr {
+				lastCleanupDate = todayStr
+				yesterday := localTime.AddDate(0, 0, -1).Format("2006-01-02")
+				if err := a.digestRepo.DeleteOldEntries(ctx, yesterday); err != nil {
+					a.log.Warn("failed cleaning up old digest log entries", "error", err)
+				}
 			}
 
 			// 1. В учебные дни (Пн..Сб) до 20:00: проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на следующий рабочий день

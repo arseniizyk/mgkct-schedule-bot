@@ -182,3 +182,39 @@ func TestScheduleService_WeeksCache_TTL_And_Invalidation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, freshGrp2.Days, 1)
 }
+
+func TestScheduleService_GetAllGroupIDs_PreservedOnSetCache(t *testing.T) {
+	ctx := context.Background()
+	w1, _ := time.Parse("2006-01-02", "2026-10-12")
+
+	schedRepo := &mockScheduleRepo{schedules: make(map[time.Time]*entities.Schedule)}
+	_ = schedRepo.Save(ctx, w1, &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			101: {ID: 101, Week: w1},
+			102: {ID: 102, Week: w1},
+		},
+	})
+
+	svc := service.NewScheduleService(slog.Default(), schedRepo)
+
+	// Инициализируем allGroups кэш
+	ids, err := svc.GetAllGroupIDs(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []int32{101, 102}, ids)
+
+	// Удаляем данные из репо, чтобы доказать отсутствие повторного чтения всех недель
+	clear(schedRepo.schedules)
+
+	// Вызываем SetCache с новой группой 104
+	svc.SetCache(&entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			102: {ID: 102},
+			104: {ID: 104},
+		},
+	})
+
+	// allGroups не должен быть сброшен в nil, а должен смерджить новую группу 104
+	newIDs, err := svc.GetAllGroupIDs(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []int32{101, 102, 104}, newIDs)
+}

@@ -454,6 +454,7 @@ func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers [
 		diff    *entities.ScheduleDiff
 	}
 	var pendingEvents []pendingTeacherEvent
+	var toSave []*entities.Teacher
 
 	for _, t := range teachers {
 		newHash, err := hashItem(t)
@@ -464,6 +465,10 @@ func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers [
 		key := fmt.Sprintf("%s:%s", t.Name, t.Week.Format("2006-01-02"))
 		oldHash, exists := s.teacherHashes[key]
 		oldTeacher := s.teacherSchedules[key]
+
+		if !exists || oldHash != newHash {
+			toSave = append(toSave, t)
+		}
 
 		if exists && oldHash != newHash {
 			log.InfoContext(ctx, "teacher schedule updated", "name", t.Name, "week", t.Week)
@@ -481,7 +486,7 @@ func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers [
 	}
 	s.mu.Unlock()
 
-	for _, t := range teachers {
+	for _, t := range toSave {
 		if err := s.teacherRepo.Save(ctx, t.Name, t.Week, t); err != nil {
 			log.ErrorContext(ctx, "failed saving teacher schedule", "name", t.Name, "error", err)
 			continue
