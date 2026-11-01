@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -424,5 +425,20 @@ func TestHandleArchiveWeeks(t *testing.T) {
 	srv.httpSrv.Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
+func TestHandleSetUserProfile_MaxBytesLimit(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	// Создаем тело запроса размером 100 КБ (> 64 КБ)
+	largeBody := strings.Repeat("x", 100*1024)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/user/profile?mock_user_id=123", strings.NewReader(largeBody))
+	rec := httptest.NewRecorder()
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for payload exceeding MaxBytesReader, got %d", http.StatusBadRequest, rec.Code)
 	}
 }

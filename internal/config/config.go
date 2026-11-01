@@ -17,7 +17,7 @@ const (
 )
 
 type Config struct {
-	Env Env `env:"ENV" env-default:"dev"`
+	Env Env `env:"ENV" env-default:"prod"`
 
 	Bot     BotConfig     `env-prefix:"BOT_"`
 	DB      DBConfig      `env-prefix:"DB_"`

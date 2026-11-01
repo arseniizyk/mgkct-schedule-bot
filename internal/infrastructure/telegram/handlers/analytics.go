@@ -44,13 +44,13 @@ func Cabinet(log *slog.Logger, analyticsSvc AnalyticsService, sm StateManager) t
 		if cabSched == nil {
 			if len(candidates) > 0 {
 				var sb strings.Builder
-				fmt.Fprintf(&sb, "По запросу *%s* найдено несколько кабинетов:\n\n", query)
+				fmt.Fprintf(&sb, "По запросу *%s* найдено несколько кабинетов:\n\n", formatter.EscapeMD(query))
 				for _, cand := range candidates {
 					fmt.Fprintf(&sb, "• `/cabinet %s`\n", cand)
 				}
 				return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 			}
-			return c.Send(fmt.Sprintf("Кабинет *%s* не найден в расписании.", query), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+			return c.Send(fmt.Sprintf("Кабинет *%s* не найден в расписании.", formatter.EscapeMD(query)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
 
 		dayIdx := service.EffectiveEndingsDayIndex()
