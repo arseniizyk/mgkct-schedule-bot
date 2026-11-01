@@ -19,6 +19,7 @@ import (
 	"github.com/golang/freetype/truetype"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
@@ -144,16 +145,44 @@ type dayData struct {
 	totalHeight float64
 }
 
+// Лимит одновременных процессов рендеринга и дедупликация идентичных запросов для защиты от OOM
+const maxConcurrentRenders = 3
+
+var (
+	renderSem = make(chan struct{}, maxConcurrentRenders)
+	renderSF  singleflight.Group
+)
+
 // RenderGroupWeek генерирует PNG-изображение расписания недели для учебной группы
 func RenderGroupWeek(group *entities.Group, subgroup int) ([]byte, error) {
 	const op = "renderer.RenderGroupWeek"
 
-	if err := initAssets(); err != nil {
-		return nil, fmt.Errorf("%s: init assets: %w", op, err)
-	}
-
 	if group == nil {
 		return nil, fmt.Errorf("%s: group is nil", op)
+	}
+
+	key := GroupKey(group.ID, group.Week, subgroup)
+	val, err, _ := renderSF.Do(key, func() (any, error) {
+		renderSem <- struct{}{}
+		defer func() { <-renderSem }()
+
+		return renderGroupWeekDirect(group, subgroup)
+	})
+	if err != nil {
+		return nil, err
+	}
+	res, ok := val.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("%s: invalid return type %T", op, val)
+	}
+	return res, nil
+}
+
+func renderGroupWeekDirect(group *entities.Group, subgroup int) ([]byte, error) {
+	const op = "renderer.RenderGroupWeek"
+
+	if err := initAssets(); err != nil {
+		return nil, fmt.Errorf("%s: init assets: %w", op, err)
 	}
 
 	filteredGroup := group
@@ -179,12 +208,32 @@ func RenderGroupWeek(group *entities.Group, subgroup int) ([]byte, error) {
 func RenderTeacherWeek(teacher *entities.Teacher) ([]byte, error) {
 	const op = "renderer.RenderTeacherWeek"
 
-	if err := initAssets(); err != nil {
-		return nil, fmt.Errorf("%s: init assets: %w", op, err)
-	}
-
 	if teacher == nil {
 		return nil, fmt.Errorf("%s: teacher is nil", op)
+	}
+
+	key := TeacherKey(teacher.Name, teacher.Week)
+	val, err, _ := renderSF.Do(key, func() (any, error) {
+		renderSem <- struct{}{}
+		defer func() { <-renderSem }()
+
+		return renderTeacherWeekDirect(teacher)
+	})
+	if err != nil {
+		return nil, err
+	}
+	res, ok := val.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("%s: invalid return type %T", op, val)
+	}
+	return res, nil
+}
+
+func renderTeacherWeekDirect(teacher *entities.Teacher) ([]byte, error) {
+	const op = "renderer.RenderTeacherWeek"
+
+	if err := initAssets(); err != nil {
+		return nil, fmt.Errorf("%s: init assets: %w", op, err)
 	}
 
 	teacherTitle := fmt.Sprintf("Преподаватель - %s", teacher.Name)
