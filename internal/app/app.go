@@ -196,29 +196,23 @@ func (a *App) Run() error {
 	var workersWg sync.WaitGroup
 
 	// 1. Запуск обработчика событий рассылки
-	workersWg.Add(1)
-	go func() {
-		defer workersWg.Done()
+	workersWg.Go(func() {
 		a.listenEvents(ctx)
-	}()
+	})
 
 	// 2. Защита от повторной рассылки при перезапуске:
 	//    если бот стартует после окончания пар — помечаем всех как уже уведомлённых.
 	a.seedDigestLogIfNeeded(ctx)
 
 	// 3. Запуск планировщика вечернего дайджеста
-	workersWg.Add(1)
-	go func() {
-		defer workersWg.Done()
+	workersWg.Go(func() {
 		a.startEveningDigestScheduler(ctx)
-	}()
+	})
 
 	// 4. Запуск фонового скрапера
-	workersWg.Add(1)
-	go func() {
-		defer workersWg.Done()
+	workersWg.Go(func() {
 		a.scraper.Start(ctx, a.eventCh)
-	}()
+	})
 
 	// 4. Запуск HTTP сервера (Healthcheck, REST API, WebApp)
 	go func() {
