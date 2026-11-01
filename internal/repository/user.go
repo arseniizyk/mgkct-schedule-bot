@@ -5,12 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 )
+
+const sqliteTimeLayout = "2006-01-02 15:04:05"
 
 type UserRepository struct {
 	db *sql.DB
@@ -28,9 +31,9 @@ func (r *UserRepository) SaveUser(ctx context.Context, u entities.User) error {
 	const op = "repository.UserRepository.SaveUser"
 
 	query := r.sb.Insert("users").
-		Columns("chat_id", "username").
-		Values(u.ChatID, u.Username).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET username = excluded.username")
+		Columns("chat_id", "username", "last_activity_at").
+		Values(u.ChatID, u.Username, sq.Expr("CURRENT_TIMESTAMP")).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET username = excluded.username, last_activity_at = CURRENT_TIMESTAMP")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -223,9 +226,9 @@ func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID
 	const op = "repository.UserRepository.SetUserGroup"
 
 	query := r.sb.Insert("users").
-		Columns("chat_id", "group_id", "subgroup", "teacher_name").
-		Values(chatID, groupID, subgroup, nil).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET group_id = excluded.group_id, subgroup = excluded.subgroup, teacher_name = NULL")
+		Columns("chat_id", "group_id", "subgroup", "teacher_name", "last_activity_at").
+		Values(chatID, groupID, subgroup, nil, sq.Expr("CURRENT_TIMESTAMP")).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET group_id = excluded.group_id, subgroup = excluded.subgroup, teacher_name = NULL, last_activity_at = CURRENT_TIMESTAMP")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -243,9 +246,9 @@ func (r *UserRepository) SetUserSubgroup(ctx context.Context, chatID int64, subg
 	const op = "repository.UserRepository.SetUserSubgroup"
 
 	query := r.sb.Insert("users").
-		Columns("chat_id", "subgroup").
-		Values(chatID, subgroup).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET subgroup = excluded.subgroup")
+		Columns("chat_id", "subgroup", "last_activity_at").
+		Values(chatID, subgroup, sq.Expr("CURRENT_TIMESTAMP")).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET subgroup = excluded.subgroup, last_activity_at = CURRENT_TIMESTAMP")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -263,9 +266,9 @@ func (r *UserRepository) SetTeacher(ctx context.Context, chatID int64, teacherNa
 	const op = "repository.UserRepository.SetTeacher"
 
 	query := r.sb.Insert("users").
-		Columns("chat_id", "teacher_name", "group_id", "subgroup").
-		Values(chatID, teacherName, nil, 0).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET teacher_name = excluded.teacher_name, group_id = NULL, subgroup = 0")
+		Columns("chat_id", "teacher_name", "group_id", "subgroup", "last_activity_at").
+		Values(chatID, teacherName, nil, 0, sq.Expr("CURRENT_TIMESTAMP")).
+		Suffix("ON CONFLICT(chat_id) DO UPDATE SET teacher_name = excluded.teacher_name, group_id = NULL, subgroup = 0, last_activity_at = CURRENT_TIMESTAMP")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -433,7 +436,7 @@ func (r *UserRepository) GetNotifyEvening(ctx context.Context, chatID int64) (bo
 func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.User, error) {
 	const op = "repository.UserRepository.AllUsersWithUsernames"
 
-	query := r.sb.Select("chat_id, username, group_id, subgroup, teacher_name").
+	query := r.sb.Select("chat_id, username, group_id, subgroup, teacher_name, notify_evening, last_activity_at").
 		From("users").
 		OrderBy("group_id ASC NULLS LAST, subgroup ASC, teacher_name ASC NULLS LAST")
 
@@ -452,14 +455,16 @@ func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.
 
 	for rows.Next() {
 		var (
-			chatID      int64
-			username    sql.NullString
-			groupID     sql.NullInt64
-			subgroup    sql.NullInt64
-			teacherName sql.NullString
+			chatID         int64
+			username       sql.NullString
+			groupID        sql.NullInt64
+			subgroup       sql.NullInt64
+			teacherName    sql.NullString
+			notifyEvening  int
+			lastActivityAt sql.NullString
 		)
 
-		if err := rows.Scan(&chatID, &username, &groupID, &subgroup, &teacherName); err != nil {
+		if err := rows.Scan(&chatID, &username, &groupID, &subgroup, &teacherName, &notifyEvening, &lastActivityAt); err != nil {
 			return nil, fmt.Errorf("%s: failed scanning row: %w", op, err)
 		}
 
@@ -483,12 +488,23 @@ func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.
 			un = username.String
 		}
 
+		var actTime *time.Time
+		if lastActivityAt.Valid && lastActivityAt.String != "" {
+			if t, err := time.Parse(sqliteTimeLayout, lastActivityAt.String); err == nil {
+				actTime = &t
+			} else if t, err := time.Parse(time.RFC3339, lastActivityAt.String); err == nil {
+				actTime = &t
+			}
+		}
+
 		users = append(users, entities.User{
-			ChatID:      chatID,
-			Username:    un,
-			Group:       group,
-			Subgroup:    sg,
-			TeacherName: tn,
+			ChatID:         chatID,
+			Username:       un,
+			Group:          group,
+			Subgroup:       sg,
+			TeacherName:    tn,
+			NotifyEvening:  notifyEvening == 1,
+			LastActivityAt: actTime,
 		})
 	}
 
@@ -575,4 +591,49 @@ func (r *UserRepository) UsersForEveningNotification(ctx context.Context) ([]ent
 		return nil, fmt.Errorf("%s: rows err: %w", op, err)
 	}
 	return users, nil
+}
+
+// UpdateActivity обновляет отметку времени последней активности пользователя.
+func (r *UserRepository) UpdateActivity(ctx context.Context, chatID int64) error {
+	const op = "repository.UserRepository.UpdateActivity"
+
+	// Обновляем активность только если прошло более 5 минут с последней фиксации,
+	// чтобы исключить частые записи в WAL при активных кликах по кнопкам.
+	query := r.sb.Update("users").
+		Set("last_activity_at", sq.Expr("CURRENT_TIMESTAMP")).
+		Where(sq.Eq{"chat_id": chatID}).
+		Where(sq.Or{
+			sq.Expr("last_activity_at IS NULL"),
+			sq.Expr("last_activity_at < datetime('now', '-5 minutes')"),
+		})
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return fmt.Errorf("%s: failed to build sql query: %w", op, err)
+	}
+
+	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
+		return fmt.Errorf("%s: failed to execute sql query: %w", op, err)
+	}
+
+	return nil
+}
+
+// GetActivityStats вычисляет метрики DAU, WAU и MAU.
+func (r *UserRepository) GetActivityStats(ctx context.Context) (entities.ActivityStats, error) {
+	const op = "repository.UserRepository.GetActivityStats"
+
+	query := "SELECT " +
+		"COUNT(CASE WHEN last_activity_at >= datetime('now', '-1 day') THEN 1 END) AS dau, " +
+		"COUNT(CASE WHEN last_activity_at >= datetime('now', '-7 days') THEN 1 END) AS wau, " +
+		"COUNT(CASE WHEN last_activity_at >= datetime('now', '-30 days') THEN 1 END) AS mau " +
+		"FROM users " +
+		"WHERE last_activity_at >= datetime('now', '-30 days')"
+
+	var stats entities.ActivityStats
+	if err := r.db.QueryRowContext(ctx, query).Scan(&stats.DAU, &stats.WAU, &stats.MAU); err != nil {
+		return stats, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
+	}
+
+	return stats, nil
 }

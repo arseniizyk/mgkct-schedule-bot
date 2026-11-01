@@ -47,6 +47,7 @@ type App struct {
 	scheduleSvc *service.ScheduleService
 	teacherSvc  *service.TeacherService
 	digestRepo  *repository.DigestSentRepository
+	actWorker   *activityWorker
 }
 
 func New(log *slog.Logger, cfg *config.Config) (*App, error) {
@@ -125,10 +126,15 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	}
 
 	stateMgr := state.NewMemoryManager()
+	actWorker := newActivityWorker(log, userRepo)
 
-	// Сброс интерактивного состояния при вводе любой команды с "/"
+	// Middleware: обновление активности пользователя и сброс состояния при командах
 	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
 		return func(c tele.Context) error {
+			if sender := c.Sender(); sender != nil && sender.ID != 0 {
+				actWorker.Touch(sender.ID)
+			}
+
 			if c.Message() != nil && strings.HasPrefix(c.Message().Text, "/") {
 				_ = stateMgr.Clear(c.Chat().ID)
 			}
@@ -190,6 +196,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		scheduleSvc: scheduleSvc,
 		teacherSvc:  teacherSvc,
 		digestRepo:  digestRepo,
+		actWorker:   actWorker,
 	}, nil
 }
 
@@ -224,6 +231,11 @@ func (a *App) Run() error {
 	// 5. Периодическая очистка устаревших состояний диалога
 	workersWg.Go(func() {
 		a.stateMgr.StartCleanup(ctx, 5*time.Minute)
+	})
+
+	// 6. Фоновый воркер обновления активности пользователей
+	workersWg.Go(func() {
+		a.actWorker.Run(ctx)
 	})
 
 	// 4. Запуск HTTP сервера (Healthcheck, REST API, WebApp)

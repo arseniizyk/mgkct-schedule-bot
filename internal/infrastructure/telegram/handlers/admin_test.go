@@ -36,6 +36,10 @@ func (m *mockAdminUserRepo) CountUsers(ctx context.Context) (int, error) {
 	return len(m.users), nil
 }
 
+func (m *mockAdminUserRepo) GetActivityStats(ctx context.Context) (entities.ActivityStats, error) {
+	return entities.ActivityStats{DAU: 1, WAU: 2, MAU: 3}, nil
+}
+
 func TestIsAdmin(t *testing.T) {
 	adminIDs := []int64{123, 456, 789}
 
@@ -132,8 +136,8 @@ func TestUserStats(t *testing.T) {
 func TestBotInfo(t *testing.T) {
 	repo := &mockAdminUserRepo{
 		users: []entities.User{
-			{ChatID: 1, Group: 88},
-			{ChatID: 2, TeacherName: "Иванов И. И."},
+			{ChatID: 1, Group: 88, NotifyEvening: true},
+			{ChatID: 2, TeacherName: "Иванов И. И.", NotifyEvening: false},
 			{ChatID: 3},
 		},
 	}
@@ -150,6 +154,12 @@ func TestBotInfo(t *testing.T) {
 	assert.Contains(t, out, "Студентов (с группой): 1")
 	assert.Contains(t, out, "Преподавателей: 1")
 	assert.Contains(t, out, "Без группы: 1")
+	assert.Contains(t, out, "Получают вечерний дайджест: 1")
+	assert.Contains(t, out, "Отключили / заблокировали: 1")
+	assert.Contains(t, out, "Интерактивная активность (клики/команды):")
+	assert.Contains(t, out, "За 24 часа (DAU): 1")
+	assert.Contains(t, out, "За 7 дней (WAU): 2")
+	assert.Contains(t, out, "За 30 дней (MAU): 3")
 }
 
 func TestBroadcast_CommandAndStates(t *testing.T) {
