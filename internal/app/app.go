@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -192,18 +193,26 @@ func (a *App) Run() error {
 
 	handlers.SetBroadcastContext(ctx)
 
+	var workersWg sync.WaitGroup
+
 	// 1. Запуск обработчика событий рассылки
-	go a.listenEvents(ctx)
+	workersWg.Go(func() {
+		a.listenEvents(ctx)
+	})
 
 	// 2. Защита от повторной рассылки при перезапуске:
 	//    если бот стартует после окончания пар — помечаем всех как уже уведомлённых.
 	a.seedDigestLogIfNeeded(ctx)
 
 	// 3. Запуск планировщика вечернего дайджеста
-	go a.startEveningDigestScheduler(ctx)
+	workersWg.Go(func() {
+		a.startEveningDigestScheduler(ctx)
+	})
 
-	// 3. Запуск фонового скрапера
-	go a.scraper.Start(ctx, a.eventCh)
+	// 4. Запуск фонового скрапера
+	workersWg.Go(func() {
+		a.scraper.Start(ctx, a.eventCh)
+	})
 
 	// 4. Запуск HTTP сервера (Healthcheck, REST API, WebApp)
 	go func() {
@@ -216,24 +225,69 @@ func (a *App) Run() error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	shutdownDone := make(chan struct{})
+	var shutdownOnce sync.Once
+
+	shutdown := func() {
+		shutdownOnce.Do(func() {
+			log.Info("Shutting down gracefully...")
+
+			// 1. Сначала останавливаем HTTP-сервер (прекращаем прием вебхуков и запросов)
+			if a.httpSrv != nil {
+				shutdownCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := a.httpSrv.Shutdown(shutdownCtx); err != nil {
+					log.Error("failed to gracefully shutdown http server", "error", err)
+				}
+				sCancel()
+			}
+
+			// 2. Останавливаем обработку сообщений бота
+			a.bot.Stop()
+
+			// 3. Отменяем контекст для фоновых горутин (скрапер, планировщик, слушатель событий)
+			cancel()
+
+			// Дожидаемся корректного завершения фоновых воркеров перед закрытием базы данных
+			workersDone := make(chan struct{})
+			go func() {
+				workersWg.Wait()
+				close(workersDone)
+			}()
+
+			select {
+			case <-workersDone:
+				log.Info("All background workers stopped")
+			case <-time.After(3 * time.Second):
+				log.Warn("Timed out waiting for background workers to stop")
+			}
+
+			// 4. Закрываем подключение к базе данных
+			if a.database != nil {
+				if err := a.database.Close(); err != nil {
+					log.Error("failed to close database", "error", err)
+				}
+			}
+
+			close(shutdownDone)
+		})
+	}
+
 	go func() {
-		<-sigChan
-		log.Info("Shutting down gracefully...")
-		a.bot.Stop()
-		cancel()
-
-		if a.httpSrv != nil {
-			shutdownCtx, sCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer sCancel()
-			_ = a.httpSrv.Shutdown(shutdownCtx)
+		select {
+		case <-sigChan:
+			shutdown()
+		case <-shutdownDone:
 		}
-
-		_ = a.database.Close()
 	}()
 
 	log.Info("Bot started!", "username", a.bot.Me.Username)
 	a.bot.Start()
 
+	// Если bot.Start завершился сам (или был остановлен по сигналу) — дожидаемся освобождения всех ресурсов
+	shutdown()
+	<-shutdownDone
+
+	log.Info("Application stopped cleanly")
 	return nil
 }
 
