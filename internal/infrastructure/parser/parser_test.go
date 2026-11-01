@@ -76,6 +76,27 @@ func TestParseWeek(t *testing.T) {
 		}
 	})
 
+	t.Run("valid week header with unicode en-dash and em-dash", func(t *testing.T) {
+		t.Parallel()
+
+		gotEn, err := parseWeek("24.08.2026 – 30.08.2026")
+		if err != nil {
+			t.Fatalf("parseWeek() with en-dash unexpected error: %v", err)
+		}
+		want := time.Date(2026, time.August, 24, 0, 0, 0, 0, time.UTC)
+		if !gotEn.Equal(want) {
+			t.Errorf("parseWeek() = %v, want %v", gotEn, want)
+		}
+
+		gotEm, err := parseWeek("24.08.2026 — 30.08.2026")
+		if err != nil {
+			t.Fatalf("parseWeek() with em-dash unexpected error: %v", err)
+		}
+		if !gotEm.Equal(want) {
+			t.Errorf("parseWeek() = %v, want %v", gotEm, want)
+		}
+	})
+
 	t.Run("invalid date", func(t *testing.T) {
 		t.Parallel()
 

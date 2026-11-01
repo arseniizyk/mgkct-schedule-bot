@@ -420,3 +420,91 @@ func TestComputeTeacherDiff_AllCases(t *testing.T) {
 	assert.Equal(t, entities.ChangeTypeAdded, pairs[2].SubgroupDiffs[0].Type)
 	assert.Equal(t, "301", pairs[2].SubgroupDiffs[0].NewPair.Group)
 }
+
+func TestComputeGroupDiff_SubgroupsByNamePrefix(t *testing.T) {
+	week := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+
+	oldGroup := &entities.Group{
+		ID:   101,
+		Week: week,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{Name: "1. Математика", Group: "", Class: "101"},
+							{Name: "2. Информатика", Group: "", Class: "102"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	newGroup := &entities.Group{
+		ID:   101,
+		Week: week,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{
+						Pairs: []*entities.Pair{
+							{Name: "1. Математика", Group: "", Class: "101"},
+							{Name: "2. Физика", Group: "", Class: "105"}, // 2-я подгруппа изменилась
+						},
+					},
+				},
+			},
+		},
+	}
+
+	now := time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)
+	diff := service.ComputeGroupDiff(oldGroup, newGroup, now)
+	require.NotNil(t, diff)
+	require.Len(t, diff.Days, 1)
+	require.Len(t, diff.Days[0].Pairs, 1)
+
+	pairDiff := diff.Days[0].Pairs[0]
+	require.Len(t, pairDiff.SubgroupDiffs, 1)
+	assert.Equal(t, "2 п/г", pairDiff.SubgroupDiffs[0].Subgroup)
+	assert.Equal(t, entities.ChangeTypeModified, pairDiff.SubgroupDiffs[0].Type)
+	assert.Equal(t, "2. Физика", pairDiff.SubgroupDiffs[0].NewPair.Name)
+}
+
+func TestComputeDiff_NilDaySafety(t *testing.T) {
+	week := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+
+	oldGroup := &entities.Group{
+		ID:   101,
+		Week: week,
+		Days: []*entities.Day{nil, nil},
+	}
+	newGroup := &entities.Group{
+		ID:   101,
+		Week: week,
+		Days: []*entities.Day{nil},
+	}
+
+	now := time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)
+	assert.NotPanics(t, func() {
+		diff := service.ComputeGroupDiff(oldGroup, newGroup, now)
+		assert.Nil(t, diff)
+	})
+
+	oldTeacher := &entities.Teacher{
+		Name: "Иванов И.И.",
+		Week: week,
+		Days: []*entities.Day{nil},
+	}
+	newTeacher := &entities.Teacher{
+		Name: "Иванов И.И.",
+		Week: week,
+		Days: []*entities.Day{nil, nil},
+	}
+	assert.NotPanics(t, func() {
+		diff := service.ComputeTeacherDiff(oldTeacher, newTeacher, now)
+		assert.Nil(t, diff)
+	})
+}

@@ -71,7 +71,11 @@ func (fp *FacultyParser) Parse(ctx context.Context) ([]*entities.FacultyMember, 
 		var pageMembers []*entities.FacultyMember
 
 		col.OnError(func(r *colly.Response, err error) {
-			log.WarnContext(ctx, "failed fetching faculty page", "url", r.Request.URL, "error", err)
+			var urlStr string
+			if r != nil && r.Request != nil && r.Request.URL != nil {
+				urlStr = r.Request.URL.String()
+			}
+			log.WarnContext(ctx, "failed fetching faculty page", "url", urlStr, "error", err)
 		})
 
 		col.OnHTML(".card-body", func(e *colly.HTMLElement) {
