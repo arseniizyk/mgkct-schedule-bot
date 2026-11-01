@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -234,6 +235,52 @@ func handleBroadcastCancel(
 	return safeEdit(c, "❌ Рассылка отменена.")
 }
 
+type Limiter interface {
+	Wait(ctx context.Context) error
+}
+
+var (
+	broadcastLimiterMu sync.RWMutex
+	broadcastLimiter   Limiter
+)
+
+func SetBroadcastLimiter(l Limiter) {
+	broadcastLimiterMu.Lock()
+	broadcastLimiter = l
+	broadcastLimiterMu.Unlock()
+}
+
+func getBroadcastLimiter() Limiter {
+	broadcastLimiterMu.RLock()
+	defer broadcastLimiterMu.RUnlock()
+	return broadcastLimiter
+}
+
+func sendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (*tele.Message, error)) (*tele.Message, error) {
+	const maxRetries = 3
+	for range maxRetries {
+		msg, err := sendFunc()
+		if err == nil {
+			return msg, nil
+		}
+		if floodErr, ok := errors.AsType[tele.FloodError](err); ok {
+			waitDur := time.Duration(floodErr.RetryAfter) * time.Second
+			if waitDur <= 0 {
+				waitDur = time.Second
+			}
+			log.WarnContext(ctx, "telegram flood wait 429 received, sleeping", "retry_after", waitDur)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(waitDur):
+				continue
+			}
+		}
+		return nil, err
+	}
+	return nil, errors.New("max retries exceeded for flood wait")
+}
+
 func executeBroadcast(
 	ctx context.Context,
 	log *slog.Logger,
@@ -259,23 +306,32 @@ func executeBroadcast(
 		return
 	}
 
-	throttle := time.NewTicker(40 * time.Millisecond)
-	defer throttle.Stop()
-
+	limiter := getBroadcastLimiter()
 	var sent, failed int
 	for _, u := range users {
-		select {
-		case <-ctx.Done():
-			log.Warn("broadcast cancelled by context")
-			_, _ = bot.Send(tele.ChatID(adminChatID), fmt.Sprintf("⚠️ Рассылка прервана. Отправлено: %d / Ошибок: %d", sent, failed))
-			return
-		case <-throttle.C:
-			if _, sendErr := bot.Send(tele.ChatID(u.ChatID), text); sendErr != nil {
-				log.Warn("broadcast: failed sending to user", "chat_id", u.ChatID, "error", sendErr)
-				failed++
-			} else {
-				sent++
+		if limiter != nil {
+			if err := limiter.Wait(ctx); err != nil {
+				log.Warn("broadcast cancelled by context")
+				_, _ = bot.Send(tele.ChatID(adminChatID), fmt.Sprintf("⚠️ Рассылка прервана. Отправлено: %d / Ошибок: %d", sent, failed))
+				return
 			}
+		} else {
+			select {
+			case <-ctx.Done():
+				log.Warn("broadcast cancelled by context")
+				_, _ = bot.Send(tele.ChatID(adminChatID), fmt.Sprintf("⚠️ Рассылка прервана. Отправлено: %d / Ошибок: %d", sent, failed))
+				return
+			case <-time.After(40 * time.Millisecond):
+			}
+		}
+
+		if _, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+			return bot.Send(tele.ChatID(u.ChatID), text)
+		}); sendErr != nil {
+			log.Warn("broadcast: failed sending to user", "chat_id", u.ChatID, "error", sendErr)
+			failed++
+		} else {
+			sent++
 		}
 	}
 

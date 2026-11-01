@@ -81,13 +81,13 @@ func Archive(
 		if !ok {
 			if len(candidates) > 0 {
 				var sb strings.Builder
-				fmt.Fprintf(&sb, "По запросу *%s* найдено несколько преподавателей:\n\n", targetStr)
+				fmt.Fprintf(&sb, "По запросу *%s* найдено несколько преподавателей:\n\n", formatter.EscapeMD(targetStr))
 				for _, cand := range candidates {
 					fmt.Fprintf(&sb, "• `/archive %s`\n", cand)
 				}
 				return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 			}
-			return c.Send(fmt.Sprintf("Преподаватель или группа *%s* не найдены в архиве.", targetStr), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+			return c.Send(fmt.Sprintf("Преподаватель или группа *%s* не найдены в архиве.", formatter.EscapeMD(targetStr)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
 
 		if hasDate {
@@ -96,9 +96,9 @@ func Archive(
 
 		weeks, err := teacherSvc.GetAllWeeks(ctx, validatedName)
 		if err != nil || len(weeks) == 0 {
-			return c.Send(fmt.Sprintf("Архив расписаний для преподавателя *%s* пока пуст.", validatedName), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+			return c.Send(fmt.Sprintf("Архив расписаний для преподавателя *%s* пока пуст.", formatter.EscapeMD(validatedName)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
-		msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю:", validatedName)
+		msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю:", formatter.EscapeMD(validatedName))
 		kbd := keyboard.InlineArchiveWeeksKeyboard("t", validatedName, weeks)
 		return c.Send(msg, tele.ModeMarkdown, kbd)
 	}
@@ -122,7 +122,7 @@ func sendTeacherArchiveSchedule(ctx context.Context, c tele.Context, svc Teacher
 	teacher, err := svc.GetTeacherArchiveSchedule(ctx, teacherName, date)
 	if err != nil {
 		return c.Send(
-			fmt.Sprintf("Расписание преподавателя *%s* за дату *%s* не найдено в архиве.", teacherName, date.Format("02.01.2006")),
+			fmt.Sprintf("Расписание преподавателя *%s* за дату *%s* не найдено в архиве.", formatter.EscapeMD(teacherName), date.Format("02.01.2006")),
 			tele.ModeMarkdown,
 			keyboard.ReplyScheduleKeyboard,
 		)
@@ -176,9 +176,9 @@ func handleArchiveNoArgs(
 	if err == nil && teacher != "" {
 		weeks, err := teacherSvc.GetAllWeeks(ctx, teacher)
 		if err != nil || len(weeks) == 0 {
-			return c.Send(fmt.Sprintf("📦 Архив расписаний для преподавателя *%s* пока пуст.", teacher), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+			return c.Send(fmt.Sprintf("📦 Архив расписаний для преподавателя *%s* пока пуст.", formatter.EscapeMD(teacher)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
-		msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю для просмотра:", teacher)
+		msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю для просмотра:", formatter.EscapeMD(teacher))
 		kbd := keyboard.InlineArchiveWeeksKeyboard("t", teacher, weeks)
 		return c.Send(msg, tele.ModeMarkdown, kbd)
 	}

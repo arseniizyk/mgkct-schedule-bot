@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/time/rate"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
@@ -148,8 +149,12 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		subjectDict,
 	)
 
+	// Единый rate limiter для защиты от Telegram 429 Flood Wait (25 msg/s)
+	broadcastLimiter := rate.NewLimiter(rate.Limit(25), 1)
+	handlers.SetBroadcastLimiter(broadcastLimiter)
+
 	eventCh := make(chan service.Event, 100)
-	notif := notifier.New(log, bot, userRepo, cfg.Bot.AdminIDs)
+	notif := notifier.New(log, bot, userRepo, cfg.Bot.AdminIDs, broadcastLimiter)
 
 	httpSrv := httpserver.New(
 		log,

@@ -94,3 +94,52 @@ func TestValidateInitData_Outdated(t *testing.T) {
 		t.Fatalf("expected ErrOutdatedAuth, got %v", err)
 	}
 }
+
+func TestValidateInitData_WithSignatureParam(t *testing.T) {
+	token := "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+	params := map[string]string{
+		"auth_date": strconv.FormatInt(time.Now().Unix(), 10),
+		"query_id":  "AAHdF6IQAAAAAN0XohDhrOrc",
+		"user":      `{"id":12345678,"first_name":"Иван","username":"ivan_test"}`,
+	}
+
+	initData := generateValidInitData(token, params)
+	// Добавляем параметр signature от стороннего сервиса
+	initData += "&signature=some_external_signature_value"
+
+	user, err := ValidateInitData(initData, token, 15*time.Minute)
+	if err != nil {
+		t.Fatalf("expected success with signature parameter, got %v", err)
+	}
+	if user.ID != 12345678 {
+		t.Errorf("expected user ID 12345678, got %d", user.ID)
+	}
+}
+
+func TestValidateInitData_FutureAuthDate(t *testing.T) {
+	token := "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+	futureTime := time.Now().Add(10 * time.Minute).Unix()
+	params := map[string]string{
+		"auth_date": strconv.FormatInt(futureTime, 10),
+		"user":      `{"id":12345678}`,
+	}
+
+	initData := generateValidInitData(token, params)
+	_, err := ValidateInitData(initData, token, 15*time.Minute)
+	if !errors.Is(err, ErrOutdatedAuth) {
+		t.Fatalf("expected ErrOutdatedAuth for future timestamp, got %v", err)
+	}
+}
+
+func TestValidateInitData_MissingAuthDateWhenMaxAge(t *testing.T) {
+	token := "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+	params := map[string]string{
+		"user": `{"id":12345678}`,
+	}
+
+	initData := generateValidInitData(token, params)
+	_, err := ValidateInitData(initData, token, 15*time.Minute)
+	if !errors.Is(err, ErrOutdatedAuth) {
+		t.Fatalf("expected ErrOutdatedAuth for missing auth_date, got %v", err)
+	}
+}

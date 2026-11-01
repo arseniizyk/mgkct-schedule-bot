@@ -494,6 +494,11 @@ func escapeMD(s string) string {
 	return mdEscaper.Replace(s)
 }
 
+// EscapeMD экранирует специальные символы Markdown в строке.
+func EscapeMD(s string) string {
+	return escapeMD(s)
+}
+
 // FindLastSubject находит индекс последнего непустого предмета в дне (0-based) или -1 если пар нет.
 func FindLastSubject(subjects []*entities.Subject) int {
 	return findLastSubject(subjects)
