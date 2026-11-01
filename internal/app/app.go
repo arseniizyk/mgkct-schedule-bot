@@ -130,11 +130,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
 		return func(c tele.Context) error {
 			if sender := c.Sender(); sender != nil && sender.ID != 0 {
-				actCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				if err := userRepo.UpdateActivity(actCtx, sender.ID); err != nil {
-					log.Debug("failed updating user activity", "chat_id", sender.ID, "error", err)
-				}
-				cancel()
+				touchUserActivity(log, userRepo, sender.ID)
 			}
 
 			if c.Message() != nil && strings.HasPrefix(c.Message().Text, "/") {
@@ -779,4 +775,12 @@ func buildPoller(cfg *config.Config) (tele.Poller, http.Handler) {
 	}
 
 	return wh, wh
+}
+
+func touchUserActivity(log *slog.Logger, userRepo *repository.UserRepository, chatID int64) {
+	actCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := userRepo.UpdateActivity(actCtx, chatID); err != nil {
+		log.Debug("failed updating user activity", "chat_id", chatID, "error", err)
+	}
 }
