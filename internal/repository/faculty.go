@@ -39,18 +39,43 @@ func (r *FacultyRepository) SaveBatch(ctx context.Context, members []*entities.F
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	const insertQuery = `
+		INSERT INTO faculty (
+			full_name, short_name, position, qualification, education, experience, department, full_name_lower, short_name_lower
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(full_name, department) DO UPDATE SET
+			short_name = excluded.short_name,
+			position = excluded.position,
+			qualification = excluded.qualification,
+			education = excluded.education,
+			experience = excluded.experience,
+			full_name_lower = excluded.full_name_lower,
+			short_name_lower = excluded.short_name_lower,
+			updated_at = CURRENT_TIMESTAMP
+	`
+
+	stmt, err := tx.PrepareContext(ctx, insertQuery)
+	if err != nil {
+		return fmt.Errorf("%s: prepare stmt: %w", op, err)
+	}
+	defer stmt.Close()
+
 	for _, m := range members {
-		query := r.sb.Insert("faculty").
-			Columns("full_name", "short_name", "position", "qualification", "education", "experience", "department").
-			Values(m.FullName, m.ShortName, m.Position, m.Qualification, m.Education, m.Experience, m.Department).
-			Suffix("ON CONFLICT(full_name, department) DO UPDATE SET short_name = excluded.short_name, position = excluded.position, qualification = excluded.qualification, education = excluded.education, experience = excluded.experience, updated_at = CURRENT_TIMESTAMP")
+		fullNameLower := strings.ToLower(m.FullName)
+		shortNameLower := strings.ToLower(m.ShortName)
 
-		sqlQuery, args, err := query.ToSql()
-		if err != nil {
-			return fmt.Errorf("%s: build sql: %w", op, err)
-		}
-
-		if _, err := tx.ExecContext(ctx, sqlQuery, args...); err != nil {
+		if _, err := stmt.ExecContext(
+			ctx,
+			m.FullName,
+			m.ShortName,
+			m.Position,
+			m.Qualification,
+			m.Education,
+			m.Experience,
+			m.Department,
+			fullNameLower,
+			shortNameLower,
+		); err != nil {
 			return fmt.Errorf("%s: exec sql: %w", op, err)
 		}
 	}
@@ -151,6 +176,8 @@ func (r *FacultyRepository) Search(ctx context.Context, queryStr string) ([]*ent
 	query := r.sb.Select("id", "full_name", "short_name", "position", "qualification", "education", "experience", "department", "updated_at").
 		From("faculty").
 		Where(squirrel.Or{
+			squirrel.Expr("full_name_lower LIKE ?", pattern),
+			squirrel.Expr("short_name_lower LIKE ?", pattern),
 			squirrel.Expr("LOWER(full_name) LIKE ?", pattern),
 			squirrel.Expr("LOWER(short_name) LIKE ?", pattern),
 		}).

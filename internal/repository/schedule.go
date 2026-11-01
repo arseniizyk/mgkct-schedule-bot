@@ -58,8 +58,7 @@ func (r *ScheduleRepository) GetByWeek(ctx context.Context, week time.Time) (*en
 	weekStr := week.Format("2006-01-02")
 	query := r.sb.Select("schedule").
 		From("schedules").
-		Where(squirrel.LtOrEq{"week": weekStr}).
-		OrderBy("week DESC").
+		Where(squirrel.Eq{"week": weekStr}).
 		Limit(1)
 
 	sqlQuery, args, err := query.ToSql()
@@ -161,8 +160,6 @@ func (r *ScheduleRepository) GetLatest(ctx context.Context) (*entities.Schedule,
 func (r *ScheduleRepository) GetWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error) {
 	const op = "repository.ScheduleRepository.GetWeeks"
 
-	week = time.Date(week.Year(), week.Month(), week.Day(), 0, 0, 0, 0, time.UTC)
-
 	if week.IsZero() {
 		query := r.sb.Select("week").
 			From("schedules").
@@ -206,6 +203,7 @@ func (r *ScheduleRepository) GetWeeks(ctx context.Context, week time.Time) (enti
 		}, nil
 	}
 
+	week = time.Date(week.Year(), week.Month(), week.Day(), 0, 0, 0, 0, time.UTC)
 	weekStr := week.Format("2006-01-02")
 	var currentStr, prevStr, nextStr string
 

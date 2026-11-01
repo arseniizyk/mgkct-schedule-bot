@@ -18,6 +18,7 @@ CREATE INDEX IF NOT EXISTS idx_faculty_full_name ON faculty(full_name);
 
 -- +goose StatementBegin
 CREATE TRIGGER IF NOT EXISTS trg_faculty_set_updated_at AFTER UPDATE ON faculty
+WHEN OLD.updated_at = NEW.updated_at
 BEGIN
     UPDATE faculty SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
