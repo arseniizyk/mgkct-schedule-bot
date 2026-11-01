@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"sync"
 	"testing"
@@ -33,7 +32,7 @@ func (m *mockActivityUpdater) getUpdated() []int64 {
 }
 
 func TestActivityWorker_TouchAndDebounce(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	updater := &mockActivityUpdater{}
 	worker := newActivityWorker(logger, updater)
 
@@ -51,12 +50,12 @@ func TestActivityWorker_TouchAndDebounce(t *testing.T) {
 }
 
 func TestActivityWorker_QueueFull_DoesNotLockLastSeen(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	updater := &mockActivityUpdater{}
 	worker := newActivityWorker(logger, updater)
 
 	// Заполняем буфер очереди (100 элементов)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		worker.ch <- int64(i)
 	}
 
@@ -81,7 +80,7 @@ func TestActivityWorker_QueueFull_DoesNotLockLastSeen(t *testing.T) {
 }
 
 func TestActivityWorker_Run_ProcessesAndStopsGracefully(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	updater := &mockActivityUpdater{}
 	worker := newActivityWorker(logger, updater)
 
