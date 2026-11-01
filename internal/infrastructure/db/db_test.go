@@ -30,6 +30,13 @@ func TestConnect_MigrationsAndTriggers(t *testing.T) {
 	_, err = database.ExecContext(ctx, `UPDATE schedules SET schedule = '{"updated":true}' WHERE week = '2026-11-02'`)
 	require.NoError(t, err)
 
+	// Verify teacher_schedules table trigger
+	_, err = database.ExecContext(ctx, `INSERT INTO teacher_schedules (name, week, schedule) VALUES ('Иванов', '2026-11-02', '{}')`)
+	require.NoError(t, err)
+
+	_, err = database.ExecContext(ctx, `UPDATE teacher_schedules SET schedule = '{"updated":true}' WHERE name = 'Иванов' AND week = '2026-11-02'`)
+	require.NoError(t, err)
+
 	// Verify faculty columns (full_name_lower, short_name_lower)
 	_, err = database.ExecContext(ctx, `INSERT INTO faculty (full_name, short_name, full_name_lower, short_name_lower) VALUES ('Тест', 'Т.', 'тест', 'т.')`)
 	require.NoError(t, err)

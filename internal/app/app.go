@@ -193,18 +193,32 @@ func (a *App) Run() error {
 
 	handlers.SetBroadcastContext(ctx)
 
+	var workersWg sync.WaitGroup
+
 	// 1. Запуск обработчика событий рассылки
-	go a.listenEvents(ctx)
+	workersWg.Add(1)
+	go func() {
+		defer workersWg.Done()
+		a.listenEvents(ctx)
+	}()
 
 	// 2. Защита от повторной рассылки при перезапуске:
 	//    если бот стартует после окончания пар — помечаем всех как уже уведомлённых.
 	a.seedDigestLogIfNeeded(ctx)
 
 	// 3. Запуск планировщика вечернего дайджеста
-	go a.startEveningDigestScheduler(ctx)
+	workersWg.Add(1)
+	go func() {
+		defer workersWg.Done()
+		a.startEveningDigestScheduler(ctx)
+	}()
 
-	// 3. Запуск фонового скрапера
-	go a.scraper.Start(ctx, a.eventCh)
+	// 4. Запуск фонового скрапера
+	workersWg.Add(1)
+	go func() {
+		defer workersWg.Done()
+		a.scraper.Start(ctx, a.eventCh)
+	}()
 
 	// 4. Запуск HTTP сервера (Healthcheck, REST API, WebApp)
 	go func() {
@@ -238,6 +252,20 @@ func (a *App) Run() error {
 
 			// 3. Отменяем контекст для фоновых горутин (скрапер, планировщик, слушатель событий)
 			cancel()
+
+			// Дожидаемся корректного завершения фоновых воркеров перед закрытием базы данных
+			workersDone := make(chan struct{})
+			go func() {
+				workersWg.Wait()
+				close(workersDone)
+			}()
+
+			select {
+			case <-workersDone:
+				log.Info("All background workers stopped")
+			case <-time.After(3 * time.Second):
+				log.Warn("Timed out waiting for background workers to stop")
+			}
 
 			// 4. Закрываем подключение к базе данных
 			if a.database != nil {

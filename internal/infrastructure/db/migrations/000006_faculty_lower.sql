@@ -5,7 +5,25 @@ ALTER TABLE faculty ADD COLUMN short_name_lower TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_faculty_full_name_lower ON faculty(full_name_lower);
 CREATE INDEX IF NOT EXISTS idx_faculty_short_name_lower ON faculty(short_name_lower);
 
--- Recreate trigger with loop-protection for existing databases
+-- Recreate triggers with loop-protection for existing databases
+DROP TRIGGER IF EXISTS trg_schedules_set_updated_at;
+-- +goose StatementBegin
+CREATE TRIGGER IF NOT EXISTS trg_schedules_set_updated_at AFTER UPDATE ON schedules
+WHEN OLD.updated_at = NEW.updated_at
+BEGIN
+    UPDATE schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+-- +goose StatementEnd
+
+DROP TRIGGER IF EXISTS trg_teacher_schedules_set_updated_at;
+-- +goose StatementBegin
+CREATE TRIGGER IF NOT EXISTS trg_teacher_schedules_set_updated_at AFTER UPDATE ON teacher_schedules
+WHEN OLD.updated_at = NEW.updated_at
+BEGIN
+    UPDATE teacher_schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+-- +goose StatementEnd
+
 DROP TRIGGER IF EXISTS trg_faculty_set_updated_at;
 -- +goose StatementBegin
 CREATE TRIGGER IF NOT EXISTS trg_faculty_set_updated_at AFTER UPDATE ON faculty
@@ -23,6 +41,23 @@ BEGIN
     UPDATE faculty SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 -- +goose StatementEnd
+
+DROP TRIGGER IF EXISTS trg_teacher_schedules_set_updated_at;
+-- +goose StatementBegin
+CREATE TRIGGER IF NOT EXISTS trg_teacher_schedules_set_updated_at AFTER UPDATE ON teacher_schedules
+BEGIN
+    UPDATE teacher_schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+-- +goose StatementEnd
+
+DROP TRIGGER IF EXISTS trg_schedules_set_updated_at;
+-- +goose StatementBegin
+CREATE TRIGGER IF NOT EXISTS trg_schedules_set_updated_at AFTER UPDATE ON schedules
+BEGIN
+    UPDATE schedules SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+-- +goose StatementEnd
+
 DROP INDEX IF EXISTS idx_faculty_short_name_lower;
 DROP INDEX IF EXISTS idx_faculty_full_name_lower;
 ALTER TABLE faculty DROP COLUMN short_name_lower;
