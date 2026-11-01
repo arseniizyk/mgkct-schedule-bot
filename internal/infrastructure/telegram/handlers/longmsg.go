@@ -14,6 +14,8 @@ func sendLongMessage(c tele.Context, text string, opt ...any) error {
 		return nil
 	}
 
+	intermediateOpts := extractParseMode(opt)
+
 	for i, chunk := range chunks {
 		// Клавиатуру прикрепляем только к последнему сообщению
 		if i == len(chunks)-1 {
@@ -21,13 +23,23 @@ func sendLongMessage(c tele.Context, text string, opt ...any) error {
 				return err
 			}
 		} else {
-			if err := c.Send(chunk, tele.ModeMarkdown); err != nil {
+			if err := c.Send(chunk, intermediateOpts...); err != nil {
 				return err
 			}
 		}
 	}
 
 	return nil
+}
+
+func extractParseMode(opts []any) []any {
+	var res []any
+	for _, o := range opts {
+		if s, ok := o.(string); ok && (s == tele.ModeMarkdown || s == tele.ModeMarkdownV2 || s == tele.ModeHTML) {
+			res = append(res, s)
+		}
+	}
+	return res
 }
 
 func editLongMessage(c tele.Context, text string, opt ...any) error {

@@ -86,6 +86,9 @@ func New(
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	return s
@@ -486,7 +489,7 @@ func (s *Server) handleCalls(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) extractUser(r *http.Request) (*auth.TelegramUser, error) {
 	authHeader := r.Header.Get("Authorization")
 	if initData, ok := strings.CutPrefix(authHeader, "tma "); ok {
-		user, err := auth.ValidateInitData(initData, s.cfg.Bot.Token, 24*time.Hour)
+		user, err := auth.ValidateInitData(initData, s.cfg.Bot.Token, 15*time.Minute)
 		if err == nil {
 			return user, nil
 		}
@@ -539,6 +542,7 @@ func (s *Server) handleSetUserProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed reading body", http.StatusBadRequest)

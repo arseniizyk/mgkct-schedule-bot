@@ -48,10 +48,10 @@ func ValidateInitData(initData, botToken string, maxAge time.Duration) (*Telegra
 		return nil, ErrMissingHash
 	}
 
-	// Формируем список пар ключ=значение без hash
+	// Формируем список пар ключ=значение без hash и signature
 	var pairs []string
 	for k := range values {
-		if k == "hash" {
+		if k == "hash" || k == "signature" {
 			continue
 		}
 		pairs = append(pairs, fmt.Sprintf("%s=%s", k, values.Get(k)))
@@ -76,14 +76,21 @@ func ValidateInitData(initData, botToken string, maxAge time.Duration) (*Telegra
 	// Проверка возраста сессии (если задан maxAge)
 	if maxAge > 0 {
 		authDateStr := values.Get("auth_date")
-		if authDateStr != "" {
-			sec, err := strconv.ParseInt(authDateStr, 10, 64)
-			if err == nil {
-				authTime := time.Unix(sec, 0)
-				if time.Since(authTime) > maxAge {
-					return nil, ErrOutdatedAuth
-				}
-			}
+		if authDateStr == "" {
+			return nil, ErrOutdatedAuth
+		}
+		sec, err := strconv.ParseInt(authDateStr, 10, 64)
+		if err != nil {
+			return nil, ErrOutdatedAuth
+		}
+		authTime := time.Unix(sec, 0)
+		now := time.Now()
+		// Защита от clock skew: отклоняем время в будущем более чем на 5 минут
+		if authTime.After(now.Add(5 * time.Minute)) {
+			return nil, ErrOutdatedAuth
+		}
+		if now.Sub(authTime) > maxAge {
+			return nil, ErrOutdatedAuth
 		}
 	}
 
