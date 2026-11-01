@@ -381,6 +381,73 @@ func TestScraperService_ErrorAlertAndRecovery(t *testing.T) {
 	assert.True(t, gotRecoverEvent, "expected EventScraperRecovered")
 }
 
+func TestScraperService_SingleParserErrorAlert(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	studentParser := &mockCountingStudentParser{failsLeft: 5}
+	teacherParser := &mockTeacherParser{res: nil} // учитель всегда успешен
+
+	schedRepo := &mockScheduleRepo{schedules: make(map[time.Time]*entities.Schedule)}
+	teachRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+
+	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
+	scraperSvc := service.NewScraperService(
+		slog.Default(),
+		config.ScraperConfig{
+			Interval:      10 * time.Millisecond,
+			PeakInterval:  10 * time.Millisecond,
+			NightInterval: 10 * time.Millisecond,
+		},
+		studentParser,
+		teacherParser,
+		schedRepo,
+		teachRepo,
+		schedSvc,
+	)
+
+	eventCh := make(chan service.Event, 10)
+	go scraperSvc.Start(ctx, eventCh)
+
+	var gotErrorEvent, gotRecoverEvent bool
+	timeout := time.After(2 * time.Second)
+
+	for !gotErrorEvent || !gotRecoverEvent {
+		select {
+		case ev := <-eventCh:
+			switch ev.Type {
+			case service.EventScraperError:
+				gotErrorEvent = true
+				assert.Equal(t, 5, ev.ConsecutiveFails)
+				require.Error(t, ev.Err)
+			case service.EventScraperRecovered:
+				gotRecoverEvent = true
+			default:
+			}
+		case <-timeout:
+			t.Fatalf("timeout waiting for single parser error/recovery events: gotError=%v, gotRecover=%v", gotErrorEvent, gotRecoverEvent)
+		}
+	}
+
+	assert.True(t, gotErrorEvent, "expected EventScraperError when only studentParser fails")
+	assert.True(t, gotRecoverEvent, "expected EventScraperRecovered")
+}
+
+type mockCountingStudentParser struct {
+	mu        sync.Mutex
+	failsLeft int
+}
+
+func (m *mockCountingStudentParser) Parse(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failsLeft > 0 {
+		m.failsLeft--
+		return nil, assert.AnError
+	}
+	return make(map[time.Time]*entities.Schedule), nil
+}
+
 func TestScraperService_PastChangesSavedToDBWithoutEmittingEvent(t *testing.T) {
 	ctx := t.Context()
 

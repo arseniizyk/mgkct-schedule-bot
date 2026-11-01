@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -37,18 +38,20 @@ type ScraperService struct {
 	facultyParser FacultyParser
 	facultyRepo   FacultyRepository
 
-	mu                  sync.RWMutex
-	latestWeek          time.Time
-	lastFacultyScrape   time.Time
-	groupHashes         map[string][32]byte          // key: "<group_id>:<YYYY-MM-DD>"
-	teacherHashes       map[string][32]byte          // key: "<teacher_name>:<YYYY-MM-DD>"
-	groupSchedules      map[string]*entities.Group   // key: "<group_id>:<YYYY-MM-DD>"
-	teacherSchedules    map[string]*entities.Teacher // key: "<teacher_name>:<YYYY-MM-DD>"
-	nowFunc             func() time.Time
-	newWeekFoundInTurbo bool
-	consecutiveErrors   int
-	adminAlerted        bool
-	lastAlertTime       time.Time
+	mu                      sync.RWMutex
+	latestWeek              time.Time
+	lastFacultyScrape       time.Time
+	lastFacultyAttempt      time.Time
+	facultyScrapeInProgress bool
+	groupHashes             map[string][32]byte          // key: "<group_id>:<YYYY-MM-DD>"
+	teacherHashes           map[string][32]byte          // key: "<teacher_name>:<YYYY-MM-DD>"
+	groupSchedules          map[string]*entities.Group   // key: "<group_id>:<YYYY-MM-DD>"
+	teacherSchedules        map[string]*entities.Teacher // key: "<teacher_name>:<YYYY-MM-DD>"
+	nowFunc                 func() time.Time
+	newWeekFoundInTurbo     bool
+	consecutiveErrors       int
+	adminAlerted            bool
+	lastAlertTime           time.Time
 }
 
 type TeacherScheduleCacheInvalidator interface {
@@ -128,6 +131,12 @@ func (s *ScraperService) cleanupOldWeeksLocked(currentWeekStart time.Time) {
 }
 
 func (s *ScraperService) scrapeFaculty(ctx context.Context) {
+	defer func() {
+		s.mu.Lock()
+		s.facultyScrapeInProgress = false
+		s.mu.Unlock()
+	}()
+
 	s.mu.RLock()
 	parser := s.facultyParser
 	repo := s.facultyRepo
@@ -291,8 +300,8 @@ func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 
 	// Отслеживание сбоев скрапинга и алертов
 	var scrapeErr error
-	if studentErr != nil && teacherErr != nil {
-		scrapeErr = fmt.Errorf("students: %w; teachers: %w", studentErr, teacherErr)
+	if studentErr != nil || teacherErr != nil {
+		scrapeErr = errors.Join(studentErr, teacherErr)
 	}
 
 	s.mu.Lock()
@@ -303,11 +312,11 @@ func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 			s.lastAlertTime = time.Now()
 			fails := s.consecutiveErrors
 			s.mu.Unlock()
-			eventCh <- Event{
+			sendEvent(ctx, eventCh, Event{
 				Type:             EventScraperError,
 				Err:              scrapeErr,
 				ConsecutiveFails: fails,
-			}
+			})
 		} else {
 			s.mu.Unlock()
 		}
@@ -318,16 +327,24 @@ func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 		s.mu.Unlock()
 
 		if wasAlerted {
-			eventCh <- Event{
+			sendEvent(ctx, eventCh, Event{
 				Type: EventScraperRecovered,
-			}
+			})
 		}
 	}
 
 	// 3. Скрапинг педсостава (раз в сутки или при первом старте)
-	s.mu.RLock()
-	needFaculty := s.facultyParser != nil && (s.lastFacultyScrape.IsZero() || time.Since(s.lastFacultyScrape) > 24*time.Hour)
-	s.mu.RUnlock()
+	s.mu.Lock()
+	needFaculty := s.facultyParser != nil &&
+		!s.facultyScrapeInProgress &&
+		(s.lastFacultyScrape.IsZero() || time.Since(s.lastFacultyScrape) > 24*time.Hour) &&
+		(s.lastFacultyAttempt.IsZero() || time.Since(s.lastFacultyAttempt) > 10*time.Minute)
+
+	if needFaculty {
+		s.facultyScrapeInProgress = true
+		s.lastFacultyAttempt = time.Now()
+	}
+	s.mu.Unlock()
 
 	if needFaculty {
 		go s.scrapeFaculty(ctx)
@@ -354,10 +371,10 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 		s.latestWeek = maxWeek
 		s.newWeekFoundInTurbo = true
 
-		eventCh <- Event{
+		sendEvent(ctx, eventCh, Event{
 			Type: EventNewWeek,
 			Week: maxWeek,
-		}
+		})
 	} else if s.latestWeek.IsZero() {
 		s.latestWeek = maxWeek
 	}
@@ -413,10 +430,12 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 
 	// Рассылаем нотификации подписчикам
 	for _, pe := range pendingEvents {
-		eventCh <- Event{
+		if !sendEvent(ctx, eventCh, Event{
 			Type:  EventGroupScheduleUpdated,
 			Group: pe.group,
 			Diff:  pe.diff,
+		}) {
+			return
 		}
 	}
 }
@@ -476,11 +495,22 @@ func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers [
 	}
 
 	for _, pe := range pendingEvents {
-		eventCh <- Event{
+		if !sendEvent(ctx, eventCh, Event{
 			Type:    EventTeacherScheduleUpdated,
 			Teacher: pe.teacher,
 			Diff:    pe.diff,
+		}) {
+			return
 		}
+	}
+}
+
+func sendEvent(ctx context.Context, eventCh chan<- Event, event Event) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case eventCh <- event:
+		return true
 	}
 }
 
