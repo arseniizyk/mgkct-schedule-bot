@@ -80,15 +80,15 @@ func BotInfo(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 		now := time.Now().In(minskLoc)
 
 		msg := fmt.Sprintf(
-			"ℹ️ <b>Информация о боте</b>\n\n" +
-				"👥 <b>Всего пользователей:</b> %d\n" +
-				"  • Студентов (с группой): %d\n" +
-				"  • Преподавателей: %d\n" +
-				"  • Без группы: %d\n\n" +
-				"📊 <b>Активность:</b>\n" +
-				"  • За 24 часа (DAU): %d\n" +
-				"  • За 7 дней (WAU): %d\n" +
-				"  • За 30 дней (MAU): %d\n\n" +
+			"ℹ️ <b>Информация о боте</b>\n\n"+
+				"👥 <b>Всего пользователей:</b> %d\n"+
+				"  • Студентов (с группой): %d\n"+
+				"  • Преподавателей: %d\n"+
+				"  • Без группы: %d\n\n"+
+				"📊 <b>Активность:</b>\n"+
+				"  • За 24 часа (DAU): %d\n"+
+				"  • За 7 дней (WAU): %d\n"+
+				"  • За 30 дней (MAU): %d\n\n"+
 				"⏰ <b>Время сервера:</b> %s MSK",
 			total, withGroup, withTeacher, noGroup,
 			actStats.DAU, actStats.WAU, actStats.MAU,
