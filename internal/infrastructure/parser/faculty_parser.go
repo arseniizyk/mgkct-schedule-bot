@@ -2,11 +2,10 @@ package parser
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
@@ -43,16 +42,7 @@ func NewFacultyParser(log *slog.Logger) *FacultyParser {
 		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
 	)
 
-	c.WithTransport(&http.Transport{
-		DisableKeepAlives: true,
-		ForceAttemptHTTP2: false,
-		TLSClientConfig: &tls.Config{
-			MinVersion:       tls.VersionTLS12,
-			MaxVersion:       tls.VersionTLS13,
-			CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
-		},
-	})
-
+	c.WithTransport(getSharedTransport())
 	c.SetRequestTimeout(requestTimeout)
 
 	return &FacultyParser{
@@ -67,40 +57,64 @@ func (fp *FacultyParser) Parse(ctx context.Context) ([]*entities.FacultyMember, 
 	var allMembers []*entities.FacultyMember
 
 	for _, page := range facultyPages {
-		col := fp.c.Clone()
 		var pageMembers []*entities.FacultyMember
 
-		col.OnError(func(r *colly.Response, err error) {
-			var urlStr string
-			if r != nil && r.Request != nil && r.Request.URL != nil {
-				urlStr = r.Request.URL.String()
-			}
-			log.WarnContext(ctx, "failed fetching faculty page", "url", urlStr, "error", err)
-		})
-
-		col.OnHTML(".card-body", func(e *colly.HTMLElement) {
-			titleSel := e.DOM.Find(".employee-card-title")
-			if titleSel.Length() == 0 {
-				return
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
 			}
 
-			fullName := strings.TrimSpace(titleSel.Text())
-			if fullName == "" {
-				return
+			pageMembers = nil
+			col := fp.c.Clone()
+			var visitErr error
+
+			col.OnError(func(r *colly.Response, err error) {
+				var urlStr string
+				if r != nil && r.Request != nil && r.Request.URL != nil {
+					urlStr = r.Request.URL.String()
+				}
+				visitErr = err
+				log.WarnContext(ctx, "failed fetching faculty page", "url", urlStr, "attempt", attempt, "error", err)
+			})
+
+			col.OnHTML(".card-body", func(e *colly.HTMLElement) {
+				titleSel := e.DOM.Find(".employee-card-title")
+				if titleSel.Length() == 0 {
+					return
+				}
+
+				fullName := strings.TrimSpace(titleSel.Text())
+				if fullName == "" {
+					return
+				}
+
+				member := parseEmployeeCard(e.DOM, fullName, page.Department)
+				if member != nil {
+					pageMembers = append(pageMembers, member)
+				}
+			})
+
+			err := col.Visit(page.URL)
+			if err == nil {
+				col.Wait()
 			}
 
-			member := parseEmployeeCard(e.DOM, fullName, page.Department)
-			if member != nil {
-				pageMembers = append(pageMembers, member)
+			if err == nil && visitErr == nil && len(pageMembers) > 0 {
+				break
 			}
-		})
 
-		if err := col.Visit(page.URL); err != nil {
-			log.WarnContext(ctx, "visit error for faculty page", "url", page.URL, "error", err)
-			continue
+			if attempt < maxAttempts {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(retryDelay):
+				}
+			}
 		}
 
-		allMembers = append(allMembers, pageMembers...)
+		if len(pageMembers) > 0 {
+			allMembers = append(allMembers, pageMembers...)
+		}
 	}
 
 	return allMembers, nil
