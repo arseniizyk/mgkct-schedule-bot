@@ -18,9 +18,11 @@ import (
 
 type mockScheduleRepo struct {
 	schedules map[time.Time]*entities.Schedule
+	saveCalls int
 }
 
 func (m *mockScheduleRepo) Save(ctx context.Context, week time.Time, schedule *entities.Schedule) error {
+	m.saveCalls++
 	m.schedules[week] = schedule
 	return nil
 }
@@ -601,4 +603,59 @@ func TestScraperService_ProcessingOrder_DiffBeforeDBUpdate(t *testing.T) {
 	saved, err := schedRepo.GetByWeek(ctx, futureWeek)
 	require.NoError(t, err)
 	assert.Equal(t, "102", saved.Groups[102].Days[0].Subjects[0].Pairs[0].Class)
+}
+
+func TestScraperService_NoRedundantDBSaveWhenUnchanged(t *testing.T) {
+	ctx := t.Context()
+
+	currentWeek := service.CurrentWeekMonday(time.Now())
+	grp := &entities.Group{
+		ID:   101,
+		Week: currentWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Математика", Class: "201"}}},
+				},
+			},
+		},
+	}
+
+	schedRepo := &mockScheduleRepo{schedules: map[time.Time]*entities.Schedule{
+		currentWeek: {
+			Groups: map[int32]*entities.Group{
+				101: grp,
+			},
+		},
+	}}
+	teachRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+
+	studentParser := &mockStudentParser{res: map[time.Time]*entities.Schedule{
+		currentWeek: {
+			Groups: map[int32]*entities.Group{
+				101: grp,
+			},
+		},
+	}}
+	teacherParser := &mockTeacherParser{res: nil}
+
+	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
+	scraperSvc := service.NewScraperService(
+		slog.Default(),
+		config.ScraperConfig{Interval: time.Hour, PeakInterval: time.Hour, NightInterval: time.Hour},
+		studentParser,
+		teacherParser,
+		schedRepo,
+		teachRepo,
+		schedSvc,
+	)
+
+	eventCh := make(chan service.Event, 10)
+	go scraperSvc.Start(ctx, eventCh)
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Начальное состояние уже в БД, поэтому при совпадении хэшей Save не должен вызываться повторно
+	assert.Equal(t, 0, schedRepo.saveCalls, "Save не должен вызываться для неизмененного расписания")
 }
