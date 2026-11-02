@@ -786,10 +786,16 @@ func TestScraperService_CacheInvalidation_NonLatestWeek(t *testing.T) {
 	}
 
 	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
+	tuesdayNow := currentWeek.AddDate(0, 0, 1).Add(10 * time.Hour) // Вторник 10:00 текущей недели
+	schedSvc.SetNowFunc(func() time.Time { return tuesdayNow })
 
-	// Заполняем кэш старыми данными текущей недели
+	// Заполняем оба кэша (weeksCache и быстрый active s.cache) старыми данными текущей недели
 	_, err := schedSvc.GetGroupScheduleByWeek(ctx, 101, currentWeek)
 	require.NoError(t, err)
+
+	latestPre, err := schedSvc.GetGroupLatestSchedule(ctx, 101)
+	require.NoError(t, err)
+	assert.Equal(t, "Математика", latestPre.Days[0].Subjects[0].Pairs[0].Name)
 
 	scraperSvc := service.NewScraperService(
 		slog.Default(),
@@ -810,10 +816,15 @@ func TestScraperService_CacheInvalidation_NonLatestWeek(t *testing.T) {
 		t.Fatal("timeout waiting for scrape cycle")
 	}
 
-	// Проверяем, что кэш текущей недели инвалидирован и отдает обновленное значение
+	// Проверяем, что weeksCache текущей недели инвалидирован и отдает обновленное значение
 	cached, err := schedSvc.GetGroupScheduleByWeek(ctx, 101, currentWeek)
 	require.NoError(t, err)
 	assert.Equal(t, "Информатика", cached.Days[0].Subjects[0].Pairs[0].Name)
+
+	// Проверяем, что активный кэш s.cache также инвалидирован и GetGroupLatestSchedule возвращает актуальные пары
+	latestPost, err := schedSvc.GetGroupLatestSchedule(ctx, 101)
+	require.NoError(t, err)
+	assert.Equal(t, "Информатика", latestPost.Days[0].Subjects[0].Pairs[0].Name)
 }
 
 func TestScraperService_FailedDBSave_RetriesOnNextTick(t *testing.T) {
