@@ -197,11 +197,12 @@ func (s *ScheduleService) SetCache(sch *entities.Schedule) {
 	}
 }
 
-// ClearWeeksCache принудительно очищает in-memory кэш недель.
+// ClearWeeksCache принудительно очищает in-memory кэш недель и активного расписания.
 func (s *ScheduleService) ClearWeeksCache() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.weeksCache = make(map[string]scheduleCacheItem)
+	s.cache = nil
 }
 
 func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {
