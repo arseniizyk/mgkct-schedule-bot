@@ -80,6 +80,26 @@ func TestUserRepository_SetUserGroup_WithSubgroup(t *testing.T) {
 	teacher, err := repo.GetTeacher(ctx, 12345)
 	require.NoError(t, err)
 	assert.Equal(t, "Иванов И.И.", teacher)
+
+	// 4. Проверка GetUserProfile для преподавателя
+	grp, sg, teach, err := repo.GetUserProfile(ctx, 12345)
+	require.NoError(t, err)
+	assert.Equal(t, 0, grp)
+	assert.Equal(t, 0, sg)
+	assert.Equal(t, "Иванов И.И.", teach)
+
+	// 5. Проверка GetUserProfile для студента
+	err = repo.SetUserGroup(ctx, 54321, 202, 2)
+	require.NoError(t, err)
+	grp, sg, teach, err = repo.GetUserProfile(ctx, 54321)
+	require.NoError(t, err)
+	assert.Equal(t, 202, grp)
+	assert.Equal(t, 2, sg)
+	assert.Empty(t, teach)
+
+	// 6. Проверка GetUserProfile для несуществующего пользователя
+	_, _, _, err = repo.GetUserProfile(ctx, 99999)
+	require.ErrorIs(t, err, domainerr.ErrUserNoGroup)
 }
 
 func TestUserRepository_AllUsers_AndEveningNotification(t *testing.T) {

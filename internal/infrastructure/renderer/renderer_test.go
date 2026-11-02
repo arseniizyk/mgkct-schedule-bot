@@ -335,3 +335,46 @@ func TestRenderGroupWeek_ConcurrencyAndSingleflight(t *testing.T) {
 		}
 	}
 }
+
+func TestRender_DifferentConcurrentRenders(t *testing.T) {
+	const goroutines = 6
+	errCh := make(chan error, goroutines)
+
+	for i := range goroutines {
+		grp := &entities.Group{
+			ID:   int32(100 + i),
+			Week: time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+			Days: []*entities.Day{
+				{
+					Name: "Понедельник | 02.11.2026",
+					Subjects: []*entities.Subject{
+						{
+							Pairs: []*entities.Pair{
+								{Name: "Пара", Type: "Лек", Class: "101", Group: "Преподаватель"},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		go func(g *entities.Group) {
+			b, err := RenderGroupWeek(g, 0)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if len(b) == 0 {
+				errCh <- os.ErrInvalid
+				return
+			}
+			errCh <- nil
+		}(grp)
+	}
+
+	for range goroutines {
+		if err := <-errCh; err != nil {
+			t.Fatalf("concurrent different renders failed: %v", err)
+		}
+	}
+}
