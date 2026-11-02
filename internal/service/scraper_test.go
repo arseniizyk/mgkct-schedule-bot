@@ -131,6 +131,9 @@ func (m *mockTeacherRepo) GetByWeek(ctx context.Context, name string, week time.
 func (m *mockTeacherRepo) GetLatest(ctx context.Context, name string) (*entities.Teacher, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.teachers[name] == nil {
+		return nil, nil
+	}
 	var maxWeek time.Time
 	for w := range m.teachers[name] {
 		if w.After(maxWeek) {
@@ -145,8 +148,13 @@ func (m *mockTeacherRepo) GetAllLatest(ctx context.Context) (map[string]*entitie
 	defer m.mu.RUnlock()
 	res := make(map[string]*entities.Teacher)
 	for name := range m.teachers {
-		t, _ := m.GetLatest(ctx, name)
-		res[name] = t
+		var maxWeek time.Time
+		for w := range m.teachers[name] {
+			if w.After(maxWeek) {
+				maxWeek = w
+			}
+		}
+		res[name] = m.teachers[name][maxWeek]
 	}
 	return res, nil
 }

@@ -11,6 +11,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/handlers"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
@@ -47,6 +48,16 @@ func (m *mockUserRepo) SubgroupByChatID(ctx context.Context, chatID int64) (int,
 
 func (m *mockUserRepo) GroupAndSubgroupByChatID(ctx context.Context, chatID int64) (int, int, error) {
 	return m.userGroup[chatID], m.userSubgroup[chatID], nil
+}
+
+func (m *mockUserRepo) GetUserProfile(ctx context.Context, chatID int64) (int, int, string, error) {
+	teacher := m.userTeacher[chatID]
+	grp := m.userGroup[chatID]
+	sg := m.userSubgroup[chatID]
+	if teacher == "" && grp == 0 {
+		return 0, 0, "", domainerr.ErrUserNoGroup
+	}
+	return grp, sg, teacher, nil
 }
 
 func (m *mockUserRepo) SetUserGroup(ctx context.Context, chatID int64, groupID int, subgroup int) error {

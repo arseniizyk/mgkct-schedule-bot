@@ -433,16 +433,23 @@ func (n *Notifier) SendNextDayDigestForGroupSubgroup(
 	schedProvider ScheduleProvider,
 	targetGroup int,
 	targetSubgroup int,
+	preloadedUsers ...[]entities.User,
 ) ([]int64, error) {
 	log := n.log.With(
 		"operation", "notifier.Notifier.SendNextDayDigestForGroupSubgroup",
 		"group", targetGroup,
 		"subgroup", targetSubgroup,
 	)
-	users, err := n.userStore.UsersForEveningNotification(ctx)
-	if err != nil {
-		log.ErrorContext(ctx, "failed getting users for digest", "error", err)
-		return nil, err
+	var users []entities.User
+	var err error
+	if len(preloadedUsers) > 0 && preloadedUsers[0] != nil {
+		users = preloadedUsers[0]
+	} else {
+		users, err = n.userStore.UsersForEveningNotification(ctx)
+		if err != nil {
+			log.ErrorContext(ctx, "failed getting users for digest", "error", err)
+			return nil, err
+		}
 	}
 
 	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
@@ -487,12 +494,19 @@ func (n *Notifier) SendNextDayDigestForTeacher(
 	ctx context.Context,
 	teacherProvider TeacherProvider,
 	targetTeacher string,
+	preloadedUsers ...[]entities.User,
 ) ([]int64, error) {
 	log := n.log.With("operation", "notifier.Notifier.SendNextDayDigestForTeacher", "teacher", targetTeacher)
-	users, err := n.userStore.UsersForEveningNotification(ctx)
-	if err != nil {
-		log.ErrorContext(ctx, "failed getting users for digest", "error", err)
-		return nil, err
+	var users []entities.User
+	var err error
+	if len(preloadedUsers) > 0 && preloadedUsers[0] != nil {
+		users = preloadedUsers[0]
+	} else {
+		users, err = n.userStore.UsersForEveningNotification(ctx)
+		if err != nil {
+			log.ErrorContext(ctx, "failed getting users for digest", "error", err)
+			return nil, err
+		}
 	}
 
 	targetDate, dayIdx := CalculateTomorrowDate(time.Now())

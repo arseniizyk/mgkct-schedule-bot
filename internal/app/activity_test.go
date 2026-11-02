@@ -49,6 +49,20 @@ func TestActivityWorker_TouchAndDebounce(t *testing.T) {
 	assert.Len(t, worker.ch, 2)
 }
 
+func TestActivityWorker_CleanupOldEntries(t *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
+	updater := &mockActivityUpdater{}
+	worker := newActivityWorker(logger, updater)
+
+	worker.lastSeen[1] = time.Now().Add(-2 * time.Hour)
+	worker.lastSeen[2] = time.Now().Add(-30 * time.Minute)
+
+	worker.cleanupOldEntries(time.Now().Add(-1 * time.Hour))
+
+	assert.NotContains(t, worker.lastSeen, int64(1))
+	assert.Contains(t, worker.lastSeen, int64(2))
+}
+
 func TestActivityWorker_QueueFull_DoesNotLockLastSeen(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	updater := &mockActivityUpdater{}

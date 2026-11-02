@@ -601,6 +601,9 @@ func (s *Server) spaHandler(files fs.FS) http.Handler {
 		f, err := files.Open(path)
 		if err == nil {
 			_ = f.Close()
+			if path != "index.html" && (strings.HasSuffix(path, ".css") || strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".ico") || strings.HasSuffix(path, ".svg")) {
+				w.Header().Set("Cache-Control", "public, max-age=3600")
+			}
 			fileServer.ServeHTTP(w, r)
 			return
 		}

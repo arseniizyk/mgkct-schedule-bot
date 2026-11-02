@@ -507,15 +507,16 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 				}
 			}
 
-			// 1. В учебные дни (Пн..Сб) до 20:00: проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на следующий рабочий день
-			if todayWeekday >= time.Monday && todayWeekday <= time.Saturday && localTime.Hour() < 20 {
+			// 1. В учебные дни (Пн..Сб) в интервале 10:40–20:00: проверяем подписчиков: если их пары на сегодня уже закончились — высылаем расписание на следующий рабочий день
+			isDigestTime := localTime.Hour() > 10 || (localTime.Hour() == 10 && localTime.Minute() >= 40)
+			if todayWeekday >= time.Monday && todayWeekday <= time.Saturday && isDigestTime && localTime.Hour() < 20 {
 				dayIdx := int(todayWeekday - 1) // 0..5 для Пн..Сб
 
 				users, err := a.notifier.UsersForNotification(ctx)
 				if err == nil && len(users) > 0 {
 					uniqueTargets, uniqueTeachers := extractUniqueRecipients(users)
-					a.notifyGroupsAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTargets, todayStr)
-					a.notifyTeachersAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTeachers, todayStr)
+					a.notifyGroupsAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTargets, todayStr, users)
+					a.notifyTeachersAfterLessons(ctx, localTime, dayIdx, minskLoc, uniqueTeachers, todayStr, users)
 				}
 			}
 
@@ -552,7 +553,7 @@ func (a *App) sendEveningDigestFallback(ctx context.Context, todayStr string) {
 			log.Warn("failed marking group digest as sent", "group", target.groupID, "subgroup", target.subgroup, "error", err)
 		}
 
-		if _, sendErr := a.notifier.SendNextDayDigestForGroupSubgroup(ctx, a.scheduleSvc, target.groupID, target.subgroup); sendErr != nil {
+		if _, sendErr := a.notifier.SendNextDayDigestForGroupSubgroup(ctx, a.scheduleSvc, target.groupID, target.subgroup, users); sendErr != nil {
 			log.Warn("failed sending evening digest for group/subgroup",
 				"group", target.groupID,
 				"subgroup", target.subgroup,
@@ -575,7 +576,7 @@ func (a *App) sendEveningDigestFallback(ctx context.Context, todayStr string) {
 			log.Warn("failed marking teacher digest as sent", "teacher", teacherName, "error", err)
 		}
 
-		if _, sendErr := a.notifier.SendNextDayDigestForTeacher(ctx, a.teacherSvc, teacherName); sendErr != nil {
+		if _, sendErr := a.notifier.SendNextDayDigestForTeacher(ctx, a.teacherSvc, teacherName, users); sendErr != nil {
 			log.Warn("failed sending evening digest for teacher",
 				"teacher", teacherName,
 				"error", sendErr,
@@ -604,6 +605,7 @@ func (a *App) notifyGroupsAfterLessons(
 	loc *time.Location,
 	targets map[groupSubgroupKey]struct{},
 	todayStr string,
+	users []entities.User,
 ) {
 	for target := range targets {
 		// Проверяем в БД: уже отправляли дайджест сегодня для этой группы/подгруппы?
@@ -648,7 +650,7 @@ func (a *App) notifyGroupsAfterLessons(
 			"time", localTime.Format("15:04:05"),
 		)
 
-		if _, sendErr := a.notifier.SendNextDayDigestForGroupSubgroup(ctx, a.scheduleSvc, target.groupID, target.subgroup); sendErr != nil {
+		if _, sendErr := a.notifier.SendNextDayDigestForGroupSubgroup(ctx, a.scheduleSvc, target.groupID, target.subgroup, users); sendErr != nil {
 			a.log.Warn("failed sending next day digest for group/subgroup",
 				"group", target.groupID,
 				"subgroup", target.subgroup,
@@ -665,6 +667,7 @@ func (a *App) notifyTeachersAfterLessons(
 	loc *time.Location,
 	teachers map[string]struct{},
 	todayStr string,
+	users []entities.User,
 ) {
 	for teacherName := range teachers {
 		// Проверяем в БД: уже отправляли дайджест сегодня для этого преподавателя?
@@ -702,7 +705,7 @@ func (a *App) notifyTeachersAfterLessons(
 			"time", localTime.Format("15:04:05"),
 		)
 
-		if _, sendErr := a.notifier.SendNextDayDigestForTeacher(ctx, a.teacherSvc, teacherName); sendErr != nil {
+		if _, sendErr := a.notifier.SendNextDayDigestForTeacher(ctx, a.teacherSvc, teacherName, users); sendErr != nil {
 			a.log.Warn("failed sending next day digest for teacher", "teacher", teacherName, "error", sendErr)
 		}
 	}
