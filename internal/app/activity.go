@@ -46,11 +46,26 @@ func (w *activityWorker) Touch(chatID int64) {
 	}
 }
 
+func (w *activityWorker) cleanupOldEntries(cutoff time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for id, last := range w.lastSeen {
+		if last.Before(cutoff) {
+			delete(w.lastSeen, id)
+		}
+	}
+}
+
 func (w *activityWorker) Run(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			w.cleanupOldEntries(time.Now().Add(-1 * time.Hour))
 		case chatID := <-w.ch:
 			updateCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			if err := w.updater.UpdateActivity(updateCtx, chatID); err != nil {
