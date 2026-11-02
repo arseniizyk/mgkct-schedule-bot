@@ -371,11 +371,13 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 	currentWeekStart := CurrentWeekMonday(now)
 
 	s.mu.Lock()
+	newWeekDetected := false
 	// Проверяем появление новой недели: ровно ОДНО событие!
 	if !s.latestWeek.IsZero() && maxWeek.After(s.latestWeek) {
 		log.InfoContext(ctx, "NEW WEEK DETECTED!", "old_week", s.latestWeek, "new_week", maxWeek)
 		s.latestWeek = maxWeek
 		s.newWeekFoundInTurbo = true
+		newWeekDetected = true
 
 		sendEvent(ctx, eventCh, Event{
 			Type: EventNewWeek,
@@ -383,11 +385,7 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 		})
 	} else if s.latestWeek.IsZero() {
 		s.latestWeek = maxWeek
-	}
-
-	// Обновляем кэш последней недели
-	if latestSch, ok := schedules[s.latestWeek]; ok {
-		s.scheduleSvc.SetCache(latestSch)
+		newWeekDetected = true
 	}
 
 	s.cleanupOldWeeksLocked(currentWeekStart)
@@ -397,8 +395,16 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 		diff  *entities.ScheduleDiff
 	}
 	var pendingEvents []pendingGroupEvent
+	weeksToSave := make(map[time.Time]*entities.Schedule)
+	if newWeekDetected {
+		if sch, ok := schedules[maxWeek]; ok {
+			weeksToSave[maxWeek] = sch
+		}
+	}
 
-	for _, sch := range schedules {
+	latestWeekChanged := newWeekDetected
+
+	for week, sch := range schedules {
 		for groupID, group := range sch.Groups {
 			newHash, err := hashItem(group)
 			if err != nil {
@@ -408,6 +414,13 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 			key := fmt.Sprintf("%d:%s", groupID, group.Week.Format("2006-01-02"))
 			oldHash, exists := s.groupHashes[key]
 			oldGroup := s.groupSchedules[key]
+
+			if !exists || oldHash != newHash {
+				weeksToSave[week] = sch
+				if week.Equal(s.latestWeek) {
+					latestWeekChanged = true
+				}
+			}
 
 			if exists && oldHash != newHash {
 				log.InfoContext(ctx, "group schedule updated", "group_id", groupID, "week", group.Week)
@@ -424,10 +437,17 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 			s.groupSchedules[key] = group
 		}
 	}
+
+	// Обновляем кэш последней недели только при обнаружении новой недели или изменениях в ней
+	if latestWeekChanged {
+		if latestSch, ok := schedules[s.latestWeek]; ok {
+			s.scheduleSvc.SetCache(latestSch)
+		}
+	}
 	s.mu.Unlock()
 
-	// Сохраняем каждую распарсенную неделю в БД
-	for week, sch := range schedules {
+	// Сохраняем в БД только измененные недели
+	for week, sch := range weeksToSave {
 		if err := s.scheduleRepo.Save(ctx, week, sch); err != nil {
 			log.ErrorContext(ctx, "failed saving schedule for week", "week", week, "error", err)
 			continue
