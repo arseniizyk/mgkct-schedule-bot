@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/service"
 )
 
@@ -116,6 +117,51 @@ func TestTeacherService_Archive(t *testing.T) {
 	teach, err = svc.GetTeacherArchiveSchedule(ctx, "Иванов И. И.", midweek)
 	require.NoError(t, err)
 	assert.Equal(t, "Иванов И. И.", teach.Name)
+}
+
+type strictExactWeekTeacherRepo struct {
+	mockTeacherRepo
+}
+
+func (s *strictExactWeekTeacherRepo) GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
+	if s.teachers[name] == nil {
+		return nil, domainerr.ErrWeekNotFound
+	}
+	t, ok := s.teachers[name][week]
+	if !ok {
+		return nil, domainerr.ErrWeekNotFound
+	}
+	return t, nil
+}
+
+func TestTeacherService_GetTeacherArchiveSchedule_MidweekStrictRepo(t *testing.T) {
+	ctx := context.Background()
+	monday, _ := time.Parse("2006-01-02", "2026-10-12")
+	midweek, _ := time.Parse("2006-01-02", "2026-10-14")
+
+	repo := &strictExactWeekTeacherRepo{
+		mockTeacherRepo{
+			teachers: map[string]map[time.Time]*entities.Teacher{
+				"Иванов И. И.": {
+					monday: {Name: "Иванов И. И.", Week: monday},
+				},
+			},
+		},
+	}
+
+	svc := service.NewTeacherService(slog.Default(), repo, nil, nil)
+	teach, err := svc.GetTeacherArchiveSchedule(ctx, "Иванов И. И.", midweek)
+	require.NoError(t, err)
+	assert.Equal(t, "Иванов И. И.", teach.Name)
+
+	// Несуществующий преподаватель
+	_, err = svc.GetTeacherArchiveSchedule(ctx, "Петров П. П.", midweek)
+	require.Error(t, err)
+
+	// Несуществующая неделя
+	otherWeek, _ := time.Parse("2006-01-02", "2026-10-21")
+	_, err = svc.GetTeacherArchiveSchedule(ctx, "Иванов И. И.", otherWeek)
+	require.Error(t, err)
 }
 
 func TestTeacherService_FindSimilarTeachers(t *testing.T) {

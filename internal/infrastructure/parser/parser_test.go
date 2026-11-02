@@ -197,3 +197,36 @@ func TestCleanTextHtmlEntitiesAndTags(t *testing.T) {
 		t.Errorf("cleanText(%q) = %q, want %q", raw, got, expected)
 	}
 }
+
+func TestParsePairs_SubgroupPrefix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{input: "1.Предмет", expected: "1. Предмет"},
+		{input: "1. Предмет", expected: "1. Предмет"},
+		{input: "2.Предмет", expected: "2. Предмет"},
+		{input: "2. Предмет", expected: "2. Предмет"},
+		{input: "Информатика", expected: "Информатика"},
+		{input: "Бел.яз", expected: "Бел.яз"},
+		{input: "", expected: ""},
+		{input: "1.", expected: "1."},
+		{input: "2.", expected: "2."},
+		{input: "   ", expected: ""},
+		{input: "1. ", expected: "1."},
+		{input: "1", expected: "1"},
+		{input: "2", expected: "2"},
+	}
+
+	for _, tt := range tests {
+		pairs := parsePairs([]string{tt.input}, []string{"101"})
+		if len(pairs) != 1 {
+			t.Fatalf("expected 1 pair, got %d", len(pairs))
+		}
+		if pairs[0].Name != tt.expected {
+			t.Errorf("parsePairs(%q) = %q, want %q", tt.input, pairs[0].Name, tt.expected)
+		}
+	}
+}

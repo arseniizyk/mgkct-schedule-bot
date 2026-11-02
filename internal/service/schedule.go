@@ -289,24 +289,9 @@ func (s *ScheduleService) GetArchiveSchedule(ctx context.Context, groupID int32,
 	monday := targetDate.AddDate(0, 0, -weekday)
 
 	grp, err := s.GetGroupScheduleByWeek(ctx, groupID, monday)
-	if err == nil {
-		return grp, nil
-	}
-
-	sch, err := s.scheduleRepo.GetByWeek(ctx, targetDate)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	group, ok := sch.Groups[groupID]
-	if !ok {
-		return nil, domainerr.ErrGroupNotFound
-	}
-
-	diff := targetDate.Sub(group.Week)
-	if diff < 0 || diff > 7*24*time.Hour {
-		return nil, domainerr.ErrWeekNotFound
-	}
-
-	return group, nil
+	return grp, nil
 }
