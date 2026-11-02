@@ -52,14 +52,14 @@
 - **`main` (Production):**
   - Protected by Branch Protection (direct push and force push are prohibited).
   - Merging is permitted **strictly from the `dev` branch** via Pull Request.
-  - Requires 2 approving reviews and passing all status checks: `Build & Test`, `golangci-lint`, `govulncheck`, `PR into main only from dev`.
+  - Requires at least 1 approving review and passing all status checks: `Build & Test`, `golangci-lint`, `govulncheck`, `PR into main only from dev`.
   - Rules apply to all users, including repository administrators.
 - **`dev` (Staging / Main Development Branch):**
   - Protected by Branch Protection (direct push and force push are prohibited).
   - Features and bugfixes are merged via Pull Request from working branches (`feat/*`, `fix/*`, `perf/*`).
-  - Requires 2 approving reviews and passing all status checks: `Build & Test`, `golangci-lint`, `govulncheck`.
+  - Requires at least 1 approving review and passing all status checks: `Build & Test`, `golangci-lint`, `govulncheck`.
 - **Pull Request Rules:**
-  - **Required Reviewers:** Every PR must request reviews from `@abesanets` and `@arseniizyk`. Both approvals are required to merge.
+  - **Reviewers:** Every PR requests reviews from `@abesanets` and `@arseniizyk`. An approving review from either maintainer is required to merge.
   - **Assignee:** The PR author **must always** be assigned to the PR.
 - **Contributor Guidelines:**
   - New branches must be created from `dev`.
