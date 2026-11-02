@@ -2,13 +2,12 @@ package parser
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly"
@@ -34,16 +33,7 @@ func NewTeacherParser(log *slog.Logger) *TeacherParser {
 		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
 	)
 
-	c.WithTransport(&http.Transport{
-		DisableKeepAlives: true,
-		ForceAttemptHTTP2: false,
-		TLSClientConfig: &tls.Config{
-			MinVersion:       tls.VersionTLS12,
-			MaxVersion:       tls.VersionTLS13,
-			CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
-		},
-	})
-
+	c.WithTransport(getSharedTransport())
 	c.SetRequestTimeout(requestTimeout)
 
 	return &TeacherParser{
@@ -56,66 +46,88 @@ func NewTeacherParser(log *slog.Logger) *TeacherParser {
 func (tp *TeacherParser) Parse(ctx context.Context) ([]*entities.Teacher, error) {
 	log := tp.log.With("operation", "parser.TeacherParser.Parse")
 
-	col := tp.c.Clone()
-
-	var teachers []*entities.Teacher
-
-	col.OnError(func(r *colly.Response, err error) {
-		var urlStr string
-		if r != nil && r.Request != nil && r.Request.URL != nil {
-			urlStr = r.Request.URL.String()
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
-		log.ErrorContext(ctx, "visit error", "url", urlStr, "error", err)
-	})
 
-	col.OnHTML("h2", func(e *colly.HTMLElement) {
-		teacherName, err := parseTeacherName(e.Text)
-		if err != nil {
-			if errors.Is(err, ErrBadTeacher) {
+		var teachers []*entities.Teacher
+		col := tp.c.Clone()
+
+		var visitErr error
+		col.OnError(func(r *colly.Response, err error) {
+			var urlStr string
+			if r != nil && r.Request != nil && r.Request.URL != nil {
+				urlStr = r.Request.URL.String()
+			}
+			visitErr = err
+			log.WarnContext(ctx, "visit error", "url", urlStr, "attempt", attempt, "error", err)
+		})
+
+		col.OnHTML("h2", func(e *colly.HTMLElement) {
+			teacherName, err := parseTeacherName(e.Text)
+			if err != nil {
+				if errors.Is(err, ErrBadTeacher) {
+					return
+				}
+				log.WarnContext(ctx, "can't get teacher from h2", "text", e.Text, "error", err)
 				return
 			}
-			log.WarnContext(ctx, "can't get teacher from h2", "text", e.Text, "error", err)
-			return
-		}
 
-		h3Sel := e.DOM.NextUntil("h2").Filter("h3").First()
-		if h3Sel.Length() == 0 {
-			log.WarnContext(ctx, "no h3 found after h2 for teacher", "name", teacherName)
-			return
-		}
+			h3Sel := e.DOM.NextUntil("h2").Filter("h3").First()
+			if h3Sel.Length() == 0 {
+				log.WarnContext(ctx, "no h3 found after h2 for teacher", "name", teacherName)
+				return
+			}
 
-		week, err := parseWeek(h3Sel.Text())
-		if err != nil {
-			log.WarnContext(ctx, "can't parse week", "text", h3Sel.Text(), "error", err)
-			return
-		}
+			week, err := parseWeek(h3Sel.Text())
+			if err != nil {
+				log.WarnContext(ctx, "can't parse week", "text", h3Sel.Text(), "error", err)
+				return
+			}
 
-		tableSel := e.DOM.NextUntil("h2").Filter("table").First()
-		if tableSel.Length() == 0 {
-			log.WarnContext(ctx, "no table found after h2 for teacher", "name", teacherName)
-			return
-		}
+			tableSel := e.DOM.NextUntil("h2").Filter("table").First()
+			if tableSel.Length() == 0 {
+				log.WarnContext(ctx, "no table found after h2 for teacher", "name", teacherName)
+				return
+			}
 
-		days := parseTeacherRows(tableSel.Find("tbody tr"))
+			days := parseTeacherRows(tableSel.Find("tbody tr"))
 
-		teachers = append(teachers, &entities.Teacher{
-			Name: teacherName,
-			Week: week,
-			Days: days,
+			teachers = append(teachers, &entities.Teacher{
+				Name: teacherName,
+				Week: week,
+				Days: days,
+			})
 		})
-	})
 
-	if err := col.Visit(teacherURL); err != nil {
-		return nil, fmt.Errorf("visit failed: %w", err)
+		err := col.Visit(teacherURL)
+		if err == nil {
+			col.Wait()
+		}
+
+		switch {
+		case err != nil:
+			lastErr = err
+		case visitErr != nil:
+			lastErr = visitErr
+		case len(teachers) == 0:
+			lastErr = fmt.Errorf("no teacher schedules parsed from %s", teacherURL)
+		default:
+			return teachers, nil
+		}
+
+		if attempt < maxAttempts {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(retryDelay):
+			}
+		}
 	}
 
-	col.Wait()
-
-	if len(teachers) == 0 {
-		return nil, fmt.Errorf("no teacher schedules parsed from %s", teacherURL)
-	}
-
-	return teachers, nil
+	return nil, fmt.Errorf("all %d attempts failed: %w", maxAttempts, lastErr)
 }
 
 func parseTeacherName(text string) (string, error) {

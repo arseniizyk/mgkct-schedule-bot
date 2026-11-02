@@ -50,6 +50,7 @@ type ScraperService struct {
 	nowFunc                 func() time.Time
 	newWeekFoundInTurbo     bool
 	consecutiveErrors       int
+	consecutiveSuccesses    int
 	adminAlerted            bool
 	lastAlertTime           time.Time
 }
@@ -307,6 +308,7 @@ func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 	s.mu.Lock()
 	if scrapeErr != nil {
 		s.consecutiveErrors++
+		s.consecutiveSuccesses = 0
 		if s.consecutiveErrors >= 5 && (!s.adminAlerted || time.Since(s.lastAlertTime) > 30*time.Minute) {
 			s.adminAlerted = true
 			s.lastAlertTime = time.Now()
@@ -321,12 +323,16 @@ func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 			s.mu.Unlock()
 		}
 	} else {
-		wasAlerted := s.adminAlerted
-		s.adminAlerted = false
 		s.consecutiveErrors = 0
+		s.consecutiveSuccesses++
+		wasAlerted := s.adminAlerted
+		shouldSendRecovered := wasAlerted && s.consecutiveSuccesses >= 2
+		if shouldSendRecovered {
+			s.adminAlerted = false
+		}
 		s.mu.Unlock()
 
-		if wasAlerted {
+		if shouldSendRecovered {
 			sendEvent(ctx, eventCh, Event{
 				Type: EventScraperRecovered,
 			})
