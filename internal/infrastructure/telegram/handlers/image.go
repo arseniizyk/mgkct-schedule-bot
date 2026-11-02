@@ -45,14 +45,13 @@ func ScheduleImage(
 			return sendTeacherWeekImage(ctx, log, c, teacherSvc, matched)
 		}
 
-		teacherName, err := userRepo.GetTeacher(ctx, c.Chat().ID)
-		if err == nil && teacherName != "" {
-			return sendTeacherWeekImage(ctx, log, c, teacherSvc, teacherName)
-		}
-
-		groupID, subgroup, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID)
+		groupID, subgroup, teacherName, err := userRepo.GetUserProfile(ctx, c.Chat().ID)
 		if err != nil {
 			return c.Send(formatter.FormatErrorMessage(err))
+		}
+
+		if teacherName != "" {
+			return sendTeacherWeekImage(ctx, log, c, teacherSvc, teacherName)
 		}
 
 		return sendGroupWeekImage(ctx, log, c, schedSvc, groupID, subgroup)

@@ -190,6 +190,48 @@ func (r *UserRepository) GroupAndSubgroupByChatID(ctx context.Context, chatID in
 	return int(groupID.Int64), sg, nil
 }
 
+// GetUserProfile возвращает группу, подгруппу и имя преподавателя пользователя за один SQL-запрос.
+func (r *UserRepository) GetUserProfile(ctx context.Context, chatID int64) (int, int, string, error) {
+	const op = "repository.UserRepository.GetUserProfile"
+
+	query := r.sb.Select("group_id, subgroup, teacher_name").From("users").Where(sq.Eq{"chat_id": chatID})
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return 0, 0, "", fmt.Errorf("%s: failed to build sql query: %w", op, err)
+	}
+
+	var (
+		groupID     sql.NullInt64
+		subgroup    sql.NullInt64
+		teacherName sql.NullString
+	)
+	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&groupID, &subgroup, &teacherName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, 0, "", domainerr.ErrUserNoGroup
+		}
+		return 0, 0, "", fmt.Errorf("%s: failed to execute sql query: %w", op, err)
+	}
+
+	var gid, sg int
+	if groupID.Valid {
+		gid = int(groupID.Int64)
+	}
+	if subgroup.Valid {
+		sg = int(subgroup.Int64)
+	}
+	var teacher string
+	if teacherName.Valid {
+		teacher = teacherName.String
+	}
+
+	if gid == 0 && teacher == "" {
+		return 0, 0, "", domainerr.ErrUserNoGroup
+	}
+
+	return gid, sg, teacher, nil
+}
+
 func (r *UserRepository) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {
 	const op = "repository.UserRepository.UserIDsByGroupID"
 
