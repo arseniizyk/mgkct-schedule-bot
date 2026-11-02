@@ -2,11 +2,9 @@ package parser
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,10 +15,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
 
-const (
-	studentURL     = `https://mgkct.minskedu.gov.by/personnel/for-students/weekly-timetable`
-	requestTimeout = 30 * time.Second
-)
+const studentURL = `https://mgkct.minskedu.gov.by/personnel/for-students/weekly-timetable`
 
 var (
 	ErrBadGroup = errors.New("bad group")
@@ -38,16 +33,7 @@ func New(log *slog.Logger) *Parser {
 		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
 	)
 
-	c.WithTransport(&http.Transport{
-		DisableKeepAlives: true,
-		ForceAttemptHTTP2: false,
-		TLSClientConfig: &tls.Config{
-			MinVersion:       tls.VersionTLS12,
-			MaxVersion:       tls.VersionTLS13,
-			CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},
-		},
-	})
-
+	c.WithTransport(getSharedTransport())
 	c.SetRequestTimeout(requestTimeout)
 
 	return &Parser{
@@ -61,74 +47,96 @@ func New(log *slog.Logger) *Parser {
 func (p *Parser) Parse(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
 	log := p.log.With("operation", "parser.Parser.Parse")
 
-	col := p.c.Clone()
-
-	schedules := make(map[time.Time]*entities.Schedule)
-
-	col.OnError(func(r *colly.Response, err error) {
-		var urlStr string
-		if r != nil && r.Request != nil && r.Request.URL != nil {
-			urlStr = r.Request.URL.String()
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
-		log.ErrorContext(ctx, "visit error", "url", urlStr, "error", err)
-	})
 
-	col.OnHTML("h2", func(e *colly.HTMLElement) {
-		groupNum, err := parseGroup(e.Text)
-		if err != nil {
-			if errors.Is(err, ErrBadGroup) {
+		schedules := make(map[time.Time]*entities.Schedule)
+		col := p.c.Clone()
+
+		var visitErr error
+		col.OnError(func(r *colly.Response, err error) {
+			var urlStr string
+			if r != nil && r.Request != nil && r.Request.URL != nil {
+				urlStr = r.Request.URL.String()
+			}
+			visitErr = err
+			log.WarnContext(ctx, "visit error", "url", urlStr, "attempt", attempt, "error", err)
+		})
+
+		col.OnHTML("h2", func(e *colly.HTMLElement) {
+			groupNum, err := parseGroup(e.Text)
+			if err != nil {
+				if errors.Is(err, ErrBadGroup) {
+					return
+				}
+				log.WarnContext(ctx, "can't get group from h2", "text", e.Text, "error", err)
 				return
 			}
-			log.WarnContext(ctx, "can't get group from h2", "text", e.Text, "error", err)
-			return
+
+			h3Sel := e.DOM.NextUntil("h2").Filter("h3").First()
+			if h3Sel.Length() == 0 {
+				log.WarnContext(ctx, "no h3 found after h2 for group", "group", groupNum)
+				return
+			}
+
+			week, err := parseWeek(h3Sel.Text())
+			if err != nil {
+				log.WarnContext(ctx, "can't parse week", "text", h3Sel.Text(), "error", err)
+				return
+			}
+
+			tableSel := e.DOM.NextUntil("h2").Filter("table").First()
+			if tableSel.Length() == 0 {
+				log.WarnContext(ctx, "no table found after h2 for group", "group", groupNum)
+				return
+			}
+
+			days := parseRows(tableSel.Find("tbody tr"))
+
+			group := &entities.Group{
+				ID:   groupNum,
+				Week: week,
+				Days: days,
+			}
+
+			if schedules[week] == nil {
+				schedules[week] = &entities.Schedule{
+					Groups: make(map[int32]*entities.Group),
+				}
+			}
+
+			schedules[week].Groups[groupNum] = group
+		})
+
+		err := col.Visit(studentURL)
+		if err == nil {
+			col.Wait()
 		}
 
-		h3Sel := e.DOM.NextUntil("h2").Filter("h3").First()
-		if h3Sel.Length() == 0 {
-			log.WarnContext(ctx, "no h3 found after h2 for group", "group", groupNum)
-			return
+		switch {
+		case err != nil:
+			lastErr = err
+		case visitErr != nil:
+			lastErr = visitErr
+		case len(schedules) == 0:
+			lastErr = fmt.Errorf("no schedules parsed from %s", studentURL)
+		default:
+			return schedules, nil
 		}
 
-		week, err := parseWeek(h3Sel.Text())
-		if err != nil {
-			log.WarnContext(ctx, "can't parse week", "text", h3Sel.Text(), "error", err)
-			return
-		}
-
-		tableSel := e.DOM.NextUntil("h2").Filter("table").First()
-		if tableSel.Length() == 0 {
-			log.WarnContext(ctx, "no table found after h2 for group", "group", groupNum)
-			return
-		}
-
-		days := parseRows(tableSel.Find("tbody tr"))
-
-		group := &entities.Group{
-			ID:   groupNum,
-			Week: week,
-			Days: days,
-		}
-
-		if schedules[week] == nil {
-			schedules[week] = &entities.Schedule{
-				Groups: make(map[int32]*entities.Group),
+		if attempt < maxAttempts {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(retryDelay):
 			}
 		}
-
-		schedules[week].Groups[groupNum] = group
-	})
-
-	if err := col.Visit(studentURL); err != nil {
-		return nil, fmt.Errorf("visit failed: %w", err)
 	}
 
-	col.Wait()
-
-	if len(schedules) == 0 {
-		return nil, fmt.Errorf("no schedules parsed from %s", studentURL)
-	}
-
-	return schedules, nil
+	return nil, fmt.Errorf("all %d attempts failed: %w", maxAttempts, lastErr)
 }
 
 func parseGroup(text string) (int32, error) {
