@@ -82,6 +82,15 @@ func TestScheduleService_GetArchiveSchedule_MidweekStrictRepo(t *testing.T) {
 	grp, err := svc.GetArchiveSchedule(ctx, 101, midweek)
 	require.NoError(t, err)
 	assert.Equal(t, int32(101), grp.ID)
+
+	// Несуществующая группа
+	_, err = svc.GetArchiveSchedule(ctx, 999, midweek)
+	require.Error(t, err)
+
+	// Несуществующая неделя
+	otherWeek, _ := time.Parse("2006-01-02", "2026-10-21")
+	_, err = svc.GetArchiveSchedule(ctx, 101, otherWeek)
+	require.Error(t, err)
 }
 
 func TestScheduleService_GetGroupLatestSchedule_SaturdayCurrentWeekVsNextWeek(t *testing.T) {

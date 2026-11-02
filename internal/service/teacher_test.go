@@ -153,6 +153,15 @@ func TestTeacherService_GetTeacherArchiveSchedule_MidweekStrictRepo(t *testing.T
 	teach, err := svc.GetTeacherArchiveSchedule(ctx, "Иванов И. И.", midweek)
 	require.NoError(t, err)
 	assert.Equal(t, "Иванов И. И.", teach.Name)
+
+	// Несуществующий преподаватель
+	_, err = svc.GetTeacherArchiveSchedule(ctx, "Петров П. П.", midweek)
+	require.Error(t, err)
+
+	// Несуществующая неделя
+	otherWeek, _ := time.Parse("2006-01-02", "2026-10-21")
+	_, err = svc.GetTeacherArchiveSchedule(ctx, "Иванов И. И.", otherWeek)
+	require.Error(t, err)
 }
 
 func TestTeacherService_FindSimilarTeachers(t *testing.T) {

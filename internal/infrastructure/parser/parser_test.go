@@ -211,6 +211,13 @@ func TestParsePairs_SubgroupPrefix(t *testing.T) {
 		{input: "2. Предмет", expected: "2. Предмет"},
 		{input: "Информатика", expected: "Информатика"},
 		{input: "Бел.яз", expected: "Бел.яз"},
+		{input: "", expected: ""},
+		{input: "1.", expected: "1."},
+		{input: "2.", expected: "2."},
+		{input: "   ", expected: ""},
+		{input: "1. ", expected: "1."},
+		{input: "1", expected: "1"},
+		{input: "2", expected: "2"},
 	}
 
 	for _, tt := range tests {
