@@ -70,6 +70,16 @@ func TestAnalyticsService_GetCabinetSchedule(t *testing.T) {
 	cabinets, err := svc.GetAllCabinets(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"3-207", "301"}, cabinets)
+
+	// 4. Проверка кэширования: при очистке репозитория кэш сохраняет результат
+	delete(schedRepo.schedules, now)
+	cabSchedCached, _, err := svc.GetCabinetSchedule(ctx, "301", time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, "301", cabSchedCached.Cabinet)
+
+	cabsCached, err := svc.GetAllCabinets(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"3-207", "301"}, cabsCached)
 }
 
 func TestAnalyticsService_GetEndings(t *testing.T) {
