@@ -108,7 +108,7 @@ func parsePairs(nameParts, classParts []string) []*entities.Pair {
 		name := nameParts[i]
 		i++
 
-		if len(name) > 3 && name[1] == '.' {
+		if len(name) >= 2 && (name[0] == '1' || name[0] == '2') && name[1] == '.' && (len(name) == 2 || name[2] != ' ') {
 			name = name[:2] + " " + name[2:]
 		}
 
