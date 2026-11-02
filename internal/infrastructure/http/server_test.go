@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	_ "modernc.org/sqlite"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
@@ -263,6 +264,20 @@ func TestStaticSPARoot(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
+	assert.Empty(t, rec.Header().Get("Cache-Control"))
+}
+
+func TestStaticSPACacheControl(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
+	rec := httptest.NewRecorder()
+
+	srv.httpSrv.Handler.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "public, max-age=3600", rec.Header().Get("Cache-Control"))
 }
 
 func TestHandleSubjectsList(t *testing.T) {

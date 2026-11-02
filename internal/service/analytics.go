@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -14,12 +15,33 @@ import (
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 )
 
+const (
+	cabinetsCacheTTL            = 5 * time.Minute
+	cabinetScheduleCacheTTL     = 5 * time.Minute
+	maxCabinetScheduleCacheSize = 256
+)
+
+type cabinetsCacheItem struct {
+	cabinets  []string
+	expiresAt time.Time
+}
+
+type cabinetScheduleCacheItem struct {
+	schedule   *entities.CabinetSchedule
+	candidates []string
+	expiresAt  time.Time
+}
+
 type AnalyticsService struct {
 	log         *slog.Logger
 	schedRepo   ScheduleRepository
 	teacherRepo TeacherScheduleRepository
 	dict        SubjectDictionary
 	nowFunc     func() time.Time
+
+	mu                   sync.RWMutex
+	cabinetsCache        *cabinetsCacheItem
+	cabinetScheduleCache map[string]cabinetScheduleCacheItem
 }
 
 func NewAnalyticsService(
@@ -49,9 +71,20 @@ func (s *AnalyticsService) now() time.Time {
 
 // GetAllCabinets возвращает список всех уникальных кабинетов, упорядоченных по имени
 func (s *AnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error) {
+	s.mu.RLock()
+	if s.cabinetsCache != nil && s.now().Before(s.cabinetsCache.expiresAt) {
+		res := slices.Clone(s.cabinetsCache.cabinets)
+		s.mu.RUnlock()
+		return res, nil
+	}
+	s.mu.RUnlock()
+
 	sch, err := s.schedRepo.GetLatest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("analytics: get latest schedule: %w", err)
+	}
+	if sch == nil {
+		return []string{}, nil
 	}
 
 	cabMap := make(map[string]struct{})
@@ -74,11 +107,36 @@ func (s *AnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error)
 	}
 	sort.Strings(cabinets)
 
+	s.mu.Lock()
+	s.cabinetsCache = &cabinetsCacheItem{
+		cabinets:  cabinets,
+		expiresAt: s.now().Add(5 * time.Minute),
+	}
+	s.mu.Unlock()
+
 	return cabinets, nil
 }
 
 // GetCabinetSchedule возвращает расписание занятости конкретного кабинета на неделю
 func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string, week time.Time) (*entities.CabinetSchedule, []string, error) {
+	targetWeek := week
+	if targetWeek.IsZero() {
+		targetWeek = EffectiveEndingsWeek(s.now())
+	}
+	targetWeek = time.Date(targetWeek.Year(), targetWeek.Month(), targetWeek.Day(), 0, 0, 0, 0, time.UTC)
+	weekday := (int(targetWeek.Weekday()) + 6) % 7 // Пн=0..Вс=6
+	targetWeek = targetWeek.AddDate(0, 0, -weekday)
+
+	cacheKey := fmt.Sprintf("%s:%s", strings.ToLower(strings.TrimSpace(query)), targetWeek.Format("2006-01-02"))
+	s.mu.RLock()
+	if item, ok := s.cabinetScheduleCache[cacheKey]; ok && s.now().Before(item.expiresAt) {
+		scheduleCopy := cloneCabinetSchedule(item.schedule)
+		candidatesCopy := slices.Clone(item.candidates)
+		s.mu.RUnlock()
+		return scheduleCopy, candidatesCopy, nil
+	}
+	s.mu.RUnlock()
+
 	allCabinets, err := s.GetAllCabinets(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -86,21 +144,20 @@ func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string,
 
 	matchedCabinet, candidates := matchCabinet(query, allCabinets)
 	if matchedCabinet == "" {
-		return nil, candidates, nil
+		s.setCabinetScheduleCache(cacheKey, nil, candidates)
+		return nil, slices.Clone(candidates), nil
 	}
 
 	var sch *entities.Schedule
-	if week.IsZero() {
-		targetWeek := EffectiveEndingsWeek(s.now())
-		sch, err = s.schedRepo.GetByWeek(ctx, targetWeek)
-		if err != nil || sch == nil {
-			sch, err = s.schedRepo.GetLatest(ctx)
-		}
-	} else {
-		sch, err = s.schedRepo.GetByWeek(ctx, week)
+	sch, err = s.schedRepo.GetByWeek(ctx, targetWeek)
+	if (err != nil || sch == nil) && week.IsZero() {
+		sch, err = s.schedRepo.GetLatest(ctx)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("analytics: get schedule for cabinet: %w", err)
+	}
+	if sch == nil {
+		return nil, nil, domainerr.ErrScheduleNotFound
 	}
 
 	daysMap := make(map[int]*entities.CabinetDaySchedule)
@@ -164,12 +221,81 @@ func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string,
 		schWeek = g.Week
 		break
 	}
+	if schWeek.IsZero() {
+		schWeek = targetWeek
+	}
 
-	return &entities.CabinetSchedule{
+	res := &entities.CabinetSchedule{
 		Cabinet: matchedCabinet,
 		Week:    schWeek,
 		Days:    days,
-	}, nil, nil
+	}
+
+	s.setCabinetScheduleCache(cacheKey, res, candidates)
+	return cloneCabinetSchedule(res), slices.Clone(candidates), nil
+}
+
+func cloneCabinetSchedule(cs *entities.CabinetSchedule) *entities.CabinetSchedule {
+	if cs == nil {
+		return nil
+	}
+	days := make([]*entities.CabinetDaySchedule, len(cs.Days))
+	for i, d := range cs.Days {
+		if d == nil {
+			continue
+		}
+		bookings := make([]*entities.CabinetBooking, len(d.Bookings))
+		for j, b := range d.Bookings {
+			if b == nil {
+				continue
+			}
+			bCopy := *b
+			bookings[j] = &bCopy
+		}
+		days[i] = &entities.CabinetDaySchedule{
+			DayIndex: d.DayIndex,
+			DayName:  d.DayName,
+			Bookings: bookings,
+		}
+	}
+	return &entities.CabinetSchedule{
+		Cabinet: cs.Cabinet,
+		Week:    cs.Week,
+		Days:    days,
+	}
+}
+
+func (s *AnalyticsService) setCabinetScheduleCache(key string, schedule *entities.CabinetSchedule, candidates []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.cabinetScheduleCache == nil {
+		s.cabinetScheduleCache = make(map[string]cabinetScheduleCacheItem)
+	}
+
+	now := s.now()
+	// Очищаем устаревшие записи, предотвращая утечку памяти
+	for k, v := range s.cabinetScheduleCache {
+		if !now.Before(v.expiresAt) {
+			delete(s.cabinetScheduleCache, k)
+		}
+	}
+
+	// Если размер по-прежнему превышает лимит, вытесняем записи
+	if len(s.cabinetScheduleCache) >= maxCabinetScheduleCacheSize {
+		for k := range s.cabinetScheduleCache {
+			delete(s.cabinetScheduleCache, k)
+			if len(s.cabinetScheduleCache) < maxCabinetScheduleCacheSize/2 {
+				break
+			}
+		}
+	}
+
+	s.cabinetScheduleCache[key] = cabinetScheduleCacheItem{
+		schedule:   cloneCabinetSchedule(schedule),
+		candidates: slices.Clone(candidates),
+		expiresAt:  now.Add(cabinetScheduleCacheTTL),
+	}
 }
 
 // GetEndings собирает аналитику окончания занятий групп на указанный день недели
