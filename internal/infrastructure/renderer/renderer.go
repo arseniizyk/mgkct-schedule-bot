@@ -28,7 +28,9 @@ var (
 	regularFont *truetype.Font
 	boldFont    *truetype.Font
 	logoImage   image.Image
+)
 
+type renderFaces struct {
 	faceTitle       font.Face
 	faceDayHeading  font.Face
 	faceTableHeader font.Face
@@ -38,7 +40,51 @@ var (
 	faceColRoom     font.Face
 	faceColTeacher  font.Face
 	faceFooter      font.Face
-)
+}
+
+func newRenderFaces() *renderFaces {
+	return &renderFaces{
+		faceTitle:       truetype.NewFace(boldFont, &truetype.Options{Size: 32, DPI: 72}),
+		faceDayHeading:  truetype.NewFace(boldFont, &truetype.Options{Size: 15.5, DPI: 72}),
+		faceTableHeader: truetype.NewFace(boldFont, &truetype.Options{Size: 11, DPI: 72}),
+		faceColNum:      truetype.NewFace(boldFont, &truetype.Options{Size: 12, DPI: 72}),
+		faceColSubj:     truetype.NewFace(regularFont, &truetype.Options{Size: 11.5, DPI: 72}),
+		faceColType:     truetype.NewFace(regularFont, &truetype.Options{Size: 10.5, DPI: 72}),
+		faceColRoom:     truetype.NewFace(boldFont, &truetype.Options{Size: 11.5, DPI: 72}),
+		faceColTeacher:  truetype.NewFace(regularFont, &truetype.Options{Size: 11, DPI: 72}),
+		faceFooter:      truetype.NewFace(regularFont, &truetype.Options{Size: 10, DPI: 72}),
+	}
+}
+
+func (rf *renderFaces) Close() {
+	if rf.faceTitle != nil {
+		_ = rf.faceTitle.Close()
+	}
+	if rf.faceDayHeading != nil {
+		_ = rf.faceDayHeading.Close()
+	}
+	if rf.faceTableHeader != nil {
+		_ = rf.faceTableHeader.Close()
+	}
+	if rf.faceColNum != nil {
+		_ = rf.faceColNum.Close()
+	}
+	if rf.faceColSubj != nil {
+		_ = rf.faceColSubj.Close()
+	}
+	if rf.faceColType != nil {
+		_ = rf.faceColType.Close()
+	}
+	if rf.faceColRoom != nil {
+		_ = rf.faceColRoom.Close()
+	}
+	if rf.faceColTeacher != nil {
+		_ = rf.faceColTeacher.Close()
+	}
+	if rf.faceFooter != nil {
+		_ = rf.faceFooter.Close()
+	}
+}
 
 func initAssets() error {
 	initOnce.Do(func() {
@@ -79,17 +125,6 @@ func initAssets() error {
 		scaled := image.NewRGBA(image.Rect(0, 0, 52, 52))
 		xdraw.CatmullRom.Scale(scaled, scaled.Bounds(), srcLogo, srcLogo.Bounds(), draw.Over, nil)
 		logoImage = scaled
-
-		// Создаем шрифтовые гарнитуры для таблицы
-		faceTitle = truetype.NewFace(boldFont, &truetype.Options{Size: 32, DPI: 72})
-		faceDayHeading = truetype.NewFace(boldFont, &truetype.Options{Size: 15.5, DPI: 72})
-		faceTableHeader = truetype.NewFace(boldFont, &truetype.Options{Size: 11, DPI: 72})
-		faceColNum = truetype.NewFace(boldFont, &truetype.Options{Size: 12, DPI: 72})
-		faceColSubj = truetype.NewFace(regularFont, &truetype.Options{Size: 11.5, DPI: 72})
-		faceColType = truetype.NewFace(regularFont, &truetype.Options{Size: 10.5, DPI: 72})
-		faceColRoom = truetype.NewFace(boldFont, &truetype.Options{Size: 11.5, DPI: 72})
-		faceColTeacher = truetype.NewFace(regularFont, &truetype.Options{Size: 11, DPI: 72})
-		faceFooter = truetype.NewFace(regularFont, &truetype.Options{Size: 10, DPI: 72})
 	})
 
 	return errInit
@@ -346,6 +381,9 @@ func renderWeekCanvas(title string, daysData []dayData, col4Title string) ([]byt
 	footerY := tablesBottomY + float64(footerGap)
 	totalCanvasHeight := int(footerY + float64(footerH+bottomCanvasGap))
 
+	faces := newRenderFaces()
+	defer faces.Close()
+
 	dc := gg.NewContext(canvasWidth, totalCanvasHeight)
 	dc.SetColor(colorBg)
 	dc.Clear()
@@ -353,7 +391,7 @@ func renderWeekCanvas(title string, daysData []dayData, col4Title string) ([]byt
 	// Шапка (Логотип MGKCT + Название группы / ФИО преподавателя)
 	dc.DrawImage(logoImage, 14, topMargin+(headerHeight-52)/2)
 
-	dc.SetFontFace(faceTitle)
+	dc.SetFontFace(faces.faceTitle)
 	dc.SetColor(colorTextBlack)
 	displayTitle := truncateText(dc, title, canvasWidth-140)
 	dc.DrawStringAnchored(displayTitle, canvasWidth/2.0, float64(topMargin)+float64(headerHeight)/2.0, 0.5, 0.5)
@@ -370,11 +408,11 @@ func renderWeekCanvas(title string, daysData []dayData, col4Title string) ([]byt
 		}
 		boxY := gridRowStarts[rowIdx]
 
-		drawDayTable(dc, boxX, boxY, daysData[i], col4Title)
+		drawDayTable(dc, boxX, boxY, daysData[i], col4Title, faces)
 	}
 
 	// Подвал (Footer)
-	dc.SetFontFace(faceFooter)
+	dc.SetFontFace(faces.faceFooter)
 	dc.SetColor(colorTextFooter)
 	footerLeft := "@mgkct_bot"
 	footerRight := fmt.Sprintf("Сгенерировано в: %s", time.Now().Format("02.01.2006 15:04:05"))
@@ -390,9 +428,9 @@ func renderWeekCanvas(title string, daysData []dayData, col4Title string) ([]byt
 	return buf.Bytes(), nil
 }
 
-func drawDayTable(dc *gg.Context, boxX, boxY float64, d dayData, col4Title string) {
+func drawDayTable(dc *gg.Context, boxX, boxY float64, d dayData, col4Title string, faces *renderFaces) {
 	// Заголовок дня (День, Дата)
-	dc.SetFontFace(faceDayHeading)
+	dc.SetFontFace(faces.faceDayHeading)
 	dc.SetColor(colorTextBlack)
 	dc.DrawStringAnchored(d.title, boxX+tableWidth/2.0, boxY+float64(headingHeight)/2.0, 0.5, 0.5)
 
@@ -412,7 +450,7 @@ func drawDayTable(dc *gg.Context, boxX, boxY float64, d dayData, col4Title strin
 	dc.Fill()
 
 	// Тексты шапки таблицы (все центрированы)
-	dc.SetFontFace(faceTableHeader)
+	dc.SetFontFace(faces.faceTableHeader)
 	dc.SetColor(colorTextBlack)
 	thY := tableY + float64(tableTheadH)/2.0
 
@@ -432,7 +470,7 @@ func drawDayTable(dc *gg.Context, boxX, boxY float64, d dayData, col4Title strin
 		dc.Fill()
 
 		// Номер пары: центрирован
-		dc.SetFontFace(faceColNum)
+		dc.SetFontFace(faces.faceColNum)
 		dc.SetColor(colorTextBlack)
 		dc.DrawStringAnchored(strconv.Itoa(r.num), xCol0+colWidths[0]/2.0, currY+r.rowHeight/2.0, 0.5, 0.5)
 
@@ -440,7 +478,7 @@ func drawDayTable(dc *gg.Context, boxX, boxY float64, d dayData, col4Title strin
 			// Одинарная строка (30px)
 			centerY := currY + r.rowHeight/2.0
 			if r.pair1 != nil {
-				drawLessonCell(dc, r.pair1, xCol1, xCol2, xCol3, xCol4, centerY)
+				drawLessonCell(dc, r.pair1, xCol1, xCol2, xCol3, xCol4, centerY, faces)
 			}
 		} else {
 			// Двойная строка подгрупп (48px)
@@ -449,10 +487,10 @@ func drawDayTable(dc *gg.Context, boxX, boxY float64, d dayData, col4Title strin
 			center2Y := currY + subH + subH/2.0
 
 			if r.pair1 != nil {
-				drawLessonCell(dc, r.pair1, xCol1, xCol2, xCol3, xCol4, center1Y)
+				drawLessonCell(dc, r.pair1, xCol1, xCol2, xCol3, xCol4, center1Y, faces)
 			}
 			if r.pair2 != nil {
-				drawLessonCell(dc, r.pair2, xCol1, xCol2, xCol3, xCol4, center2Y)
+				drawLessonCell(dc, r.pair2, xCol1, xCol2, xCol3, xCol4, center2Y, faces)
 			}
 
 			// Пунктирный разделитель подгрупп между подстроками
@@ -494,21 +532,21 @@ func drawDayTable(dc *gg.Context, boxX, boxY float64, d dayData, col4Title strin
 	}
 }
 
-func drawLessonCell(dc *gg.Context, p *entities.Pair, xSubj, xType, xRoom, xTeacher, centerY float64) {
+func drawLessonCell(dc *gg.Context, p *entities.Pair, xSubj, xType, xRoom, xTeacher, centerY float64, faces *renderFaces) {
 	// 1. Предмет: выравнивание по левому краю с отступом 6px
-	dc.SetFontFace(faceColSubj)
+	dc.SetFontFace(faces.faceColSubj)
 	dc.SetColor(colorTextBlack)
 	subjText := truncateText(dc, p.Name, colWidths[1]-10.0)
 	dc.DrawStringAnchored(subjText, xSubj+6.0, centerY, 0.0, 0.5)
 
 	// 2. Вид занятия: строго по центру
-	dc.SetFontFace(faceColType)
+	dc.SetFontFace(faces.faceColType)
 	dc.SetColor(colorTextType)
 	typeText := truncateText(dc, p.Type, colWidths[2]-4.0)
 	dc.DrawStringAnchored(typeText, xType+colWidths[2]/2.0, centerY, 0.5, 0.5)
 
 	// 3. Аудитория: СТРОГО ПО ЦЕНТРУ!
-	dc.SetFontFace(faceColRoom)
+	dc.SetFontFace(faces.faceColRoom)
 	dc.SetColor(colorTextBlack)
 	roomText := strings.TrimSpace(p.Class)
 	if roomText == "" {
@@ -518,7 +556,7 @@ func drawLessonCell(dc *gg.Context, p *entities.Pair, xSubj, xType, xRoom, xTeac
 	dc.DrawStringAnchored(roomText, xRoom+colWidths[3]/2.0, centerY, 0.5, 0.5)
 
 	// 4. Преподаватель: выравнивание по левому краю с отступом 6px
-	dc.SetFontFace(faceColTeacher)
+	dc.SetFontFace(faces.faceColTeacher)
 	dc.SetColor(colorTextTeacher)
 	teacherText := truncateText(dc, p.Group, colWidths[4]-10.0)
 	dc.DrawStringAnchored(teacherText, xTeacher+6.0, centerY, 0.0, 0.5)
