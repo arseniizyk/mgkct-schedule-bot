@@ -1005,10 +1005,10 @@ func TestFormatScheduleDay_HeaderAsteriskNoDanglingNewline(t *testing.T) {
 	gotGroup, err := FormatScheduleDayAt(group, 0)
 	require.NoError(t, err)
 	assert.NotContains(t, gotGroup, "\n*", "заголовок не должен содержать закрывающую звездочку после перевода строки")
-	assert.Contains(t, gotGroup, "*Понедельник*\n")
+	assert.Regexp(t, `^\*Понедельник.*?\*\n`, gotGroup)
 
 	gotTeacher, err := FormatTeacherScheduleDayAt(teacher, 0)
 	require.NoError(t, err)
 	assert.NotContains(t, gotTeacher, "\n*", "заголовок не должен содержать закрывающую звездочку после перевода строки")
-	assert.Contains(t, gotTeacher, "*Понедельник*\n")
+	assert.Regexp(t, `^\*Понедельник.*?\*\n`, gotTeacher)
 }
