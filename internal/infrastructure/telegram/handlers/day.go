@@ -73,9 +73,13 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 			)
 		}
 
-		// Без аргументов: если у пользователя установлен преподаватель, отдаем его расписание
-		teacherName, err := userRepo.GetTeacher(ctx, c.Chat().ID)
-		if err == nil && teacherName != "" {
+		// Без аргументов: определяем роль пользователя за один SQL-запрос
+		groupID, subgroup, teacherName, err := userRepo.GetUserProfile(ctx, c.Chat().ID)
+		if err != nil {
+			return c.Send(formatter.FormatErrorMessage(err))
+		}
+
+		if teacherName != "" {
 			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
 			if err != nil {
 				log.Warn("failed getting teacher schedule", "name", teacherName, "error", err)
@@ -95,12 +99,6 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 				keyboard.ReplyScheduleKeyboard,
 				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days), weeks),
 			)
-		}
-
-		// Иначе запрашиваем группу студента
-		groupID, subgroup, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID)
-		if err != nil {
-			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
 		group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
@@ -185,9 +183,13 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 			)
 		}
 
-		// Без аргументов: если у пользователя установлен преподаватель, отдаем его расписание
-		teacherName, err := userRepo.GetTeacher(ctx, c.Chat().ID)
-		if err == nil && teacherName != "" {
+		// Без аргументов: определяем роль пользователя за один SQL-запрос
+		groupID, subgroup, teacherName, err := userRepo.GetUserProfile(ctx, c.Chat().ID)
+		if err != nil {
+			return c.Send(formatter.FormatErrorMessage(err))
+		}
+
+		if teacherName != "" {
 			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
 			if err != nil {
 				log.Warn("failed getting teacher week schedule", "name", teacherName, "error", err)
@@ -207,12 +209,6 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 				keyboard.ReplyScheduleKeyboard,
 				keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
 			)
-		}
-
-		// Иначе запрашиваем группу студента
-		groupID, subgroup, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID)
-		if err != nil {
-			return c.Send(formatter.FormatErrorMessage(err))
 		}
 
 		group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
