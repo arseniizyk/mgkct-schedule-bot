@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -14,12 +15,27 @@ import (
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 )
 
+type cabinetsCacheItem struct {
+	cabinets  []string
+	expiresAt time.Time
+}
+
+type cabinetScheduleCacheItem struct {
+	schedule   *entities.CabinetSchedule
+	candidates []string
+	expiresAt  time.Time
+}
+
 type AnalyticsService struct {
 	log         *slog.Logger
 	schedRepo   ScheduleRepository
 	teacherRepo TeacherScheduleRepository
 	dict        SubjectDictionary
 	nowFunc     func() time.Time
+
+	mu                   sync.RWMutex
+	cabinetsCache        *cabinetsCacheItem
+	cabinetScheduleCache map[string]cabinetScheduleCacheItem
 }
 
 func NewAnalyticsService(
@@ -49,6 +65,14 @@ func (s *AnalyticsService) now() time.Time {
 
 // GetAllCabinets возвращает список всех уникальных кабинетов, упорядоченных по имени
 func (s *AnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error) {
+	s.mu.RLock()
+	if s.cabinetsCache != nil && s.now().Before(s.cabinetsCache.expiresAt) {
+		res := slices.Clone(s.cabinetsCache.cabinets)
+		s.mu.RUnlock()
+		return res, nil
+	}
+	s.mu.RUnlock()
+
 	sch, err := s.schedRepo.GetLatest(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("analytics: get latest schedule: %w", err)
@@ -74,11 +98,26 @@ func (s *AnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error)
 	}
 	sort.Strings(cabinets)
 
+	s.mu.Lock()
+	s.cabinetsCache = &cabinetsCacheItem{
+		cabinets:  cabinets,
+		expiresAt: s.now().Add(5 * time.Minute),
+	}
+	s.mu.Unlock()
+
 	return cabinets, nil
 }
 
 // GetCabinetSchedule возвращает расписание занятости конкретного кабинета на неделю
 func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string, week time.Time) (*entities.CabinetSchedule, []string, error) {
+	cacheKey := fmt.Sprintf("%s:%s", strings.ToLower(strings.TrimSpace(query)), week.Format("2006-01-02"))
+	s.mu.RLock()
+	if item, ok := s.cabinetScheduleCache[cacheKey]; ok && s.now().Before(item.expiresAt) {
+		s.mu.RUnlock()
+		return item.schedule, item.candidates, nil
+	}
+	s.mu.RUnlock()
+
 	allCabinets, err := s.GetAllCabinets(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -86,6 +125,15 @@ func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string,
 
 	matchedCabinet, candidates := matchCabinet(query, allCabinets)
 	if matchedCabinet == "" {
+		s.mu.Lock()
+		if s.cabinetScheduleCache == nil {
+			s.cabinetScheduleCache = make(map[string]cabinetScheduleCacheItem)
+		}
+		s.cabinetScheduleCache[cacheKey] = cabinetScheduleCacheItem{
+			candidates: candidates,
+			expiresAt:  s.now().Add(5 * time.Minute),
+		}
+		s.mu.Unlock()
 		return nil, candidates, nil
 	}
 
@@ -165,11 +213,24 @@ func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string,
 		break
 	}
 
-	return &entities.CabinetSchedule{
+	res := &entities.CabinetSchedule{
 		Cabinet: matchedCabinet,
 		Week:    schWeek,
 		Days:    days,
-	}, nil, nil
+	}
+
+	s.mu.Lock()
+	if s.cabinetScheduleCache == nil {
+		s.cabinetScheduleCache = make(map[string]cabinetScheduleCacheItem)
+	}
+	s.cabinetScheduleCache[cacheKey] = cabinetScheduleCacheItem{
+		schedule:   res,
+		candidates: candidates,
+		expiresAt:  s.now().Add(5 * time.Minute),
+	}
+	s.mu.Unlock()
+
+	return res, nil, nil
 }
 
 // GetEndings собирает аналитику окончания занятий групп на указанный день недели

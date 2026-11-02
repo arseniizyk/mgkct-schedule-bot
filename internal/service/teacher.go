@@ -516,13 +516,13 @@ func damerauLevenshtein(a, b []rune) int {
 		return la
 	}
 
-	dp := make([][]int, la+1)
-	for i := range dp {
-		dp[i] = make([]int, lb+1)
-		dp[i][0] = i
+	stride := lb + 1
+	dp := make([]int, (la+1)*stride)
+	for i := 0; i <= la; i++ {
+		dp[i*stride] = i
 	}
 	for j := 0; j <= lb; j++ {
-		dp[0][j] = j
+		dp[j] = j
 	}
 
 	for i := 1; i <= la; i++ {
@@ -532,17 +532,17 @@ func damerauLevenshtein(a, b []rune) int {
 				cost = 0
 			}
 
-			del := dp[i-1][j] + 1
-			ins := dp[i][j-1] + 1
-			sub := dp[i-1][j-1] + cost
-			dp[i][j] = min(del, ins, sub)
+			del := dp[(i-1)*stride+j] + 1
+			ins := dp[i*stride+j-1] + 1
+			sub := dp[(i-1)*stride+j-1] + cost
+			dp[i*stride+j] = min(del, ins, sub)
 
 			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
-				trans := dp[i-2][j-2] + 1
-				dp[i][j] = min(dp[i][j], trans)
+				trans := dp[(i-2)*stride+j-2] + 1
+				dp[i*stride+j] = min(dp[i*stride+j], trans)
 			}
 		}
 	}
 
-	return dp[la][lb]
+	return dp[la*stride+lb]
 }
