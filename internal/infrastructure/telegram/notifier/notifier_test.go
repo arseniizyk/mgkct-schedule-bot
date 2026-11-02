@@ -3,6 +3,7 @@ package notifier
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -597,4 +598,54 @@ func TestNotifier_HandleGroupScheduleUpdate_BreaksChunkLoopOnError(t *testing.T)
 
 	// Так как первый чанк вернул ошибку, бот должен прервать цикл чанков через break и сделать ровно 1 вызов
 	assert.Equal(t, 1, bot.sendCalls, "должен быть отправлен только первый чанк, последующие должны быть отменены")
+}
+
+type userStoreSpy struct {
+	mockUserStore
+
+	calls int
+}
+
+func (s *userStoreSpy) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
+	s.calls++
+	return s.mockUserStore.UsersForEveningNotification(ctx)
+}
+
+func TestNotifier_SendNextDayDigest_PreloadedUsers(t *testing.T) {
+	bot := &mockBotSender{}
+	store := &userStoreSpy{}
+	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))
+
+	targetDate, _ := CalculateTomorrowDate(time.Now())
+	var days []*entities.Day
+	for i := range 6 {
+		days = append(days, &entities.Day{
+			Name: fmt.Sprintf("День %d", i),
+			Subjects: []*entities.Subject{
+				{Pairs: []*entities.Pair{{Name: "Информатика", Class: "101"}}},
+			},
+		})
+	}
+	group := &entities.Group{
+		ID:   101,
+		Week: targetDate,
+		Days: days,
+	}
+	schedProv := &mockSchedProvider{
+		byWeekFunc: func(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
+			return group, nil
+		},
+		latestFunc: func(ctx context.Context, groupID int32) (*entities.Group, error) {
+			return group, nil
+		},
+	}
+
+	preloaded := []entities.User{
+		{ChatID: 1001, Group: 101, Subgroup: 0},
+	}
+
+	sentIDs, err := n.SendNextDayDigestForGroupSubgroup(context.Background(), schedProv, 101, 0, preloaded)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{1001}, sentIDs)
+	assert.Equal(t, 0, store.calls, "userStore.UsersForEveningNotification не должен вызываться при переданных preloadedUsers")
 }
