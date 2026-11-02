@@ -1,0 +1,20 @@
+name: PR Source Guard
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-source-branch:
+    name: "PR into main only from dev"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source branch
+        run: |
+          echo "Target branch: ${{ github.base_ref }}"
+          echo "Source branch: ${{ github.head_ref }}"
+          if [ "${{ github.head_ref }}" != "dev" ]; then
+            echo "::error::Only PRs originating from the 'dev' branch are allowed to be merged into 'main'!"
+            exit 1
+          fi
+          echo "Source branch verified: dev"
