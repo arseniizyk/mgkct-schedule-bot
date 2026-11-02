@@ -282,7 +282,7 @@ func (s *TeacherService) GetTeacherArchiveSchedule(ctx context.Context, name str
 		return t, nil
 	}
 
-	t, err = s.repo.GetByWeek(ctx, name, targetDate)
+	t, err = s.repo.GetByWeek(ctx, name, monday)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}

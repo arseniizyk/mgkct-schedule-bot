@@ -293,7 +293,7 @@ func (s *ScheduleService) GetArchiveSchedule(ctx context.Context, groupID int32,
 		return grp, nil
 	}
 
-	sch, err := s.scheduleRepo.GetByWeek(ctx, targetDate)
+	sch, err := s.scheduleRepo.GetByWeek(ctx, monday)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}

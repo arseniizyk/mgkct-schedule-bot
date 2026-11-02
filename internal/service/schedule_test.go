@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/service"
 )
 
@@ -46,6 +47,41 @@ func TestScheduleService_Archive(t *testing.T) {
 	// Non-existent group
 	_, err = svc.GetArchiveSchedule(ctx, 999, targetMonday)
 	require.Error(t, err)
+}
+
+type strictExactWeekScheduleRepo struct {
+	mockScheduleRepo
+}
+
+func (s *strictExactWeekScheduleRepo) GetByWeek(ctx context.Context, week time.Time) (*entities.Schedule, error) {
+	sch, ok := s.schedules[week]
+	if !ok {
+		return nil, domainerr.ErrWeekNotFound
+	}
+	return sch, nil
+}
+
+func TestScheduleService_GetArchiveSchedule_MidweekStrictRepo(t *testing.T) {
+	ctx := context.Background()
+	monday, _ := time.Parse("2006-01-02", "2026-10-12")
+	midweek, _ := time.Parse("2006-01-02", "2026-10-14")
+
+	repo := &strictExactWeekScheduleRepo{
+		mockScheduleRepo{
+			schedules: map[time.Time]*entities.Schedule{
+				monday: {
+					Groups: map[int32]*entities.Group{
+						101: {ID: 101, Week: monday},
+					},
+				},
+			},
+		},
+	}
+
+	svc := service.NewScheduleService(slog.Default(), repo)
+	grp, err := svc.GetArchiveSchedule(ctx, 101, midweek)
+	require.NoError(t, err)
+	assert.Equal(t, int32(101), grp.ID)
 }
 
 func TestScheduleService_GetGroupLatestSchedule_SaturdayCurrentWeekVsNextWeek(t *testing.T) {
