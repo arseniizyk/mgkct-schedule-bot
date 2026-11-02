@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"slices"
 	"sync"
 	"testing"
@@ -17,17 +18,32 @@ import (
 )
 
 type mockScheduleRepo struct {
+	mu        sync.RWMutex
 	schedules map[time.Time]*entities.Schedule
 	saveCalls int
+	saveErr   error
 }
 
 func (m *mockScheduleRepo) Save(ctx context.Context, week time.Time, schedule *entities.Schedule) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.saveErr != nil {
+		return m.saveErr
+	}
 	m.saveCalls++
 	m.schedules[week] = schedule
 	return nil
 }
 
+func (m *mockScheduleRepo) GetSaveCalls() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.saveCalls
+}
+
 func (m *mockScheduleRepo) GetByWeek(ctx context.Context, week time.Time) (*entities.Schedule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if s, ok := m.schedules[week]; ok {
 		return s, nil
 	}
@@ -48,6 +64,8 @@ func (m *mockScheduleRepo) GetByWeek(ctx context.Context, week time.Time) (*enti
 }
 
 func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var maxWeek time.Time
 	for w := range m.schedules {
 		if w.After(maxWeek) {
@@ -58,10 +76,14 @@ func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, e
 }
 
 func (m *mockScheduleRepo) GetAll(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
-	return m.schedules, nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return maps.Clone(m.schedules), nil
 }
 
 func (m *mockScheduleRepo) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var weeks []time.Time
 	for w := range m.schedules {
 		weeks = append(weeks, w)
@@ -83,10 +105,13 @@ func (m *mockScheduleRepo) GetWeeks(ctx context.Context, week time.Time) (entiti
 }
 
 type mockTeacherRepo struct {
+	mu       sync.RWMutex
 	teachers map[string]map[time.Time]*entities.Teacher
 }
 
 func (m *mockTeacherRepo) Save(ctx context.Context, name string, week time.Time, schedule *entities.Teacher) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.teachers[name] == nil {
 		m.teachers[name] = make(map[time.Time]*entities.Teacher)
 	}
@@ -95,10 +120,17 @@ func (m *mockTeacherRepo) Save(ctx context.Context, name string, week time.Time,
 }
 
 func (m *mockTeacherRepo) GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.teachers[name] == nil {
+		return nil, nil
+	}
 	return m.teachers[name][week], nil
 }
 
 func (m *mockTeacherRepo) GetLatest(ctx context.Context, name string) (*entities.Teacher, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var maxWeek time.Time
 	for w := range m.teachers[name] {
 		if w.After(maxWeek) {
@@ -109,6 +141,8 @@ func (m *mockTeacherRepo) GetLatest(ctx context.Context, name string) (*entities
 }
 
 func (m *mockTeacherRepo) GetAllLatest(ctx context.Context) (map[string]*entities.Teacher, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	res := make(map[string]*entities.Teacher)
 	for name := range m.teachers {
 		t, _ := m.GetLatest(ctx, name)
@@ -118,6 +152,8 @@ func (m *mockTeacherRepo) GetAllLatest(ctx context.Context) (map[string]*entitie
 }
 
 func (m *mockTeacherRepo) GetAll(ctx context.Context) ([]*entities.Teacher, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var res []*entities.Teacher
 	for _, weeks := range m.teachers {
 		for _, t := range weeks {
@@ -128,6 +164,8 @@ func (m *mockTeacherRepo) GetAll(ctx context.Context) ([]*entities.Teacher, erro
 }
 
 func (m *mockTeacherRepo) GetAllTeacherNames(ctx context.Context) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var names []string
 	for n := range m.teachers {
 		names = append(names, n)
@@ -136,6 +174,8 @@ func (m *mockTeacherRepo) GetAllTeacherNames(ctx context.Context) ([]string, err
 }
 
 func (m *mockTeacherRepo) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	weekSet := make(map[time.Time]struct{})
 	if name != "" {
 		for w := range m.teachers[name] {
@@ -177,11 +217,16 @@ func (p *mockStudentParser) Parse(ctx context.Context) (map[time.Time]*entities.
 }
 
 type mockTeacherParser struct {
-	res []*entities.Teacher
+	res     []*entities.Teacher
+	err     error
+	onParse func()
 }
 
 func (p *mockTeacherParser) Parse(ctx context.Context) ([]*entities.Teacher, error) {
-	return p.res, nil
+	if p.onParse != nil {
+		p.onParse()
+	}
+	return p.res, p.err
 }
 
 func TestScraperService_NoSpamWhenUnchanged(t *testing.T) {
@@ -638,7 +683,16 @@ func TestScraperService_NoRedundantDBSaveWhenUnchanged(t *testing.T) {
 			},
 		},
 	}}
-	teacherParser := &mockTeacherParser{res: nil}
+	firstScrapeDone := make(chan struct{}, 1)
+	teacherParser := &mockTeacherParser{
+		res: nil,
+		onParse: func() {
+			select {
+			case firstScrapeDone <- struct{}{}:
+			default:
+			}
+		},
+	}
 
 	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
 	scraperSvc := service.NewScraperService(
@@ -654,8 +708,186 @@ func TestScraperService_NoRedundantDBSaveWhenUnchanged(t *testing.T) {
 	eventCh := make(chan service.Event, 10)
 	go scraperSvc.Start(ctx, eventCh)
 
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-firstScrapeDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for initial scrape cycle")
+	}
 
 	// Начальное состояние уже в БД, поэтому при совпадении хэшей Save не должен вызываться повторно
-	assert.Equal(t, 0, schedRepo.saveCalls, "Save не должен вызываться для неизмененного расписания")
+	assert.Equal(t, 0, schedRepo.GetSaveCalls(), "Save не должен вызываться для неизмененного расписания")
+}
+
+func TestScraperService_CacheInvalidation_NonLatestWeek(t *testing.T) {
+	ctx := t.Context()
+
+	currentWeek := service.CurrentWeekMonday(time.Now())
+	nextWeek := currentWeek.AddDate(0, 0, 7)
+
+	grpCurrent := &entities.Group{
+		ID:   101,
+		Week: currentWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Математика", Class: "201"}}},
+				},
+			},
+		},
+	}
+	grpNext := &entities.Group{
+		ID:   101,
+		Week: nextWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Физика", Class: "301"}}},
+				},
+			},
+		},
+	}
+
+	schedRepo := &mockScheduleRepo{schedules: map[time.Time]*entities.Schedule{
+		currentWeek: {Groups: map[int32]*entities.Group{101: grpCurrent}},
+		nextWeek:    {Groups: map[int32]*entities.Group{101: grpNext}},
+	}}
+	teachRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+
+	// Имитируем обновление текущей недели при уже существующей следующей
+	grpCurrentUpdated := &entities.Group{
+		ID:   101,
+		Week: currentWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Информатика", Class: "505"}}},
+				},
+			},
+		},
+	}
+
+	studentParser := &mockStudentParser{res: map[time.Time]*entities.Schedule{
+		currentWeek: {Groups: map[int32]*entities.Group{101: grpCurrentUpdated}},
+		nextWeek:    {Groups: map[int32]*entities.Group{101: grpNext}},
+	}}
+
+	scrapeDone := make(chan struct{}, 1)
+	teacherParser := &mockTeacherParser{
+		res: nil,
+		onParse: func() {
+			select {
+			case scrapeDone <- struct{}{}:
+			default:
+			}
+		},
+	}
+
+	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
+
+	// Заполняем кэш старыми данными текущей недели
+	_, err := schedSvc.GetGroupScheduleByWeek(ctx, 101, currentWeek)
+	require.NoError(t, err)
+
+	scraperSvc := service.NewScraperService(
+		slog.Default(),
+		config.ScraperConfig{Interval: time.Hour, PeakInterval: time.Hour, NightInterval: time.Hour},
+		studentParser,
+		teacherParser,
+		schedRepo,
+		teachRepo,
+		schedSvc,
+	)
+
+	eventCh := make(chan service.Event, 10)
+	go scraperSvc.Start(ctx, eventCh)
+
+	select {
+	case <-scrapeDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for scrape cycle")
+	}
+
+	// Проверяем, что кэш текущей недели инвалидирован и отдает обновленное значение
+	cached, err := schedSvc.GetGroupScheduleByWeek(ctx, 101, currentWeek)
+	require.NoError(t, err)
+	assert.Equal(t, "Информатика", cached.Days[0].Subjects[0].Pairs[0].Name)
+}
+
+func TestScraperService_FailedDBSave_RetriesOnNextTick(t *testing.T) {
+	ctx := t.Context()
+
+	currentWeek := service.CurrentWeekMonday(time.Now())
+	grp := &entities.Group{
+		ID:   101,
+		Week: currentWeek,
+		Days: []*entities.Day{
+			{
+				Name: "Понедельник",
+				Subjects: []*entities.Subject{
+					{Pairs: []*entities.Pair{{Name: "Математика", Class: "201"}}},
+				},
+			},
+		},
+	}
+
+	// Инициализируем БД с ошибкой на сохранение
+	schedRepo := &mockScheduleRepo{
+		schedules: make(map[time.Time]*entities.Schedule),
+		saveErr:   assert.AnError,
+	}
+	teachRepo := &mockTeacherRepo{teachers: make(map[string]map[time.Time]*entities.Teacher)}
+
+	studentParser := &mockStudentParser{res: map[time.Time]*entities.Schedule{
+		currentWeek: {Groups: map[int32]*entities.Group{101: grp}},
+	}}
+
+	scrapeCount := 0
+	scrapeDone := make(chan struct{}, 5)
+	teacherParser := &mockTeacherParser{
+		res: nil,
+		onParse: func() {
+			scrapeCount++
+			scrapeDone <- struct{}{}
+		},
+	}
+
+	schedSvc := service.NewScheduleService(slog.Default(), schedRepo)
+	scraperSvc := service.NewScraperService(
+		slog.Default(),
+		config.ScraperConfig{Interval: 20 * time.Millisecond, PeakInterval: 20 * time.Millisecond, NightInterval: 20 * time.Millisecond},
+		studentParser,
+		teacherParser,
+		schedRepo,
+		teachRepo,
+		schedSvc,
+	)
+
+	eventCh := make(chan service.Event, 10)
+	go scraperSvc.Start(ctx, eventCh)
+
+	// Ждем первого тика (завершится ошибкой сохранения)
+	select {
+	case <-scrapeDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for first scrape")
+	}
+
+	// Хэш не должен зафиксироваться как сохраненный
+	// Убираем ошибку сохранения для следующего тика
+	schedRepo.mu.Lock()
+	schedRepo.saveErr = nil
+	schedRepo.mu.Unlock()
+
+	// Ждем второго тика
+	select {
+	case <-scrapeDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for second scrape")
+	}
+
+	// Теперь запись должна успешно пройти в БД
+	assert.GreaterOrEqual(t, schedRepo.GetSaveCalls(), 1, "Save должен повториться на следующем тике после сбоя")
 }
