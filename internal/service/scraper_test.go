@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"slices"
 	"sync"
 	"testing"
@@ -17,15 +18,20 @@ import (
 )
 
 type mockScheduleRepo struct {
+	mu        sync.RWMutex
 	schedules map[time.Time]*entities.Schedule
 }
 
 func (m *mockScheduleRepo) Save(ctx context.Context, week time.Time, schedule *entities.Schedule) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.schedules[week] = schedule
 	return nil
 }
 
 func (m *mockScheduleRepo) GetByWeek(ctx context.Context, week time.Time) (*entities.Schedule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if s, ok := m.schedules[week]; ok {
 		return s, nil
 	}
@@ -46,6 +52,8 @@ func (m *mockScheduleRepo) GetByWeek(ctx context.Context, week time.Time) (*enti
 }
 
 func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var maxWeek time.Time
 	for w := range m.schedules {
 		if w.After(maxWeek) {
@@ -56,10 +64,14 @@ func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, e
 }
 
 func (m *mockScheduleRepo) GetAll(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
-	return m.schedules, nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return maps.Clone(m.schedules), nil
 }
 
 func (m *mockScheduleRepo) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var weeks []time.Time
 	for w := range m.schedules {
 		weeks = append(weeks, w)
@@ -81,10 +93,13 @@ func (m *mockScheduleRepo) GetWeeks(ctx context.Context, week time.Time) (entiti
 }
 
 type mockTeacherRepo struct {
+	mu       sync.RWMutex
 	teachers map[string]map[time.Time]*entities.Teacher
 }
 
 func (m *mockTeacherRepo) Save(ctx context.Context, name string, week time.Time, schedule *entities.Teacher) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.teachers[name] == nil {
 		m.teachers[name] = make(map[time.Time]*entities.Teacher)
 	}
@@ -93,10 +108,20 @@ func (m *mockTeacherRepo) Save(ctx context.Context, name string, week time.Time,
 }
 
 func (m *mockTeacherRepo) GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.teachers[name] == nil {
+		return nil, nil
+	}
 	return m.teachers[name][week], nil
 }
 
 func (m *mockTeacherRepo) GetLatest(ctx context.Context, name string) (*entities.Teacher, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.teachers[name] == nil {
+		return nil, nil
+	}
 	var maxWeek time.Time
 	for w := range m.teachers[name] {
 		if w.After(maxWeek) {
@@ -107,15 +132,24 @@ func (m *mockTeacherRepo) GetLatest(ctx context.Context, name string) (*entities
 }
 
 func (m *mockTeacherRepo) GetAllLatest(ctx context.Context) (map[string]*entities.Teacher, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	res := make(map[string]*entities.Teacher)
 	for name := range m.teachers {
-		t, _ := m.GetLatest(ctx, name)
-		res[name] = t
+		var maxWeek time.Time
+		for w := range m.teachers[name] {
+			if w.After(maxWeek) {
+				maxWeek = w
+			}
+		}
+		res[name] = m.teachers[name][maxWeek]
 	}
 	return res, nil
 }
 
 func (m *mockTeacherRepo) GetAll(ctx context.Context) ([]*entities.Teacher, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var res []*entities.Teacher
 	for _, weeks := range m.teachers {
 		for _, t := range weeks {
@@ -126,6 +160,8 @@ func (m *mockTeacherRepo) GetAll(ctx context.Context) ([]*entities.Teacher, erro
 }
 
 func (m *mockTeacherRepo) GetAllTeacherNames(ctx context.Context) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var names []string
 	for n := range m.teachers {
 		names = append(names, n)
@@ -134,6 +170,8 @@ func (m *mockTeacherRepo) GetAllTeacherNames(ctx context.Context) ([]string, err
 }
 
 func (m *mockTeacherRepo) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	weekSet := make(map[time.Time]struct{})
 	if name != "" {
 		for w := range m.teachers[name] {
