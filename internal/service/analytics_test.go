@@ -82,6 +82,61 @@ func TestAnalyticsService_GetCabinetSchedule(t *testing.T) {
 	assert.Equal(t, []string{"3-207", "301"}, cabsCached)
 }
 
+func TestAnalyticsService_CabinetScheduleCache_DeepCopyAndEviction(t *testing.T) {
+	ctx := context.Background()
+
+	now := time.Now()
+	sch := &entities.Schedule{
+		Groups: map[int32]*entities.Group{
+			101: {
+				ID:   101,
+				Week: now,
+				Days: []*entities.Day{
+					{
+						Name: "Понедельник",
+						Subjects: []*entities.Subject{
+							{Pairs: []*entities.Pair{{Name: "ТОЭ", Class: "301"}}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	schedRepo := &mockScheduleRepo{schedules: map[time.Time]*entities.Schedule{now: sch}}
+	svc := service.NewAnalyticsService(slog.Default(), schedRepo, nil, nil)
+
+	// 1. Получаем расписание из сервиса
+	first, candidates1, err := svc.GetCabinetSchedule(ctx, "301", time.Time{})
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	// Мутируем возвращенный объект и срез кандидатов
+	first.Cabinet = "HACKED"
+	first.Days[0].Bookings[0].Subject = "HACKED"
+	candidates1 = append(candidates1, "HACKED")
+	_ = candidates1
+
+	// Повторный запрос должен вернуть неизмененные данные из кэша (глубокая копия)
+	second, _, err := svc.GetCabinetSchedule(ctx, "301", time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, "301", second.Cabinet)
+	assert.Equal(t, "ТОЭ", second.Days[0].Bookings[0].Subject)
+
+	// 2. Проверка истечения TTL
+	fakeTime := now
+	svc.SetNowFunc(func() time.Time { return fakeTime })
+
+	// Увеличиваем время на 6 минут (TTL = 5 минут)
+	fakeTime = fakeTime.Add(6 * time.Minute)
+
+	// Очищаем репозиторий: после истечения TTL данные не должны браться из кэша
+	delete(schedRepo.schedules, now)
+	secondAfterTTL, _, err := svc.GetCabinetSchedule(ctx, "301", time.Time{})
+	require.NoError(t, err)
+	assert.Nil(t, secondAfterTTL, "после истечения TTL кэш не должен возвращать старую запись")
+}
+
 func TestAnalyticsService_GetEndings(t *testing.T) {
 	ctx := context.Background()
 
