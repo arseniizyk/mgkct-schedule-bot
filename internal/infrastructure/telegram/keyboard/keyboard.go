@@ -34,14 +34,16 @@ const (
 	CabinetPrevDay     = "cab_prevday"
 	CabinetNextDay     = "cab_nextday"
 
-	ArchiveSelect    = "arch_sel"
-	ArchiveBack      = "arch_back"
-	NotifyToggle     = "notify_toggle"
-	SubgroupSelect   = "subgroup_set"
-	DaySubgroup      = "day_sg"
-	WeekSubgroup     = "week_sg"
-	WeekImage        = "week_img"
-	TeacherWeekImage = "t_week_img"
+	ArchiveSelect       = "arch_sel"
+	ArchiveBack         = "arch_back"
+	NotifyToggle        = "notify_toggle"
+	SubgroupSelect      = "subgroup_set"
+	DaySubgroup         = "day_sg"
+	WeekSubgroup        = "week_sg"
+	WeekImage           = "week_img"
+	TeacherWeekImage    = "t_week_img"
+	WeekCalendar        = "week_cal"
+	TeacherWeekCalendar = "t_week_cal"
 
 	RoleSelect  = "role_sel"
 	RoleStudent = "student"
@@ -50,10 +52,11 @@ const (
 	BroadcastConfirm = "bcast_confirm"
 	BroadcastCancel  = "bcast_cancel"
 
-	btnCurrentWeek = "📆 Неделя"
-	btnWeekImage   = "🖼 Картинкой"
-	btnPrev        = "◀️"
-	btnNext        = "▶️"
+	btnCurrentWeek  = "📆 Неделя"
+	btnWeekImage    = "🖼 Картинкой"
+	btnWeekCalendar = "📅 В календарь"
+	btnPrev         = "◀️"
+	btnNext         = "▶️"
 )
 
 var (
@@ -235,9 +238,10 @@ func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int
 
 	hideImage := len(opts) > 0 && opts[0]
 	if !hideImage {
-		// 3-й ряд: 🖼 Картинкой
+		// 3-й ряд: 🖼 Картинкой | 📅 В календарь
 		rows = append(rows, markup.Row(
 			markup.Data(btnWeekImage, WeekImage, fmt.Sprintf("%d:%s:%d", groupID, dateStr, subgroup)),
+			markup.Data(btnWeekCalendar, WeekCalendar, fmt.Sprintf("%d:%s:%d", groupID, dateStr, subgroup)),
 		))
 	}
 
@@ -329,6 +333,7 @@ func InlineTeacherWeekKeyboard(teacherName string, weeks entities.WeekNavigation
 	if !hideImage {
 		rows = append(rows, markup.Row(
 			markup.Data(btnWeekImage, TeacherWeekImage, fmt.Sprintf("%s:%s", teacherName, dateStr)),
+			markup.Data(btnWeekCalendar, TeacherWeekCalendar, fmt.Sprintf("%s:%s", teacherName, dateStr)),
 		))
 	}
 
@@ -507,5 +512,31 @@ func InlineBroadcastKeyboard() *tele.ReplyMarkup {
 			markup.Data("❌ Отмена", BroadcastCancel),
 		),
 	)
+	return markup
+}
+
+// InlineCalendarChoiceKeyboard формирует кнопки выбора недели для экспорта в календарь.
+func InlineCalendarChoiceKeyboard(targetType, targetID string, subgroup int, weeks []time.Time) *tele.ReplyMarkup {
+	if len(weeks) == 0 {
+		return nil
+	}
+	markup := &tele.ReplyMarkup{}
+	var rows []tele.Row
+
+	for _, w := range weeks {
+		label := fmt.Sprintf("📅 Неделя %s", w.Format("02.01"))
+		dateStr := w.Format("02.01.2006")
+		if targetType == "teacher" {
+			rows = append(rows, markup.Row(
+				markup.Data(label, TeacherWeekCalendar, fmt.Sprintf("%s:%s", targetID, dateStr)),
+			))
+		} else {
+			rows = append(rows, markup.Row(
+				markup.Data(label, WeekCalendar, fmt.Sprintf("%s:%s:%d", targetID, dateStr, subgroup)),
+			))
+		}
+	}
+
+	markup.Inline(rows...)
 	return markup
 }
