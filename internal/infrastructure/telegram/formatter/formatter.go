@@ -282,7 +282,13 @@ func FormatScheduleDay(group *entities.Group) string {
 }
 
 func FormatScheduleDayForSubgroup(group *entities.Group, subgroup int) string {
+	if group == nil || len(group.Days) == 0 {
+		return messages.GroupNotFound
+	}
 	filtered := FilterGroupForSubgroup(group, subgroup)
+	if len(filtered.Days) == 0 {
+		return messages.GroupNotFound
+	}
 	dayIdx := EffectiveDayIndex(filtered)
 	if dayIdx >= len(filtered.Days) {
 		return formatScheduleDayWithTag(filtered.Days[0], DayRelativeLabel(group.Week, 0))
@@ -557,6 +563,9 @@ func FormatTeacherProfile(member *entities.FacultyMember) string {
 }
 
 func FormatTeacherScheduleDay(teacher *entities.Teacher) string {
+	if teacher == nil || len(teacher.Days) == 0 {
+		return messages.TeacherNotFound
+	}
 	dayIdx := EffectiveTeacherDayIndex(teacher)
 	if dayIdx >= len(teacher.Days) {
 		return formatTeacherScheduleDayWithTag(teacher.Days[0], DayRelativeLabel(teacher.Week, 0))

@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -54,8 +55,16 @@ func CallbacksHandler(
 
 		err := dispatchCallback(ctx, log, c, data, schedSvc, teacherSvc, analyticsSvc, userRepo, sm, adminIDs)
 		if err != nil {
-			if strings.Contains(err.Error(), "message is not modified") {
+			if errors.Is(err, tele.ErrTrueResult) || strings.Contains(err.Error(), "result is True") || strings.Contains(err.Error(), "message is not modified") {
 				return c.Respond()
+			}
+			if retryAfter, ok := extractFloodRetry(err); ok {
+				log.Warn("rate limited by telegram (flood control)", "retry_after", retryAfter, "data", data)
+				text := "⏳ Слишком частые переключения. Подождите немного."
+				if retryAfter > 0 {
+					text = fmt.Sprintf("⏳ Слишком частые переключения. Подождите %d сек.", retryAfter)
+				}
+				return c.Respond(&tele.CallbackResponse{Text: text, ShowAlert: false})
 			}
 			log.Error("callback execution error", "error", err, "data", data)
 			return c.Respond(&tele.CallbackResponse{Text: messages.Internal, ShowAlert: true})
@@ -63,6 +72,43 @@ func CallbacksHandler(
 
 		return c.Respond()
 	}
+}
+
+func callbackChatID(c tele.Context) int64 {
+	if c.Chat() != nil {
+		return c.Chat().ID
+	}
+	if c.Sender() != nil {
+		return c.Sender().ID
+	}
+	return 0
+}
+
+func extractFloodRetry(err error) (int, bool) {
+	if err == nil {
+		return 0, false
+	}
+	if fErr, ok := errors.AsType[tele.FloodError](err); ok {
+		return fErr.RetryAfter, true
+	}
+	var fErrPtr *tele.FloodError
+	if errors.As(err, &fErrPtr) && fErrPtr != nil {
+		return fErrPtr.RetryAfter, true
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "retry after") || strings.Contains(msg, "FLOOD_WAIT") {
+		if _, after, ok := strings.Cut(msg, "retry after "); ok {
+			rem := after
+			fields := strings.Fields(rem)
+			if len(fields) > 0 {
+				if sec, parseErr := strconv.Atoi(fields[0]); parseErr == nil {
+					return sec, true
+				}
+			}
+		}
+		return 0, true
+	}
+	return 0, false
 }
 
 func dispatchCallback(
@@ -153,7 +199,7 @@ func dispatchCallback(
 
 func handleRoleSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, sm StateManager) error {
 	raw := dataFromCallbackData(data)
-	chatID := c.Chat().ID
+	chatID := callbackChatID(c)
 
 	// Очищаем инлайн-кнопки выбора роли у сообщения
 	_ = c.Edit(&tele.ReplyMarkup{})
@@ -195,13 +241,14 @@ func handleSubgroupSelect(ctx context.Context, log *slog.Logger, c tele.Context,
 		return err
 	}
 
-	if err := userRepo.SetUserGroup(ctx, c.Chat().ID, groupID, subgroup); err != nil {
+	chatID := callbackChatID(c)
+	if err := userRepo.SetUserGroup(ctx, chatID, groupID, subgroup); err != nil {
 		log.Error("failed saving user group and subgroup", "group_id", groupID, "subgroup", subgroup, "error", err)
 		return err
 	}
 
 	if sm != nil {
-		_ = sm.Clear(c.Chat().ID)
+		_ = sm.Clear(chatID)
 	}
 
 	var text string
@@ -222,13 +269,14 @@ func handleTeacherSetSelect(ctx context.Context, log *slog.Logger, c tele.Contex
 		return fmt.Errorf("invalid teacher set select data: %s", data)
 	}
 
-	if err := userRepo.SetTeacher(ctx, c.Chat().ID, teacherName); err != nil {
+	chatID := callbackChatID(c)
+	if err := userRepo.SetTeacher(ctx, chatID, teacherName); err != nil {
 		log.Error("failed saving user teacher from callback", "teacher", teacherName, "error", err)
 		return err
 	}
 
 	if sm != nil {
-		_ = sm.Clear(c.Chat().ID)
+		_ = sm.Clear(chatID)
 	}
 
 	_ = c.Edit(&tele.ReplyMarkup{})
@@ -290,13 +338,13 @@ func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data st
 	}
 
 	if !hasSubgroup && userRepo != nil {
-		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
+		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, callbackChatID(c)); err == nil && userGroup == groupID {
 			subgroup = userSg
 		}
 	}
 
 	var group *entities.Group
-	if dateStr != "" {
+	if dateStr != "" && dateStr != "current" {
 		date, parseErr := time.Parse("02.01.2006", dateStr)
 		if parseErr != nil {
 			return parseErr
@@ -312,7 +360,10 @@ func handleDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data st
 		}
 	}
 
-	if dayIdx < 0 {
+	if dayIdx == -2 {
+		filtered := formatter.FilterGroupForSubgroup(group, subgroup)
+		dayIdx = formatter.EffectiveDayIndex(filtered)
+	} else if dayIdx < 0 {
 		dayIdx = len(group.Days) - 1
 	}
 	if dayIdx < 0 {
@@ -381,7 +432,7 @@ func handleCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Context, da
 			subgroup = sg
 		}
 	} else if userRepo != nil {
-		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
+		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, callbackChatID(c)); err == nil && userGroup == groupID {
 			subgroup = userSg
 		}
 	}
@@ -401,7 +452,8 @@ func renderCurrentWeek(ctx context.Context, c tele.Context, svc ScheduleService,
 		weeks = entities.WeekNavigation{}
 	}
 
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup))
+	isInline := c.Callback() != nil && c.Callback().IsInline()
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup, isInline))
 }
 
 func handleWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
@@ -427,7 +479,7 @@ func handleWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data s
 			subgroup = sg
 		}
 	} else if userRepo != nil {
-		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
+		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, callbackChatID(c)); err == nil && userGroup == groupID {
 			subgroup = userSg
 		}
 	}
@@ -447,7 +499,8 @@ func renderWeek(ctx context.Context, c tele.Context, svc ScheduleService, groupI
 		weeks = entities.WeekNavigation{}
 	}
 
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup))
+	isInline := c.Callback() != nil && c.Callback().IsInline()
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineWeekKeyboard(groupID, weeks, subgroup, isInline))
 }
 
 func handleWeekImage(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc ScheduleService, userRepo UserRepo) error {
@@ -473,7 +526,7 @@ func handleWeekImage(ctx context.Context, log *slog.Logger, c tele.Context, data
 			subgroup = sg
 		}
 	} else if userRepo != nil {
-		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGroup == groupID {
+		if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, callbackChatID(c)); err == nil && userGroup == groupID {
 			subgroup = userSg
 		}
 	}
@@ -495,11 +548,7 @@ func handleWeekImage(ctx context.Context, log *slog.Logger, c tele.Context, data
 	cacheKey := renderer.GroupKey(group.ID, group.Week, subgroup)
 	cache := renderer.GetDefaultCache()
 	if fileID, ok := cache.GetFileID(cacheKey); ok {
-		photo := &tele.Photo{
-			FileID: fileID,
-		}
-		_ = c.Respond()
-		return c.Send(photo)
+		return sendSchedulePhoto(c, &tele.Photo{FileID: fileID}, cache, cacheKey)
 	}
 
 	imgBytes, err := renderer.RenderGroupWeek(group, subgroup)
@@ -510,17 +559,7 @@ func handleWeekImage(ctx context.Context, log *slog.Logger, c tele.Context, data
 	photo := &tele.Photo{
 		File: tele.FromReader(bytes.NewReader(imgBytes)),
 	}
-	_ = c.Respond()
-	sentMsg, err := c.Bot().Send(c.Recipient(), photo)
-	if err != nil {
-		return err
-	}
-
-	if sentMsg != nil && sentMsg.Photo != nil && sentMsg.Photo.FileID != "" {
-		cache.SetFileID(cacheKey, sentMsg.Photo.FileID)
-	}
-
-	return nil
+	return sendSchedulePhoto(c, photo, cache, cacheKey)
 }
 
 func handleTeacherWeekImage(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService) error {
@@ -551,11 +590,7 @@ func handleTeacherWeekImage(ctx context.Context, log *slog.Logger, c tele.Contex
 	cacheKey := renderer.TeacherKey(teacher.Name, teacher.Week)
 	cache := renderer.GetDefaultCache()
 	if fileID, ok := cache.GetFileID(cacheKey); ok {
-		photo := &tele.Photo{
-			FileID: fileID,
-		}
-		_ = c.Respond()
-		return c.Send(photo)
+		return sendSchedulePhoto(c, &tele.Photo{FileID: fileID}, cache, cacheKey)
 	}
 
 	imgBytes, err := renderer.RenderTeacherWeek(teacher)
@@ -566,17 +601,40 @@ func handleTeacherWeekImage(ctx context.Context, log *slog.Logger, c tele.Contex
 	photo := &tele.Photo{
 		File: tele.FromReader(bytes.NewReader(imgBytes)),
 	}
+	return sendSchedulePhoto(c, photo, cache, cacheKey)
+}
+
+func sendSchedulePhoto(c tele.Context, photo *tele.Photo, cache *renderer.ImageCache, cacheKey string) error {
+	if c.Callback() != nil && c.Callback().IsInline() {
+		sentMsg, err := c.Bot().Send(c.Sender(), photo)
+		if err != nil {
+			return c.Respond(&tele.CallbackResponse{
+				Text:      "Сначала запустите бота в личных сообщениях, чтобы получать расписание картинкой",
+				ShowAlert: true,
+			})
+		}
+		if sentMsg != nil && sentMsg.Photo != nil && sentMsg.Photo.FileID != "" && cache != nil {
+			cache.SetFileID(cacheKey, sentMsg.Photo.FileID)
+		}
+		return c.Respond(&tele.CallbackResponse{
+			Text: "🖼 Расписание отправлено вам в личные сообщения",
+		})
+	}
+
 	_ = c.Respond()
-	sentMsg, err := c.Bot().Send(c.Recipient(), photo)
-	if err != nil {
-		return err
+	var (
+		sentMsg *tele.Message
+		err     error
+	)
+	if photo.FileID != "" {
+		err = c.Send(photo)
+	} else {
+		sentMsg, err = c.Bot().Send(c.Recipient(), photo)
+		if err == nil && sentMsg != nil && sentMsg.Photo != nil && sentMsg.Photo.FileID != "" && cache != nil {
+			cache.SetFileID(cacheKey, sentMsg.Photo.FileID)
+		}
 	}
-
-	if sentMsg != nil && sentMsg.Photo != nil && sentMsg.Photo.FileID != "" {
-		cache.SetFileID(cacheKey, sentMsg.Photo.FileID)
-	}
-
-	return nil
+	return err
 }
 
 func parseTeacherDayNavData(raw string) (teacherName string, dateStr string, dayIdx int, err error) {
@@ -592,6 +650,9 @@ func parseTeacherDayNavData(raw string) (teacherName string, dateStr string, day
 
 	name, possibleDate, hasDate := strings.CutLast(left, ":")
 	if hasDate {
+		if possibleDate == "current" {
+			return name, possibleDate, dayIdx, nil
+		}
 		if _, parseErr := time.Parse("02.01.2006", possibleDate); parseErr == nil {
 			return name, possibleDate, dayIdx, nil
 		}
@@ -608,7 +669,7 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 	}
 
 	var teacher *entities.Teacher
-	if dateStr != "" {
+	if dateStr != "" && dateStr != "current" {
 		date, parseErr := time.Parse("02.01.2006", dateStr)
 		if parseErr != nil {
 			return parseErr
@@ -624,7 +685,9 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 		}
 	}
 
-	if dayIdx < 0 {
+	if dayIdx == -2 {
+		dayIdx = formatter.EffectiveTeacherDayIndex(teacher)
+	} else if dayIdx < 0 {
 		dayIdx = len(teacher.Days) - 1
 	}
 	if dayIdx < 0 {
@@ -647,7 +710,7 @@ func handleTeacherDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 		return err
 	}
 
-	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+	if shouldShowTeacherProfile(ctx, userRepo, callbackChatID(c), teacherName) {
 		member, _ := svc.GetFacultyMember(ctx, teacherName)
 		msg = formatter.FormatTeacherProfile(member) + msg
 	}
@@ -664,7 +727,7 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 	}
 
 	var profile string
-	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+	if shouldShowTeacherProfile(ctx, userRepo, callbackChatID(c), teacherName) {
 		member, _ := svc.GetFacultyMember(ctx, teacherName)
 		profile = formatter.FormatTeacherProfile(member)
 	}
@@ -674,7 +737,8 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 	}
 
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherWeekKeyboard(teacherName, weeks))
+	isInline := c.Callback() != nil && c.Callback().IsInline()
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherWeekKeyboard(teacherName, weeks, isInline))
 }
 
 func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc TeacherService, userRepo UserRepo) error {
@@ -695,7 +759,7 @@ func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context,
 	}
 
 	var profile string
-	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, teacherName) {
+	if shouldShowTeacherProfile(ctx, userRepo, callbackChatID(c), teacherName) {
 		member, _ := svc.GetFacultyMember(ctx, teacherName)
 		profile = formatter.FormatTeacherProfile(member)
 	}
@@ -705,7 +769,8 @@ func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context,
 		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 	}
 
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherWeekKeyboard(teacherName, weeks))
+	isInline := c.Callback() != nil && c.Callback().IsInline()
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineTeacherWeekKeyboard(teacherName, weeks, isInline))
 }
 
 func dataFromCallbackData(data string) string {
@@ -794,7 +859,7 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 		return err
 	}
 	var profile string
-	if shouldShowTeacherProfile(ctx, userRepo, c.Chat().ID, targetID) {
+	if shouldShowTeacherProfile(ctx, userRepo, callbackChatID(c), targetID) {
 		member, _ := teacherSvc.GetFacultyMember(ctx, targetID)
 		profile = formatter.FormatTeacherProfile(member)
 	}

@@ -261,6 +261,13 @@ func TestInlineWeekKeyboard(t *testing.T) {
 			t.Errorf("img button = %v, want %v", imgDatas, wantImg)
 		}
 	})
+
+	t.Run("hideImage hides image button", func(t *testing.T) {
+		m := InlineWeekKeyboard(88, entities.WeekNavigation{}, 0, true)
+		if len(m.InlineKeyboard) != 1 {
+			t.Fatalf("expected 1 row (only subgroups), got %d", len(m.InlineKeyboard))
+		}
+	})
 }
 
 func TestReplyScheduleKeyboard(t *testing.T) {
@@ -520,4 +527,11 @@ func TestInlineTeacherWeekKeyboard(t *testing.T) {
 	if imgBtn.Data != expectedData {
 		t.Errorf("imgBtn.Data = %q, want %q", imgBtn.Data, expectedData)
 	}
+
+	t.Run("hideImage hides image button", func(t *testing.T) {
+		mNoImg := InlineTeacherWeekKeyboard("Павлов В. С.", weeks, true)
+		if len(mNoImg.InlineKeyboard) != 1 {
+			t.Fatalf("expected 1 row (only nav), got %d", len(mNoImg.InlineKeyboard))
+		}
+	})
 }
