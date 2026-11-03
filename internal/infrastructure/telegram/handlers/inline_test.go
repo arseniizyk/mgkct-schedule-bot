@@ -265,16 +265,19 @@ func TestInlineQuery(t *testing.T) {
 		assert.Len(t, c.queryResponse.Results, 3) // Next, Current, Prev (от самой новой к старой)
 
 		art0 := c.queryResponse.Results[0].(*tele.ArticleResult)
-		assert.Contains(t, art0.Title, "Следующая неделя")
+		assert.Contains(t, art0.Title, "Понедельник")
+		assert.Contains(t, art0.Description, "Текущая неделя")
 		assert.Contains(t, art0.Description, "Группа 88")
+		assert.Contains(t, art0.Text, "Математика")
 
 		art1 := c.queryResponse.Results[1].(*tele.ArticleResult)
-		assert.Contains(t, art1.Title, "Текущая неделя")
+		assert.Contains(t, art1.Title, "Понедельник")
+		assert.Contains(t, art1.Description, "Следующая неделя")
 		assert.Contains(t, art1.Description, "Группа 88")
-		assert.Contains(t, art1.Text, "Математика")
 
 		art2 := c.queryResponse.Results[2].(*tele.ArticleResult)
-		assert.Contains(t, art2.Title, "Предыдущая неделя")
+		assert.Contains(t, art2.Title, "Понедельник")
+		assert.Contains(t, art2.Description, "Предыдущая неделя")
 		assert.Contains(t, art2.Description, "Группа 88")
 	})
 
@@ -294,19 +297,21 @@ func TestInlineQuery(t *testing.T) {
 		err := h(c)
 		require.NoError(t, err)
 		require.NotNil(t, c.queryResponse)
-		assert.Len(t, c.queryResponse.Results, 2) // Next, Current (DESC)
+		assert.Len(t, c.queryResponse.Results, 2)
 
 		art0 := c.queryResponse.Results[0].(*tele.ArticleResult)
-		assert.Contains(t, art0.Title, "Следующая неделя")
-		assert.Equal(t, "Егорова Ю. Н.", art0.Description)
+		assert.Contains(t, art0.Title, "Понедельник")
+		assert.Contains(t, art0.Description, "Егорова Ю. Н.")
+		assert.Contains(t, art0.Description, "Текущая неделя")
+		assert.Contains(t, art0.Text, "Информатика")
 
 		art1 := c.queryResponse.Results[1].(*tele.ArticleResult)
-		assert.Contains(t, art1.Title, "Текущая неделя")
-		assert.Equal(t, "Егорова Ю. Н.", art1.Description)
-		assert.Contains(t, art1.Text, "Информатика")
+		assert.Contains(t, art1.Title, "Понедельник")
+		assert.Contains(t, art1.Description, "Егорова Ю. Н.")
+		assert.Contains(t, art1.Description, "Следующая неделя")
 	})
 
-	t.Run("Group query with valid group ID returns available weeks sorted DESC with single switch button", func(t *testing.T) {
+	t.Run("Group query with valid group ID returns available weeks sorted DESC with day navigation keyboard", func(t *testing.T) {
 		repo := newMockUserRepo()
 		h := handlers.InlineQueryWithClock(log, mockSched, mockTeacher, repo, fixedClock)
 
@@ -322,22 +327,26 @@ func TestInlineQuery(t *testing.T) {
 		require.NotNil(t, c.queryResponse)
 		assert.Len(t, c.queryResponse.Results, 3)
 
-		// Проверяем сортировку: сначала следующая (02.11), затем текущая (26.10), затем предыдущая (19.10)
 		art0 := c.queryResponse.Results[0].(*tele.ArticleResult)
-		assert.Contains(t, art0.Title, "Следующая неделя (02.11 – 07.11)")
-		assert.Equal(t, "Группа 88", art0.Description)
+		assert.Contains(t, art0.Title, "Понедельник")
+		assert.Contains(t, art0.Description, "Группа 88")
+		assert.Contains(t, art0.Description, "Текущая неделя")
+		assert.Contains(t, art0.Text, "Понедельник")
+		assert.Contains(t, art0.Text, "Математика")
 		require.NotNil(t, art0.ReplyMarkup)
 		require.NotEmpty(t, art0.ReplyMarkup.InlineKeyboard)
 
-		// Под сообщением ровно одна кнопка "Другое расписание"
-		require.Len(t, art0.ReplyMarkup.InlineKeyboard[0], 1)
-		assert.Equal(t, "🔍 Другое расписание", art0.ReplyMarkup.InlineKeyboard[0][0].Text)
+		// Под сообщением навигация по дням (InlineDayKeyboard): первая строка — nav, вторая — подгруппы
+		// Кнопки «🔍 Другое расписание» нет
+		assert.NotEqual(t, "🔍 Другое расписание", art0.ReplyMarkup.InlineKeyboard[0][0].Text)
 
 		art1 := c.queryResponse.Results[1].(*tele.ArticleResult)
-		assert.Contains(t, art1.Title, "Текущая неделя (26.10 – 31.10)")
+		assert.Contains(t, art1.Title, "Понедельник")
+		assert.Contains(t, art1.Description, "Следующая неделя")
 
 		art2 := c.queryResponse.Results[2].(*tele.ArticleResult)
-		assert.Contains(t, art2.Title, "Предыдущая неделя (19.10 – 24.10)")
+		assert.Contains(t, art2.Title, "Понедельник")
+		assert.Contains(t, art2.Description, "Предыдущая неделя")
 	})
 
 	t.Run("Group query with many weeks respects maxWeeks limit of 4", func(t *testing.T) {
@@ -425,12 +434,14 @@ func TestInlineQuery(t *testing.T) {
 		assert.Len(t, c.queryResponse.Results, 2)
 
 		art0 := c.queryResponse.Results[0].(*tele.ArticleResult)
-		assert.Contains(t, art0.Title, "Следующая неделя")
-		assert.Equal(t, "Егорова Ю. Н.", art0.Description)
+		assert.Contains(t, art0.Title, "Понедельник")
+		assert.Contains(t, art0.Description, "Егорова Ю. Н.")
+		assert.Contains(t, art0.Description, "Текущая неделя")
 
 		art1 := c.queryResponse.Results[1].(*tele.ArticleResult)
-		assert.Contains(t, art1.Title, "Текущая неделя")
-		assert.Equal(t, "Егорова Ю. Н.", art1.Description)
+		assert.Contains(t, art1.Title, "Понедельник")
+		assert.Contains(t, art1.Description, "Егорова Ю. Н.")
+		assert.Contains(t, art1.Description, "Следующая неделя")
 	})
 
 	t.Run("Teacher query with candidate match limits to maxCandidates 10", func(t *testing.T) {

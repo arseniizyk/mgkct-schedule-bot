@@ -14,7 +14,9 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 )
 
 // InlineQuery обрабатывает inline query запросы к боту (@mgkct_bot <запрос>)
@@ -169,46 +171,69 @@ func buildGroupQueryResults(
 		allWeeks = []time.Time{latestGroup.Week}
 	}
 
-	sort.Slice(allWeeks, func(i, j int) bool {
-		return allWeeks[i].After(allWeeks[j])
-	})
+	curMonday := currentWeekMonday(nowFunc())
+	sortWeeksByRelevance(allWeeks, curMonday)
 
 	const maxWeeks = 4
 	if len(allWeeks) > maxWeeks {
 		allWeeks = allWeeks[:maxWeeks]
 	}
 
-	curMonday := currentWeekMonday(nowFunc())
-	results := make(tele.Results, 0, len(allWeeks))
+	results := make(tele.Results, 0, len(allWeeks)*6)
 
-	for i, w := range allWeeks {
+	for wIdx, w := range allWeeks {
 		grp, wErr := schedSvc.GetGroupScheduleByWeek(ctx, int32(groupID), w)
-		if wErr != nil || grp == nil {
+		if wErr != nil || grp == nil || len(grp.Days) == 0 {
 			continue
 		}
 
-		text := formatter.FormatScheduleWeekForSubgroup(grp, subgroup)
-		desc := fmt.Sprintf("Группа %d", groupID)
-		if subgroup > 0 {
-			desc += fmt.Sprintf(" (%d п/г)", subgroup)
+		filtered := formatter.FilterGroupForSubgroup(grp, subgroup)
+		weekLabel := determineWeekLabel(w, curMonday)
+		weeks, wNavErr := schedSvc.GetAvailableWeeks(ctx, grp.Week)
+		if wNavErr != nil {
+			weeks = entities.WeekNavigation{}
+		}
+		if weeks.Current.IsZero() {
+			weeks.Current = grp.Week
 		}
 
-		label := determineWeekLabel(w, curMonday)
-		title := fmt.Sprintf("%s (%s)", label, formatWeekRange(w))
+		for dayIdx, day := range filtered.Days {
+			if day == nil {
+				continue
+			}
 
-		article := &tele.ArticleResult{
-			Title:       title,
-			Description: desc,
-			Text:        text,
+			dayTitle := day.Name
+			if dayTitle == "" && dayIdx < len(defaultDayNames) {
+				dayTitle = defaultDayNames[dayIdx]
+			}
+
+			tag := formatter.DayRelativeLabelWithNow(grp.Week, dayIdx, nowFunc())
+			title := fmt.Sprintf("%s%s", dayTitle, tag)
+
+			desc := fmt.Sprintf("Группа %d • %s", groupID, weekLabel)
+			if subgroup > 0 {
+				desc = fmt.Sprintf("Группа %d (%d п/г) • %s", groupID, subgroup, weekLabel)
+			}
+
+			text, err := formatter.FormatScheduleDayAtForSubgroup(grp, dayIdx, subgroup)
+			if err != nil {
+				continue
+			}
+
+			article := &tele.ArticleResult{
+				Title:       title,
+				Description: desc,
+				Text:        text,
+			}
+			article.SetResultID(hashResultID(fmt.Sprintf("grp:%d:%s:%d:%d:%d", groupID, w.Format("2006-01-02"), subgroup, wIdx, dayIdx)))
+			article.SetParseMode(tele.ModeMarkdown)
+
+			if markup := keyboard.InlineDayKeyboard(groupID, dayIdx, len(grp.Days), subgroup, weeks); markup != nil {
+				article.SetReplyMarkup(markup)
+			}
+
+			results = append(results, article)
 		}
-		article.SetResultID(hashResultID(fmt.Sprintf("grp:%d:%s:%d:%d", groupID, w.Format("2006-01-02"), subgroup, i)))
-		article.SetParseMode(tele.ModeMarkdown)
-
-		if markup := buildInlineMessageMarkup(); markup != nil {
-			article.SetReplyMarkup(markup)
-		}
-
-		results = append(results, article)
 	}
 
 	return results
@@ -235,7 +260,18 @@ func buildTeacherQueryResults(
 				if err != nil {
 					continue
 				}
-				text := formatter.FormatTeacherScheduleWeek(latest)
+				dayIdx := formatter.EffectiveTeacherDayIndex(latest)
+				text, err := formatter.FormatTeacherScheduleDayAt(latest, dayIdx)
+				if err != nil {
+					text = formatter.FormatTeacherScheduleDay(latest)
+				}
+				weeks, wNavErr := teacherSvc.GetAvailableWeeks(ctx, cand, latest.Week)
+				if wNavErr != nil {
+					weeks = entities.WeekNavigation{}
+				}
+				if weeks.Current.IsZero() {
+					weeks.Current = latest.Week
+				}
 				article := &tele.ArticleResult{
 					Title:       cand,
 					Description: fmt.Sprintf("Текущая неделя (%s)", formatWeekRange(latest.Week)),
@@ -243,7 +279,7 @@ func buildTeacherQueryResults(
 				}
 				article.SetResultID(hashResultID(fmt.Sprintf("cand:%s:%d", cand, i)))
 				article.SetParseMode(tele.ModeMarkdown)
-				if markup := buildInlineMessageMarkup(); markup != nil {
+				if markup := keyboard.InlineTeacherDayKeyboard(cand, dayIdx, len(latest.Days), weeks); markup != nil {
 					article.SetReplyMarkup(markup)
 				}
 				results = append(results, article)
@@ -270,44 +306,103 @@ func buildTeacherQueryResults(
 		allWeeks = []time.Time{latestTeacher.Week}
 	}
 
-	sort.Slice(allWeeks, func(i, j int) bool {
-		return allWeeks[i].After(allWeeks[j])
-	})
+	curMonday := currentWeekMonday(nowFunc())
+	sortWeeksByRelevance(allWeeks, curMonday)
 
 	const maxWeeks = 4
 	if len(allWeeks) > maxWeeks {
 		allWeeks = allWeeks[:maxWeeks]
 	}
 
-	curMonday := currentWeekMonday(nowFunc())
-	results := make(tele.Results, 0, len(allWeeks))
+	results := make(tele.Results, 0, len(allWeeks)*6)
 
-	for i, w := range allWeeks {
+	for wIdx, w := range allWeeks {
 		tch, wErr := teacherSvc.GetTeacherScheduleByWeek(ctx, matched, w)
-		if wErr != nil || tch == nil {
+		if wErr != nil || tch == nil || len(tch.Days) == 0 {
 			continue
 		}
 
-		text := formatter.FormatTeacherScheduleWeek(tch)
-		label := determineWeekLabel(w, curMonday)
-		title := fmt.Sprintf("%s (%s)", label, formatWeekRange(w))
-
-		article := &tele.ArticleResult{
-			Title:       title,
-			Description: matched,
-			Text:        text,
+		weekLabel := determineWeekLabel(w, curMonday)
+		weeks, wNavErr := teacherSvc.GetAvailableWeeks(ctx, matched, tch.Week)
+		if wNavErr != nil {
+			weeks = entities.WeekNavigation{}
 		}
-		article.SetResultID(hashResultID(fmt.Sprintf("tch:%s:%s:%d", matched, w.Format("2006-01-02"), i)))
-		article.SetParseMode(tele.ModeMarkdown)
-
-		if markup := buildInlineMessageMarkup(); markup != nil {
-			article.SetReplyMarkup(markup)
+		if weeks.Current.IsZero() {
+			weeks.Current = tch.Week
 		}
 
-		results = append(results, article)
+		for dayIdx, day := range tch.Days {
+			if day == nil {
+				continue
+			}
+
+			dayTitle := day.Name
+			if dayTitle == "" && dayIdx < len(defaultDayNames) {
+				dayTitle = defaultDayNames[dayIdx]
+			}
+
+			tag := formatter.DayRelativeLabelWithNow(tch.Week, dayIdx, nowFunc())
+			title := fmt.Sprintf("%s%s", dayTitle, tag)
+			desc := fmt.Sprintf("%s • %s", matched, weekLabel)
+
+			text, err := formatter.FormatTeacherScheduleDayAt(tch, dayIdx)
+			if err != nil {
+				continue
+			}
+
+			article := &tele.ArticleResult{
+				Title:       title,
+				Description: desc,
+				Text:        text,
+			}
+			article.SetResultID(hashResultID(fmt.Sprintf("tch:%s:%s:%d:%d", matched, w.Format("2006-01-02"), wIdx, dayIdx)))
+			article.SetParseMode(tele.ModeMarkdown)
+
+			if markup := keyboard.InlineTeacherDayKeyboard(matched, dayIdx, len(tch.Days), weeks); markup != nil {
+				article.SetReplyMarkup(markup)
+			}
+
+			results = append(results, article)
+		}
 	}
 
 	return results
+}
+
+var defaultDayNames = []string{
+	"Понедельник",
+	"Вторник",
+	"Среда",
+	"Четверг",
+	"Пятница",
+	"Суббота",
+}
+
+func sortWeeksByRelevance(weeks []time.Time, curMonday time.Time) {
+	sort.Slice(weeks, func(i, j int) bool {
+		wi := weekRelevanceWeight(weeks[i], curMonday)
+		wj := weekRelevanceWeight(weeks[j], curMonday)
+		if wi != wj {
+			return wi < wj
+		}
+		return weeks[i].Before(weeks[j])
+	})
+}
+
+func weekRelevanceWeight(w time.Time, curMonday time.Time) int {
+	wNorm := time.Date(w.Year(), w.Month(), w.Day(), 0, 0, 0, 0, minskLoc)
+	curNorm := time.Date(curMonday.Year(), curMonday.Month(), curMonday.Day(), 0, 0, 0, 0, minskLoc)
+	diffDays := int(math.Round(wNorm.Sub(curNorm).Hours() / 24))
+	switch {
+	case diffDays == 0:
+		return 0
+	case diffDays == 7:
+		return 1
+	case diffDays > 7:
+		return 2
+	default:
+		return 3
+	}
 }
 
 var minskLoc = time.FixedZone("MSK", 3*3600)
@@ -351,12 +446,6 @@ func buildNotFoundArticle(id, title, desc string) *tele.ArticleResult {
 	article.SetResultID(hashResultID(id))
 	article.SetParseMode(tele.ModeMarkdown)
 	return article
-}
-
-func buildInlineMessageMarkup() *tele.ReplyMarkup {
-	markup := &tele.ReplyMarkup{}
-	markup.Inline(markup.Row(markup.QueryChat("🔍 Другое расписание", "")))
-	return markup
 }
 
 func hashResultID(key string) string {

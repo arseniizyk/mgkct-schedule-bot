@@ -186,7 +186,7 @@ func InlineDayKeyboard(groupID, dayIdx, dayCount, subgroup int, weeksOpt ...enti
 	return markup
 }
 
-func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int) *tele.ReplyMarkup {
+func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int, opts ...bool) *tele.ReplyMarkup {
 	if groupID == 0 {
 		return nil
 	}
@@ -233,10 +233,13 @@ func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int
 		markup.Data(sg2Title, WeekSubgroup, fmt.Sprintf("%d:%s:2", groupID, dateStr)),
 	))
 
-	// 3-й ряд: 🖼 Картинкой
-	rows = append(rows, markup.Row(
-		markup.Data(btnWeekImage, WeekImage, fmt.Sprintf("%d:%s:%d", groupID, dateStr, subgroup)),
-	))
+	hideImage := len(opts) > 0 && opts[0]
+	if !hideImage {
+		// 3-й ряд: 🖼 Картинкой
+		rows = append(rows, markup.Row(
+			markup.Data(btnWeekImage, WeekImage, fmt.Sprintf("%d:%s:%d", groupID, dateStr, subgroup)),
+		))
+	}
 
 	markup.Inline(rows...)
 	return markup
@@ -296,7 +299,7 @@ func InlineTeacherDayKeyboard(teacherName string, dayIdx, dayCount int, weeksOpt
 	return markup
 }
 
-func InlineTeacherWeekKeyboard(teacherName string, weeks entities.WeekNavigation) *tele.ReplyMarkup {
+func InlineTeacherWeekKeyboard(teacherName string, weeks entities.WeekNavigation, opts ...bool) *tele.ReplyMarkup {
 	markup := &tele.ReplyMarkup{}
 	var rows []tele.Row
 
@@ -322,9 +325,12 @@ func InlineTeacherWeekKeyboard(teacherName string, weeks entities.WeekNavigation
 		dateStr = weeks.Current.Format("02.01.2006")
 	}
 
-	rows = append(rows, markup.Row(
-		markup.Data(btnWeekImage, TeacherWeekImage, fmt.Sprintf("%s:%s", teacherName, dateStr)),
-	))
+	hideImage := len(opts) > 0 && opts[0]
+	if !hideImage {
+		rows = append(rows, markup.Row(
+			markup.Data(btnWeekImage, TeacherWeekImage, fmt.Sprintf("%s:%s", teacherName, dateStr)),
+		))
+	}
 
 	if len(rows) > 0 {
 		markup.Inline(rows...)
