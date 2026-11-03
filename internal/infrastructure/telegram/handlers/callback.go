@@ -13,6 +13,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/calendar"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/renderer"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
@@ -31,12 +32,15 @@ func CallbacksHandler(
 ) tele.HandlerFunc {
 	var bot BotSender
 	var adminIDs []int64
+	var dict calendar.SubjectDictionary
 	for _, ex := range extra {
 		switch v := ex.(type) {
 		case BotSender:
 			bot = v
 		case []int64:
 			adminIDs = v
+		case calendar.SubjectDictionary:
+			dict = v
 		case context.Context:
 			SetBroadcastContext(v)
 		}
@@ -53,7 +57,7 @@ func CallbacksHandler(
 			return HandleBroadcastCallback(ctx, log, c, data, userRepo, bot, sm, adminIDs)
 		}
 
-		err := dispatchCallback(ctx, log, c, data, schedSvc, teacherSvc, analyticsSvc, userRepo, sm, adminIDs)
+		err := dispatchCallback(ctx, log, c, data, schedSvc, teacherSvc, analyticsSvc, userRepo, sm, adminIDs, dict)
 		if err != nil {
 			if errors.Is(err, tele.ErrTrueResult) || strings.Contains(err.Error(), "result is True") || strings.Contains(err.Error(), "message is not modified") {
 				return c.Respond()
@@ -122,6 +126,7 @@ func dispatchCallback(
 	userRepo UserRepo,
 	sm StateManager,
 	adminIDs []int64,
+	dict calendar.SubjectDictionary,
 ) error {
 	switch {
 	// Выбор роли
@@ -165,6 +170,8 @@ func dispatchCallback(
 		}
 
 	// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
+	case strings.Contains(data, keyboard.TeacherWeekCalendar):
+		return handleTeacherWeekCalendar(ctx, log, c, data, teacherSvc, dict)
 	case strings.Contains(data, keyboard.TeacherWeekImage):
 		return handleTeacherWeekImage(ctx, log, c, data, teacherSvc)
 	case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
@@ -175,6 +182,8 @@ func dispatchCallback(
 		return handleTeacherWeekNav(ctx, log, c, data, teacherSvc, userRepo)
 
 	// Группы
+	case strings.Contains(data, keyboard.WeekCalendar):
+		return handleWeekCalendar(ctx, log, c, data, schedSvc, userRepo, dict)
 	case strings.Contains(data, keyboard.WeekImage):
 		return handleWeekImage(ctx, log, c, data, schedSvc, userRepo)
 	case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay),

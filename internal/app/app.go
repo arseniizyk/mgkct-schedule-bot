@@ -734,6 +734,8 @@ func registerBotHandlers(
 	bot.Handle("/week", handlers.Week(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/pic", handlers.ScheduleImage(log, scheduleSvc, teacherSvc, userRepo))
 	bot.Handle("/image", handlers.ScheduleImage(log, scheduleSvc, teacherSvc, userRepo))
+	bot.Handle("/calendar", handlers.ScheduleCalendar(log, scheduleSvc, teacherSvc, userRepo, subjectDict))
+	bot.Handle("/export", handlers.ScheduleCalendar(log, scheduleSvc, teacherSvc, userRepo, subjectDict))
 	bot.Handle("/teachers", handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/setteacher", handlers.SetTeacher(log, teacherSvc, userRepo, stateMgr))
 	bot.Handle("/teacher", handlers.TeacherDay(log, teacherSvc, userRepo, stateMgr))
@@ -759,7 +761,7 @@ func registerBotHandlers(
 	bot.Handle(kbd.BtnTeachers, handlers.Teachers(log, teacherSvc, userRepo, stateMgr))
 
 	// Инлайн-коллбэки, ввод текста и инлайн-поиск
-	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr, bot, cfg.Bot.AdminIDs))
+	bot.Handle(tele.OnCallback, handlers.CallbacksHandler(log, scheduleSvc, teacherSvc, analyticsSvc, userRepo, stateMgr, bot, cfg.Bot.AdminIDs, subjectDict))
 	bot.Handle(tele.OnText, handlers.StatesHandler(log, userRepo, stateMgr, teacherSvc, scheduleSvc, analyticsSvc, subjectDict, bot, cfg.Bot.AdminIDs))
 	bot.Handle(tele.OnQuery, handlers.InlineQuery(log, scheduleSvc, teacherSvc, userRepo))
 }
