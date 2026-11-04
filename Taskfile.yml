@@ -25,7 +25,7 @@ tasks:
   test:
     desc: Запуск модульных тестов
     cmds:
-      - go test -v ./internal/...
+      - go test -v -race ./internal/...
 
   format:
     desc: Форматирование кода
