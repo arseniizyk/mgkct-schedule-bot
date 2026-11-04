@@ -65,9 +65,9 @@ func safeEdit(c tele.Context, what any, opt ...any) error {
 	var cleanOpts []any
 	for _, o := range opt {
 		if rm, ok := o.(*tele.ReplyMarkup); ok {
-			// В c.Edit разрешен только InlineKeyboardMarkup.
+			// В c.Edit разрешен только InlineKeyboardMarkup (включая пустую разметку для очистки кнопок).
 			// Передача обычного ReplyKeyboardMarkup вызывает 400 Bad Request: inline keyboard expected.
-			if rm != nil && len(rm.InlineKeyboard) > 0 {
+			if rm != nil && len(rm.ReplyKeyboard) == 0 {
 				cleanOpts = append(cleanOpts, rm)
 			}
 			continue

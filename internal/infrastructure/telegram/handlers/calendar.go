@@ -152,12 +152,24 @@ func sendGroupCalendarFile(
 	}
 	if err != nil {
 		log.Warn("failed getting group schedule for calendar", "group_id", groupID, "error", err)
+		if c.Callback() != nil && c.Callback().IsInline() {
+			return c.Respond(&tele.CallbackResponse{
+				Text:      formatter.FormatErrorMessage(err),
+				ShowAlert: true,
+			})
+		}
 		return c.Send(formatter.FormatErrorMessage(err))
 	}
 
 	icsData, err := calendar.GenerateGroupCalendar(group, subgroup, dict)
 	if err != nil {
 		log.Error("failed generating group calendar", "group_id", groupID, "error", err)
+		if c.Callback() != nil && c.Callback().IsInline() {
+			return c.Respond(&tele.CallbackResponse{
+				Text:      messages.Internal,
+				ShowAlert: true,
+			})
+		}
 		return c.Send(messages.Internal)
 	}
 
@@ -169,6 +181,19 @@ func sendGroupCalendarFile(
 		FileName: filename,
 		Caption:  caption,
 		MIME:     "text/calendar",
+	}
+
+	if c.Callback() != nil && c.Callback().IsInline() {
+		_, err := c.Bot().Send(c.Sender(), doc)
+		if err != nil {
+			return c.Respond(&tele.CallbackResponse{
+				Text:      "Сначала запустите бота в личных сообщениях, чтобы получать календарь",
+				ShowAlert: true,
+			})
+		}
+		return c.Respond(&tele.CallbackResponse{
+			Text: "📅 Календарь отправлен вам в личные сообщения",
+		})
 	}
 
 	return c.Send(doc)
@@ -198,12 +223,24 @@ func sendTeacherCalendarFile(
 	}
 	if err != nil {
 		log.Warn("failed getting teacher schedule for calendar", "teacher", teacherName, "error", err)
+		if c.Callback() != nil && c.Callback().IsInline() {
+			return c.Respond(&tele.CallbackResponse{
+				Text:      formatter.FormatErrorMessage(err),
+				ShowAlert: true,
+			})
+		}
 		return c.Send(formatter.FormatErrorMessage(err))
 	}
 
 	icsData, err := calendar.GenerateTeacherCalendar(teacher, dict)
 	if err != nil {
 		log.Error("failed generating teacher calendar", "teacher", teacherName, "error", err)
+		if c.Callback() != nil && c.Callback().IsInline() {
+			return c.Respond(&tele.CallbackResponse{
+				Text:      messages.Internal,
+				ShowAlert: true,
+			})
+		}
 		return c.Send(messages.Internal)
 	}
 
@@ -216,6 +253,19 @@ func sendTeacherCalendarFile(
 		FileName: filename,
 		Caption:  caption,
 		MIME:     "text/calendar",
+	}
+
+	if c.Callback() != nil && c.Callback().IsInline() {
+		_, err := c.Bot().Send(c.Sender(), doc)
+		if err != nil {
+			return c.Respond(&tele.CallbackResponse{
+				Text:      "Сначала запустите бота в личных сообщениях, чтобы получать календарь",
+				ShowAlert: true,
+			})
+		}
+		return c.Respond(&tele.CallbackResponse{
+			Text: "📅 Календарь отправлен вам в личные сообщения",
+		})
 	}
 
 	return c.Send(doc)
@@ -257,10 +307,7 @@ func handleWeekCalendar(
 		}
 	}
 
-	if err := sendGroupCalendarFile(ctx, log, c, svc, groupID, subgroup, dateStr, dict); err != nil {
-		return err
-	}
-	return c.Respond(&tele.CallbackResponse{Text: "Календарь сформирован"})
+	return sendGroupCalendarFile(ctx, log, c, svc, groupID, subgroup, dateStr, dict)
 }
 
 func handleTeacherWeekCalendar(
@@ -283,8 +330,5 @@ func handleTeacherWeekCalendar(
 		dateStr = parts[1]
 	}
 
-	if err := sendTeacherCalendarFile(ctx, log, c, svc, teacherName, dateStr, dict); err != nil {
-		return err
-	}
-	return c.Respond(&tele.CallbackResponse{Text: "Календарь сформирован"})
+	return sendTeacherCalendarFile(ctx, log, c, svc, teacherName, dateStr, dict)
 }

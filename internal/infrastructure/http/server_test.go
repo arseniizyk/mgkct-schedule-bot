@@ -483,6 +483,13 @@ func TestHandleCalendarICS(t *testing.T) {
 		assert.Contains(t, body, "SUMMARY:Математика")
 	})
 
+	t.Run("invalid week parameter returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/schedule/calendar.ics?group=101&week=invalid", nil)
+		rec := httptest.NewRecorder()
+		srv.httpSrv.Handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
 	t.Run("teacher calendar returns 200 and text/calendar", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/schedule/calendar.ics?teacher=Петров", nil)
 		rec := httptest.NewRecorder()
@@ -490,7 +497,8 @@ func TestHandleCalendarICS(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.Equal(t, "text/calendar; charset=utf-8", rec.Header().Get("Content-Type"))
-		assert.Contains(t, rec.Header().Get("Content-Disposition"), "attachment; filename=\"schedule_teacher_Петров_")
+		assert.Contains(t, rec.Header().Get("Content-Disposition"), "filename=\"schedule_teacher.ics\"")
+		assert.Contains(t, rec.Header().Get("Content-Disposition"), "filename*=UTF-8''schedule_teacher_")
 		body := rec.Body.String()
 		assert.Contains(t, body, "BEGIN:VCALENDAR")
 		assert.Contains(t, body, "SUMMARY:Математика")

@@ -2,6 +2,8 @@ package calendar
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -225,10 +227,12 @@ func sanitizeUID(s string) string {
 			sb.WriteRune(r)
 		}
 	}
+	h := sha256.Sum256([]byte(s))
+	hashSuffix := hex.EncodeToString(h[:4])
 	if sb.Len() == 0 {
-		return "person"
+		return "person-" + hashSuffix
 	}
-	return sb.String()
+	return sb.String() + "-" + hashSuffix
 }
 
 // renderICS сериализует события в стандарт RFC 5545.

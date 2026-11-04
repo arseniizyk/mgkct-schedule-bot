@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/calendar"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/dictionary"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http/auth"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/service"
@@ -499,10 +501,14 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			parsed, err = time.Parse("02.01.2006", weekStr)
 		}
-		if err == nil {
-			targetWeek = parsed
+		if err != nil {
+			http.Error(w, "invalid week format", http.StatusBadRequest)
+			return
 		}
+		targetWeek = parsed
 	}
+
+	dict := dictionary.GetDefaultDictionary()
 
 	if groupIDStr != "" {
 		groupID, err := strconv.Atoi(groupIDStr)
@@ -524,7 +530,7 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		icsData, err := calendar.GenerateGroupCalendar(group, subgroup, nil)
+		icsData, err := calendar.GenerateGroupCalendar(group, subgroup, dict)
 		if err != nil {
 			s.log.Error("failed generating group calendar", "error", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -552,7 +558,7 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	icsData, err := calendar.GenerateTeacherCalendar(teacher, nil)
+	icsData, err := calendar.GenerateTeacherCalendar(teacher, dict)
 	if err != nil {
 		s.log.Error("failed generating teacher calendar", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -560,8 +566,9 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filename := fmt.Sprintf("schedule_teacher_%s_%s.ics", strings.ReplaceAll(teacher.Name, " ", "_"), teacher.Week.Format("20060102"))
+	encodedFilename := url.PathEscape(filename)
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"schedule_teacher.ics\"; filename*=UTF-8''%s", encodedFilename))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(icsData) //nolint:gosec // icsData is generated RFC 5545 calendar with text/calendar content type
 }
