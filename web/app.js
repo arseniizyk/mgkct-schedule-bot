@@ -28,6 +28,7 @@
   const tabTeacher = document.getElementById('tabTeacher');
   const tabCalls = document.getElementById('tabCalls');
   const themeToggle = document.getElementById('themeToggle');
+  const calendarExportBtn = document.getElementById('calendarExportBtn');
   const scheduleToolbar = document.getElementById('scheduleToolbar');
   const scheduleView = document.getElementById('scheduleView');
   const callsView = document.getElementById('callsView');
@@ -347,6 +348,26 @@
       loadSchedule();
     }
   });
+
+  if (calendarExportBtn) {
+    calendarExportBtn.addEventListener('click', () => {
+      haptic('light');
+      let url = '';
+      if (state.mode === 'group' && state.selectedGroup) {
+        url = `/api/v1/schedule/calendar.ics?group=${state.selectedGroup}&week=${state.selectedWeek || ''}`;
+      } else if (state.mode === 'teacher' && state.selectedTeacher) {
+        url = `/api/v1/schedule/calendar.ics?teacher=${encodeURIComponent(state.selectedTeacher)}&week=${state.selectedWeek || ''}`;
+      }
+      if (url) {
+        const absoluteUrl = new URL(url, window.location.href).href;
+        if (tg && typeof tg.openLink === 'function') {
+          tg.openLink(absoluteUrl);
+        } else {
+          window.location.href = absoluteUrl;
+        }
+      }
+    });
+  }
 
   // Quick Navigation to Own Schedule (view-only, does not alter server profile)
   if (myScheduleBtn) {

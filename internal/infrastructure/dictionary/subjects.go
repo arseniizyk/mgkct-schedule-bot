@@ -25,6 +25,19 @@ type SubjectDictionary struct {
 	original map[string]string // key: original short_name -> full_name
 }
 
+var (
+	defaultDictOnce sync.Once
+	defaultDict     *SubjectDictionary
+)
+
+// GetDefaultDictionary возвращает глобальный синглтон-экземпляр словаря предметов.
+func GetDefaultDictionary() *SubjectDictionary {
+	defaultDictOnce.Do(func() {
+		defaultDict = NewSubjectDictionary()
+	})
+	return defaultDict
+}
+
 func NewSubjectDictionary() *SubjectDictionary {
 	d := &SubjectDictionary{
 		lookup:   make(map[string]string),

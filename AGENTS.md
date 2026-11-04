@@ -1,53 +1,74 @@
 # AGENTS.md
 
-## Архитектура репозитория
+## Repository Architecture
 
-- Единый Go-модуль (`github.com/arseniizyk/mgkct-schedule-bot`, Go 1.27), корневой `go.mod`.
-- Монолитное приложение, объединяющее функции парсера расписания (Scraper) и Telegram-бота:
-  - Точка входа: `cmd/bot/main.go`.
-  - Слой инициализации и graceful shutdown: `internal/app`.
-  - Конфигурация: `internal/config` (cleanenv + godotenv).
-  - Доменные сущности: `internal/domain/entities` (чистые структуры Go без protobuf).
-  - Хранилище данных: `internal/repository` (SQLite через `modernc.org/sqlite` в WAL-режиме).
-  - База данных и миграции: `internal/infrastructure/db` (embedded goose миграции в `internal/infrastructure/db/migrations/000001_init.sql`).
-  - Парсинг: `internal/infrastructure/parser` (Colly + goquery, раздельный парсинг нескольких недель).
-  - Бизнес-логика: `internal/service` (`ScheduleService`, `TeacherService`, `ScraperService` со Smart Polling).
-  - Telegram: `internal/infrastructure/telegram` (обработчики telebot, клавиатуры, форматирование, рассылка с троттлингом).
+- Single Go module (`github.com/arseniizyk/mgkct-schedule-bot`, Go 1.27), root `go.mod`.
+- Monolithic application combining schedule scraping (Scraper) and Telegram bot functionality:
+  - Entry point: `cmd/bot/main.go`.
+  - Initialization and graceful shutdown layer: `internal/app`.
+  - Configuration: `internal/config` (cleanenv + godotenv).
+  - Domain entities: `internal/domain/entities` (pure Go structures without protobuf).
+  - Data storage: `internal/repository` (SQLite via `modernc.org/sqlite` in WAL mode).
+  - Database and migrations: `internal/infrastructure/db` (embedded goose migrations in `internal/infrastructure/db/migrations/000001_init.sql`).
+  - Parsing: `internal/infrastructure/parser` (Colly + goquery, independent parsing across multiple weeks).
+  - Business logic: `internal/service` (`ScheduleService`, `TeacherService`, `ScraperService` with Smart Polling).
+  - Telegram: `internal/infrastructure/telegram` (telebot handlers, custom keyboards, formatting, throttled broadcasts).
 
-## Команды
+## Development Commands
 
-- Сборка бинарника: `task build` (`go build -o bin/bot ./cmd/bot`).
-- Локальный запуск: `task run` (`go run ./cmd/bot`).
-- Запуск тестов: `task test` (`go test -v ./internal/...`).
-- Линтер и форматирование: `task lint`, `task lint:fix`, `task format`.
-- Очистка модулей: `task tidy` (`go mod tidy`).
-- Контейнеризация: `task up` (`docker compose --env-file=./configs/.env up --build -d`), `task down`.
+- Build binary: `task build` (`go build -o bin/bot ./cmd/bot`).
+- Run locally: `task run` (`go run ./cmd/bot`).
+- Run tests: `task test` (`go test -v ./internal/...`).
+- Linter and formatting: `task lint`, `task lint:fix`, `task format`.
+- Clean dependencies: `task tidy` (`go mod tidy`).
+- Docker containers: `task up` (`docker compose --env-file=./configs/.env up --build -d`), `task down`.
 
-## Конфигурация и переменные окружения
+## Configuration and Environment Variables
 
-- Конфигурация загружается автоматически из `configs/.env` или переменных окружения процесса.
-- `ENV`: `dev` или `prod`.
-- `BOT_TOKEN` (или legacy `TELEGRAM_TOKEN`): токен Telegram-бота.
-- `BOT_HEALTH_PORT`: порт HTTP healthcheck-сервера (по умолчанию 8081).
-- `BOT_WEB_APP_URL`: публичный HTTPS URL Telegram Mini App.
-- `BOT_API_URL`: кастомный URL Telegram Bot API (например, Cloudflare Worker прокси).
-- `DB_PATH`: путь к файлу SQLite (по умолчанию `bot.db`).
-- `SCRAPER_INTERVAL`: стандартный дневной интервал опроса (по умолчанию `1m`).
-- `SCRAPER_PEAK_INTERVAL`: пиковый турбо-интервал (по умолчанию `25s`, активен в Пт 12:00 — Сб утро до нахождения новой недели).
-- `SCRAPER_NIGHT_INTERVAL`: ночной интервал (по умолчанию `20m`, с 22:00 до 08:00 и по воскресеньям).
+- Configuration is automatically loaded from `configs/.env` or process environment variables.
+- `ENV`: `dev` or `prod`.
+- `BOT_TOKEN` (or legacy `TELEGRAM_TOKEN`): Telegram bot token.
+- `BOT_HEALTH_PORT`: HTTP health check port (default: 8081).
+- `BOT_WEB_APP_URL`: Public HTTPS URL for Telegram Mini App.
+- `BOT_API_URL`: Custom Telegram Bot API URL (e.g. Cloudflare Worker reverse proxy).
+- `DB_PATH`: Path to SQLite database file (default: `bot.db`).
+- `SCRAPER_INTERVAL`: Default daytime polling interval (default: `1m`).
+- `SCRAPER_PEAK_INTERVAL`: Peak turbo interval (default: `25s`, active Fri 12:00 — Sat morning until a new week schedule is published).
+- `SCRAPER_NIGHT_INTERVAL`: Night interval (default: `20m`, 22:00 to 08:00 and on Sundays).
 
-## Миграции
+## Migrations
 
-- Миграции встроены в бинарник через `embed` и применяются автоматически при старте приложения через `goose.UpContext`.
-- Таблицы: `schedules`, `teacher_schedules`, `users`, `goose_db_version`.
-- Все SQL-триггеры для SQLite должны оборачиваться в `-- +goose StatementBegin` / `-- +goose StatementEnd`.
+- Migrations are embedded in the binary via `embed` and applied automatically on application startup using `goose.UpContext`.
+- Tables: `schedules`, `teacher_schedules`, `users`, `goose_db_version`.
+- All SQLite SQL triggers must be wrapped in `-- +goose StatementBegin` / `-- +goose StatementEnd`.
 
-## Healthcheck и Graceful Shutdown
+## Health Check and Graceful Shutdown
 
-- HTTP GET `/healthz` (порт 8081) проверяет пинг базы данных SQLite.
-- При получении SIGINT/SIGTERM: бот останавливает LongPoller (`bot.Stop()`), отменяет контекст скрапера, закрывает HTTP health-сервер и закрывает подключение к SQLite.
+- HTTP GET `/healthz` (port 8081) verifies SQLite database connectivity with ping.
+- On SIGINT/SIGTERM: the bot stops long polling (`bot.Stop()`), cancels scraper context, shuts down HTTP health server, and closes SQLite database connection.
 
-## Конвенции
+## Branching Model and Git Workflow
 
-- Документация, комментарии и сообщения коммитов — на русском языке.
-- Логирование — `slog` JSON. Ошибки содержат префикс операции (`const op = "pkg.Func"`).
+- **`main` (Production):**
+  - Protected by Branch Protection (direct push and force push are prohibited).
+  - Merging is permitted **strictly from the `dev` branch** via Pull Request.
+  - Requires at least 1 approving review and passing all status checks: `Build & Test`, `golangci-lint`, `govulncheck`, `PR into main only from dev`.
+  - Rules apply to all users, including repository administrators.
+- **`dev` (Staging / Main Development Branch):**
+  - Protected by Branch Protection (direct push and force push are prohibited).
+  - Features and bugfixes are merged via Pull Request from working branches (`feat/*`, `fix/*`, `perf/*`).
+  - Requires at least 1 approving review and passing all status checks: `Build & Test`, `golangci-lint`, `govulncheck`.
+- **Pull Request Rules:**
+  - **Reviewers:** Every PR requests reviews from `@abesanets` and `@arseniizyk`. An approving review from either maintainer is required to merge.
+  - **Assignee:** The PR author **must always** be assigned to the PR.
+- **Contributor Guidelines:**
+  - New branches must be created from `dev`.
+  - Local development and debugging must use a personal test bot (created via `@BotFather` with token placed in local `configs/.env`). Repository secrets are never shared with contributors.
+  - Completed changes must be submitted via Pull Request targeting the `dev` branch only.
+
+## Conventions
+
+- Commit messages must follow Conventional Commits in English (strict, concise, no verbose descriptions).
+- Pull Request descriptions must be in English: strictly to the point (what, why, how) with minimal emoji usage.
+- Structured logging using `slog` JSON format. Errors include the operation prefix (`const op = "pkg.Func"`).
+- Documentation and code comments can be in Russian or English.

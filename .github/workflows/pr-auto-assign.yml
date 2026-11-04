@@ -1,0 +1,37 @@
+name: PR Auto Assign & Reviewers
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  auto-assign:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Assign Author and Request Reviewers
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const author = context.payload.pull_request.user.login;
+
+            // Assign PR author as assignee
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              assignees: [author]
+            });
+
+            // Request reviews from abesanets and arseniizyk (excluding author if they are one of them)
+            const targetReviewers = ['abesanets', 'arseniizyk'].filter(r => r !== author);
+            if (targetReviewers.length > 0) {
+              await github.rest.pulls.requestReviewers({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                reviewers: targetReviewers
+              });
+            }

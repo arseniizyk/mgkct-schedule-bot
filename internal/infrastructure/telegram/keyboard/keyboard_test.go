@@ -8,6 +8,8 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func btnFull(t *testing.T, row []tele.InlineButton) []string {
@@ -228,7 +230,7 @@ func TestInlineWeekKeyboard(t *testing.T) {
 		}
 
 		imgDatas := btnFull(t, m.InlineKeyboard[1])
-		wantImg := []string{"week_img|99:current:0"}
+		wantImg := []string{"week_img|99:current:0", "week_cal|99:current:0"}
 		if strings.Join(imgDatas, ",") != strings.Join(wantImg, ",") {
 			t.Errorf("img button = %v, want %v", imgDatas, wantImg)
 		}
@@ -256,9 +258,31 @@ func TestInlineWeekKeyboard(t *testing.T) {
 		}
 
 		imgDatas := btnFull(t, m.InlineKeyboard[2])
-		wantImg := []string{"week_img|88:24.08.2026:0"}
+		wantImg := []string{"week_img|88:24.08.2026:0", "week_cal|88:24.08.2026:0"}
 		if strings.Join(imgDatas, ",") != strings.Join(wantImg, ",") {
 			t.Errorf("img button = %v, want %v", imgDatas, wantImg)
+		}
+	})
+
+	t.Run("inline mode provides day return and calendar while hiding image", func(t *testing.T) {
+		m := InlineWeekKeyboard(88, entities.WeekNavigation{}, 0, true)
+		if len(m.InlineKeyboard) != 3 {
+			t.Fatalf("expected 3 rows (day button, subgroups, calendar), got %d", len(m.InlineKeyboard))
+		}
+		navDatas := btnFull(t, m.InlineKeyboard[0])
+		wantNav := []string{"prevday|88:current:-2:0"}
+		if strings.Join(navDatas, ",") != strings.Join(wantNav, ",") {
+			t.Errorf("nav button = %v, want %v", navDatas, wantNav)
+		}
+		if m.InlineKeyboard[0][0].Text != BtnDay {
+			t.Errorf("nav button text = %q, want %q", m.InlineKeyboard[0][0].Text, BtnDay)
+		}
+		lastRow := m.InlineKeyboard[2]
+		if len(lastRow) != 1 {
+			t.Fatalf("expected 1 button in last row, got %d", len(lastRow))
+		}
+		if lastRow[0].Unique != WeekCalendar {
+			t.Errorf("expected calendar button in last row, got %q", lastRow[0].Unique)
 		}
 	})
 }
@@ -503,10 +527,10 @@ func TestInlineTeacherWeekKeyboard(t *testing.T) {
 		t.Fatalf("expected at least 2 rows, got %d", len(m.InlineKeyboard))
 	}
 
-	// Проверяем строку с кнопкой картинки
+	// Проверяем строку с кнопкой картинки и календаря
 	lastRow := m.InlineKeyboard[len(m.InlineKeyboard)-1]
-	if len(lastRow) != 1 {
-		t.Fatalf("expected 1 button in last row, got %d", len(lastRow))
+	if len(lastRow) != 2 {
+		t.Fatalf("expected 2 buttons in last row, got %d", len(lastRow))
 	}
 
 	imgBtn := lastRow[0]
@@ -520,4 +544,57 @@ func TestInlineTeacherWeekKeyboard(t *testing.T) {
 	if imgBtn.Data != expectedData {
 		t.Errorf("imgBtn.Data = %q, want %q", imgBtn.Data, expectedData)
 	}
+
+	calBtn := lastRow[1]
+	if calBtn.Unique != TeacherWeekCalendar {
+		t.Errorf("calBtn.Unique = %q, want %q", calBtn.Unique, TeacherWeekCalendar)
+	}
+	if calBtn.Text != btnWeekCalendar {
+		t.Errorf("calBtn.Text = %q, want %q", calBtn.Text, btnWeekCalendar)
+	}
+
+	t.Run("inline mode provides day return and calendar while hiding image", func(t *testing.T) {
+		mNoImg := InlineTeacherWeekKeyboard("Павлов В. С.", weeks, true)
+		if len(mNoImg.InlineKeyboard) != 2 {
+			t.Fatalf("expected 2 rows (nav with day button, calendar), got %d", len(mNoImg.InlineKeyboard))
+		}
+		navRow := mNoImg.InlineKeyboard[0]
+		if navRow[1].Text != BtnDay {
+			t.Errorf("middle button = %q, want %q", navRow[1].Text, BtnDay)
+		}
+		if navRow[1].Unique != TeacherPrevDay {
+			t.Errorf("middle button unique = %q, want %q", navRow[1].Unique, TeacherPrevDay)
+		}
+		lastRow := mNoImg.InlineKeyboard[1]
+		if len(lastRow) != 1 || lastRow[0].Unique != TeacherWeekCalendar {
+			t.Fatalf("expected calendar button in last row, got %+v", lastRow)
+		}
+	})
+}
+
+func TestInlineCalendarChoiceKeyboard(t *testing.T) {
+	weeks := []time.Time{
+		time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC),
+	}
+
+	t.Run("group calendar choice", func(t *testing.T) {
+		kb := InlineCalendarChoiceKeyboard("student", "101", 1, weeks)
+		require.NotNil(t, kb)
+		require.Len(t, kb.InlineKeyboard, 2)
+		assert.Equal(t, "week_cal", kb.InlineKeyboard[0][0].Unique)
+		assert.Equal(t, "101:09.11.2026:1", kb.InlineKeyboard[0][0].Data)
+	})
+
+	t.Run("teacher calendar choice", func(t *testing.T) {
+		kb := InlineCalendarChoiceKeyboard("teacher", "Иванов И. И.", 0, weeks)
+		require.NotNil(t, kb)
+		require.Len(t, kb.InlineKeyboard, 2)
+		assert.Equal(t, "t_week_cal", kb.InlineKeyboard[0][0].Unique)
+		assert.Equal(t, "Иванов И. И.:09.11.2026", kb.InlineKeyboard[0][0].Data)
+	})
+
+	t.Run("empty weeks returns nil", func(t *testing.T) {
+		assert.Nil(t, InlineCalendarChoiceKeyboard("student", "101", 0, nil))
+	})
 }

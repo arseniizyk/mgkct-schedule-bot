@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"strings"
 
 	tele "gopkg.in/telebot.v4"
@@ -48,7 +49,7 @@ func editLongMessage(c tele.Context, text string, opt ...any) error {
 		return nil
 	}
 
-	if len(chunks) == 1 {
+	if len(chunks) == 1 || (c.Callback() != nil && c.Callback().IsInline()) {
 		return safeEdit(c, chunks[0], opt...)
 	}
 
@@ -64,9 +65,9 @@ func safeEdit(c tele.Context, what any, opt ...any) error {
 	var cleanOpts []any
 	for _, o := range opt {
 		if rm, ok := o.(*tele.ReplyMarkup); ok {
-			// В c.Edit разрешен только InlineKeyboardMarkup.
+			// В c.Edit разрешен только InlineKeyboardMarkup (включая пустую разметку для очистки кнопок).
 			// Передача обычного ReplyKeyboardMarkup вызывает 400 Bad Request: inline keyboard expected.
-			if rm != nil && len(rm.InlineKeyboard) > 0 {
+			if rm != nil && len(rm.ReplyKeyboard) == 0 {
 				cleanOpts = append(cleanOpts, rm)
 			}
 			continue
@@ -75,7 +76,16 @@ func safeEdit(c tele.Context, what any, opt ...any) error {
 	}
 
 	err := c.Edit(what, cleanOpts...)
-	if err != nil && strings.Contains(err.Error(), "message is not modified") {
+	if err == nil {
+		return nil
+	}
+	// При редактировании inline-сообщения (inline_message_id) Telegram API возвращает boolean true,
+	// который telebot возвращает как ErrTrueResult ("telebot: result is True").
+	// Это означает успешное редактирование сообщения.
+	if errors.Is(err, tele.ErrTrueResult) || strings.Contains(err.Error(), "result is True") {
+		return nil
+	}
+	if strings.Contains(err.Error(), "message is not modified") {
 		return nil
 	}
 	return err
