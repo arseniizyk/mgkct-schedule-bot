@@ -133,6 +133,9 @@ func (s *ScraperService) cleanupOldWeeksLocked(currentWeekStart time.Time) {
 
 func (s *ScraperService) scrapeFaculty(ctx context.Context) {
 	defer func() {
+		if r := recover(); r != nil {
+			s.log.ErrorContext(ctx, "recovered panic in scrapeFaculty", "panic", r)
+		}
 		s.mu.Lock()
 		s.facultyScrapeInProgress = false
 		s.mu.Unlock()
@@ -372,19 +375,11 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 
 	s.mu.Lock()
 	newWeekDetected := false
-	// Проверяем появление новой недели: ровно ОДНО событие!
+	isCandidateNewWeek := false
 	if !s.latestWeek.IsZero() && maxWeek.After(s.latestWeek) {
-		log.InfoContext(ctx, "NEW WEEK DETECTED!", "old_week", s.latestWeek, "new_week", maxWeek)
-		s.latestWeek = maxWeek
-		s.newWeekFoundInTurbo = true
+		isCandidateNewWeek = true
 		newWeekDetected = true
-
-		sendEvent(ctx, eventCh, Event{
-			Type: EventNewWeek,
-			Week: maxWeek,
-		})
 	} else if s.latestWeek.IsZero() {
-		s.latestWeek = maxWeek
 		newWeekDetected = true
 	}
 
@@ -446,6 +441,7 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 
 	// Сохраняем в БД только измененные недели
 	var successfulEvents []pendingGroupEvent
+	var newWeekEmitted bool
 	for week, sch := range weeksToSave {
 		if err := s.scheduleRepo.Save(ctx, week, sch); err != nil {
 			log.ErrorContext(ctx, "failed saving schedule for week", "week", week, "error", err)
@@ -457,6 +453,14 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 		for _, entry := range newHashesByWeek[week] {
 			s.groupHashes[entry.key] = entry.hash
 			s.groupSchedules[entry.key] = entry.group
+		}
+		if isCandidateNewWeek && week.Equal(maxWeek) {
+			log.InfoContext(ctx, "NEW WEEK DETECTED AND SAVED!", "old_week", s.latestWeek, "new_week", maxWeek)
+			s.latestWeek = maxWeek
+			s.newWeekFoundInTurbo = true
+			newWeekEmitted = true
+		} else if s.latestWeek.IsZero() && week.Equal(maxWeek) {
+			s.latestWeek = maxWeek
 		}
 		latestWeek := s.latestWeek
 		s.mu.Unlock()
@@ -470,6 +474,13 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 		}
 
 		successfulEvents = append(successfulEvents, pendingEventsByWeek[week]...)
+	}
+
+	if newWeekEmitted {
+		sendEvent(ctx, eventCh, Event{
+			Type: EventNewWeek,
+			Week: maxWeek,
+		})
 	}
 
 	// Рассылаем нотификации подписчикам только по успешно сохраненным неделям
@@ -536,23 +547,30 @@ func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers [
 	}
 	s.mu.Unlock()
 
-	for _, entry := range toSave {
-		t := entry.teacher
-		if err := s.teacherRepo.Save(ctx, t.Name, t.Week, t); err != nil {
-			log.ErrorContext(ctx, "failed saving teacher schedule", "name", t.Name, "error", err)
-			continue
+	if len(toSave) > 0 {
+		teachersList := make([]*entities.Teacher, 0, len(toSave))
+		for _, entry := range toSave {
+			teachersList = append(teachersList, entry.teacher)
 		}
 
-		s.mu.Lock()
-		s.teacherHashes[entry.key] = entry.hash
-		s.teacherSchedules[entry.key] = entry.teacher
-		s.mu.Unlock()
+		if err := s.teacherRepo.SaveBatch(ctx, teachersList); err != nil {
+			log.ErrorContext(ctx, "failed saving teacher schedules batch", "count", len(toSave), "error", err)
+		} else {
+			s.mu.Lock()
+			for _, entry := range toSave {
+				s.teacherHashes[entry.key] = entry.hash
+				s.teacherSchedules[entry.key] = entry.teacher
+			}
+			s.mu.Unlock()
 
-		s.mu.RLock()
-		tc := s.teacherCache
-		s.mu.RUnlock()
-		if tc != nil {
-			tc.InvalidateTeacherWeek(t.Name, t.Week)
+			s.mu.RLock()
+			tc := s.teacherCache
+			s.mu.RUnlock()
+			if tc != nil {
+				for _, entry := range toSave {
+					tc.InvalidateTeacherWeek(entry.teacher.Name, entry.teacher.Week)
+				}
+			}
 		}
 	}
 

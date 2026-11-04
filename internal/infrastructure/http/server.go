@@ -658,6 +658,17 @@ func (s *Server) handleSetUserProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.TeacherName = strings.TrimSpace(req.TeacherName)
+	if req.GroupID <= 0 && req.TeacherName == "" {
+		http.Error(w, "either group_id or teacher_name must be provided", http.StatusBadRequest)
+		return
+	}
+
+	if req.Subgroup < 0 || req.Subgroup > 2 {
+		http.Error(w, "invalid subgroup (expected 0, 1, or 2)", http.StatusBadRequest)
+		return
+	}
+
 	ctx := r.Context()
 	if req.GroupID > 0 {
 		if s.scheduleSvc != nil {
@@ -678,6 +689,14 @@ func (s *Server) handleSetUserProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if req.TeacherName != "" {
+		if s.teacherSvc != nil {
+			matched, _, ok := s.teacherSvc.ValidateTeacher(ctx, req.TeacherName)
+			if !ok {
+				http.Error(w, "teacher not found", http.StatusBadRequest)
+				return
+			}
+			req.TeacherName = matched
+		}
 		if err := s.userRepo.SetTeacher(ctx, user.ID, req.TeacherName); err != nil {
 			s.log.Error("failed setting teacher from webapp", "error", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)

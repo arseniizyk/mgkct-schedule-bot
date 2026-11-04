@@ -16,6 +16,7 @@ import (
 
 type TeacherScheduleRepository interface {
 	Save(ctx context.Context, name string, week time.Time, schedule *entities.Teacher) error
+	SaveBatch(ctx context.Context, teachers []*entities.Teacher) error
 	GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error)
 	GetLatest(ctx context.Context, name string) (*entities.Teacher, error)
 	GetAllLatest(ctx context.Context) (map[string]*entities.Teacher, error)
