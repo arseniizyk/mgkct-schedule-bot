@@ -1,0 +1,92 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache-dependency-path: go.sum
+
+      - name: Build binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o mgkct-bot.new ./cmd/bot
+
+      - name: Copy binary to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "mgkct-bot.new"
+          target: "${{ secrets.DEPLOY_PATH }}"
+          strip_components: 0
+
+      - name: Activate binary and restart service
+        id: activate
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            # Consistent online SQLite backup
+            mkdir -p data
+            if [ -f data/bot.db ]; then
+              rm -f data/bot.db.bak_latest
+              sqlite3 data/bot.db "VACUUM INTO 'data/bot.db.bak_latest'" || cp data/bot.db data/bot.db.bak_latest
+            fi
+
+            # Keep previous binary for rollback
+            if [ -f mgkct-bot ]; then
+              cp mgkct-bot mgkct-bot.prev
+            fi
+
+            # Atomically activate new binary
+            chmod +x mgkct-bot.new
+            mv mgkct-bot.new mgkct-bot
+
+            # Restart bot service
+            sudo systemctl restart mgkct
+
+      - name: Verify health endpoint
+        run: |
+          echo "Verifying service health..."
+          curl -f -s -S --retry 5 --retry-delay 2 --retry-connrefused --max-time 15 "${{ secrets.HEALTH_URL }}"
+          echo -e "\nService is healthy and responding!"
+
+      - name: Rollback on failure
+        if: failure() && steps.activate.outcome == 'success'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            if [ -f mgkct-bot.prev ]; then
+              echo "Healthcheck failed after activation. Rolling back to previous binary..."
+              mv mgkct-bot.prev mgkct-bot
+              sudo systemctl restart mgkct
+            fi
