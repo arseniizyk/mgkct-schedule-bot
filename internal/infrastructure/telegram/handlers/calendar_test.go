@@ -25,18 +25,23 @@ type mockCalendarScheduleService struct {
 func (m *mockCalendarScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockCalendarScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockCalendarScheduleService) GetAvailableWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error) {
 	return m.weeks, nil
 }
+
 func (m *mockCalendarScheduleService) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
 	return nil, nil
 }
+
 func (m *mockCalendarScheduleService) GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockCalendarScheduleService) HasGroup(ctx context.Context, groupID int32) (bool, error) {
 	return true, nil
 }
@@ -49,33 +54,41 @@ type mockCalendarTeacherService struct {
 func (m *mockCalendarTeacherService) GetTeacherLatestSchedule(ctx context.Context, name string) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
+
 func (m *mockCalendarTeacherService) GetTeacherScheduleByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
+
 func (m *mockCalendarTeacherService) GetAvailableWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error) {
 	return m.weeks, nil
 }
+
 func (m *mockCalendarTeacherService) GetAllTeacherNames(ctx context.Context) ([]string, error) {
 	if m.teacher == nil {
 		return nil, nil
 	}
 	return []string{m.teacher.Name}, nil
 }
+
 func (m *mockCalendarTeacherService) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
 	return nil, nil
 }
+
 func (m *mockCalendarTeacherService) GetTeacherArchiveSchedule(ctx context.Context, name string, targetDate time.Time) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
+
 func (m *mockCalendarTeacherService) ValidateTeacher(ctx context.Context, name string) (string, []string, bool) {
 	if m.teacher == nil {
 		return "", nil, false
 	}
 	return m.teacher.Name, nil, true
 }
+
 func (m *mockCalendarTeacherService) FindSimilarTeachers(ctx context.Context, name string, limit int) ([]string, error) {
 	return nil, nil
 }
+
 func (m *mockCalendarTeacherService) GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error) {
 	return nil, nil
 }

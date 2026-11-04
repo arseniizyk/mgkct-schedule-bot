@@ -10,11 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/time/rate"
-	tele "gopkg.in/telebot.v4"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
+	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
@@ -123,15 +122,19 @@ type mockUserStore struct {
 func (m *mockUserStore) AllUsers(ctx context.Context) ([]entities.User, error) {
 	return m.users, nil
 }
+
 func (m *mockUserStore) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {
 	return nil, nil
 }
+
 func (m *mockUserStore) UserIDsByTeacherName(ctx context.Context, teacherName string) ([]int64, error) {
 	return nil, nil
 }
+
 func (m *mockUserStore) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {
 	return nil, nil
 }
+
 func (m *mockUserStore) SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error {
 	return nil
 }

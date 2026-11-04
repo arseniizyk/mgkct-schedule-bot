@@ -11,9 +11,10 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
-var minskLocation = time.FixedZone("Europe/Minsk", 3*3600)
+var minskLocation = timeutil.MinskLocation
 
 // PairTimeSlots определяет время начала и окончания каждой пары (1-based, индексы 0..5 соответствуют 1..6 парам).
 // Каждая пара представлена [2][2]int: {{startHour, startMin}, {endHour, endMin}}.
@@ -28,7 +29,7 @@ var PairTimeSlots = [6][2][2]int{
 
 // SubjectDictionary интерфейс для опционального разрешения полных названий предметов.
 type SubjectDictionary interface {
-	Resolve(raw string) (cleaned string, fullName string, found bool)
+	Resolve(raw string) (cleaned, fullName string, found bool)
 }
 
 // DayOfWeekIndex возвращает индекс дня (0=Пн..6=Вс) по его русскому названию, либо defaultIdx при несовпадении.
@@ -228,7 +229,7 @@ func sanitizeUID(s string) string {
 		}
 	}
 	h := sha256.Sum256([]byte(s))
-	hashSuffix := hex.EncodeToString(h[:4])
+	hashSuffix := hex.EncodeToString(h[:8])
 	if sb.Len() == 0 {
 		return "person-" + hashSuffix
 	}
@@ -297,10 +298,7 @@ func writeLine(buf *bytes.Buffer, line string) {
 
 	for _, r := range line {
 		rLen := utf8.RuneLen(r)
-		limit := maxOctets
-		if currentOctets > 0 {
-			limit = maxOctets // лимит октетов на строку
-		}
+		const limit = maxOctets
 
 		if currentOctets+rLen > limit && currentLine.Len() > 0 {
 			buf.WriteString(currentLine.String())

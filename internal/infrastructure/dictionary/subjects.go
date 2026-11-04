@@ -85,7 +85,7 @@ func (d *SubjectDictionary) Lookup(shortName string) (string, bool) {
 }
 
 // Resolve очищает сырое название дисциплины от префиксов и возвращает очищенное имя и расшифровку
-func (d *SubjectDictionary) Resolve(raw string) (cleaned string, fullName string, found bool) {
+func (d *SubjectDictionary) Resolve(raw string) (cleaned, fullName string, found bool) {
 	cleaned = CleanName(raw)
 	if cleaned == "" {
 		return raw, "", false

@@ -19,6 +19,11 @@ type ActivityStats struct {
 	MAU int `json:"mau"` // Активных за 30 дней
 }
 
+type GroupSubgroupTarget struct {
+	GroupID  int `json:"group_id"`
+	Subgroup int `json:"subgroup"`
+}
+
 func NewUser(chatID int64, username string) User {
 	return User{
 		ChatID:        chatID,

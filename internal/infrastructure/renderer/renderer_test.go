@@ -178,7 +178,7 @@ func TestRenderGroupWeek(t *testing.T) {
 	}
 
 	outPath := filepath.Join(t.TempDir(), "schedule_pure_go_rendered.png")
-	if err := os.WriteFile(outPath, pngBytes, 0644); err != nil {
+	if err := os.WriteFile(outPath, pngBytes, 0o644); err != nil {
 		t.Fatalf("Failed to save image: %v", err)
 	}
 }

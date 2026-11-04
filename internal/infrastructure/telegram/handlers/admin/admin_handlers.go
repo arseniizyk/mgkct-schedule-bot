@@ -1,8 +1,7 @@
-package handlers
+package admin
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -13,14 +12,36 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/botutil"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 // BotSender — минимальный интерфейс для отправки сообщений от имени бота (используется при рассылке).
 type BotSender interface {
 	Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error)
+}
+
+// UserRepo — интерфейс доступа к данным пользователей, необходимый для админских команд.
+type UserRepo interface {
+	AllUsersWithUsernames(ctx context.Context) ([]entities.User, error)
+	AllUsers(ctx context.Context) ([]entities.User, error)
+	CountUsers(ctx context.Context) (int, error)
+	GetActivityStats(ctx context.Context) (entities.ActivityStats, error)
+}
+
+// StateManager — интерфейс управления состояниями пользователей (FSM).
+type StateManager interface {
+	Set(chatID int64, st state.State) error
+	Get(chatID int64) (state.State, bool)
+	Clear(chatID int64) error
+}
+
+// Limiter — интерфейс ограничения скорости рассылки.
+type Limiter interface {
+	Wait(ctx context.Context) error
 }
 
 // UserStats обрабатывает команду /userstats — статистика пользователей по группам/подгруппам.
@@ -87,8 +108,7 @@ func BotInfo(log *slog.Logger, userRepo UserRepo) tele.HandlerFunc {
 			log.Warn("failed getting activity stats for botinfo", "error", err)
 		}
 
-		minskLoc := time.FixedZone("MSK", 3*3600)
-		now := time.Now().In(minskLoc)
+		now := timeutil.Now()
 
 		msg := fmt.Sprintf(
 			"ℹ️ <b>Информация о боте</b>\n\n"+
@@ -131,7 +151,7 @@ var (
 	broadcastContext   context.Context
 )
 
-//nolint:fatcontext // broadcastContext хранит глобальный контекст жизненного цикла бота для фоновых рассылок
+//nolint:fatcontext // broadcastContext stores global bot lifecycle context for async broadcasts
 func SetBroadcastContext(ctx context.Context) {
 	broadcastContextMu.Lock()
 	defer broadcastContextMu.Unlock()
@@ -156,8 +176,8 @@ func SetBroadcastDraft(chatID int64, text string) {
 func GetBroadcastDraft(chatID int64) (string, bool) {
 	broadcastDraftsMu.RLock()
 	defer broadcastDraftsMu.RUnlock()
-	text, ok := broadcastDrafts[chatID]
-	return text, ok
+	t, ok := broadcastDrafts[chatID]
+	return t, ok
 }
 
 func ClearBroadcastDraft(chatID int64) {
@@ -166,9 +186,15 @@ func ClearBroadcastDraft(chatID int64) {
 	delete(broadcastDrafts, chatID)
 }
 
-// handleWaitingBroadcast обрабатывает ввод сообщения для рассылки.
-// Показывает администратору предпросмотр сообщения с инлайн-кнопками «✅ Отправить» и «❌ Отмена».
-func handleWaitingBroadcast(
+func safeEdit(c tele.Context, what any, opt ...any) error {
+	if c.Callback() != nil {
+		return c.Edit(what, opt...)
+	}
+	return c.Send(what, opt...)
+}
+
+// HandleWaitingBroadcast вызывается при получении текста в состоянии WaitingBroadcast.
+func HandleWaitingBroadcast(
 	_ context.Context,
 	_ *slog.Logger,
 	c tele.Context,
@@ -218,7 +244,6 @@ func HandleBroadcastCallback(
 	return c.Respond()
 }
 
-// handleBroadcastConfirm подтверждает и запускает рассылку сообщений всем пользователям в отдельной горутине.
 func handleBroadcastConfirm(
 	_ context.Context,
 	log *slog.Logger,
@@ -237,13 +262,11 @@ func handleBroadcastConfirm(
 		log.Warn("failed editing broadcast status message", "error", err)
 	}
 
-	// Запуск рассылки в отдельной горутине с контекстом жизненного цикла бота
 	go executeBroadcast(getBroadcastContext(), log, chatID, text, userRepo, bot)
 
 	return nil
 }
 
-// handleBroadcastCancel отменяет рассылку сообщений.
 func handleBroadcastCancel(
 	_ context.Context,
 	_ *slog.Logger,
@@ -259,10 +282,6 @@ func handleBroadcastCancel(
 	return safeEdit(c, "❌ Рассылка отменена.")
 }
 
-type Limiter interface {
-	Wait(ctx context.Context) error
-}
-
 var (
 	broadcastLimiterMu sync.RWMutex
 	broadcastLimiter   Limiter
@@ -270,44 +289,14 @@ var (
 
 func SetBroadcastLimiter(l Limiter) {
 	broadcastLimiterMu.Lock()
+	defer broadcastLimiterMu.Unlock()
 	broadcastLimiter = l
-	broadcastLimiterMu.Unlock()
 }
 
 func getBroadcastLimiter() Limiter {
 	broadcastLimiterMu.RLock()
 	defer broadcastLimiterMu.RUnlock()
 	return broadcastLimiter
-}
-
-func sendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (*tele.Message, error)) (*tele.Message, error) {
-	const maxRetries = 3
-	var lastErr error
-	for range maxRetries {
-		msg, err := sendFunc()
-		if err == nil {
-			return msg, nil
-		}
-		lastErr = err
-		if floodErr, ok := errors.AsType[tele.FloodError](err); ok {
-			waitDur := time.Duration(floodErr.RetryAfter) * time.Second
-			if waitDur <= 0 {
-				waitDur = time.Second
-			}
-			log.WarnContext(ctx, "telegram flood wait 429 received, sleeping", "retry_after", waitDur)
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(waitDur):
-				continue
-			}
-		}
-		return nil, err
-	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("max retries exceeded for flood wait: %w", lastErr)
-	}
-	return nil, errors.New("max retries exceeded for flood wait")
 }
 
 func executeBroadcast(
@@ -354,7 +343,7 @@ func executeBroadcast(
 			}
 		}
 
-		if _, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
+		if _, sendErr := botutil.SendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
 			return bot.Send(tele.ChatID(u.ChatID), text)
 		}); sendErr != nil {
 			log.Warn("broadcast: failed sending to user", "chat_id", u.ChatID, "error", sendErr)
@@ -367,11 +356,9 @@ func executeBroadcast(
 	_, _ = bot.Send(tele.ChatID(adminChatID), fmt.Sprintf("✅ Рассылка завершена.\nОтправлено: %d\nОшибок: %d", sent, failed))
 }
 
-// formatUserStats формирует текст статистики пользователей по группам и подгруппам.
 func formatUserStats(users []entities.User) string {
-	// Разделяем пользователей по категориям
 	type groupData struct {
-		bySubgroup map[int][]entities.User // subgroup -> users (0 = вся группа)
+		bySubgroup map[int][]entities.User
 	}
 
 	groups := make(map[int]*groupData)
@@ -396,7 +383,6 @@ func formatUserStats(users []entities.User) string {
 
 	fmt.Fprintf(&sb, "👥 Пользователи бота — %d чел.\n", len(users))
 
-	// Сортируем группы по номеру
 	groupIDs := make([]int, 0, len(groups))
 	for id := range groups {
 		groupIDs = append(groupIDs, id)
@@ -406,7 +392,6 @@ func formatUserStats(users []entities.User) string {
 	for _, gID := range groupIDs {
 		gData := groups[gID]
 
-		// Подсчёт суммарного количества в группе
 		total := 0
 		for _, ul := range gData.bySubgroup {
 			total += len(ul)
@@ -414,7 +399,6 @@ func formatUserStats(users []entities.User) string {
 
 		fmt.Fprintf(&sb, "\n🏫 Группа %d (%d чел.)\n", gID, total)
 
-		// Сортируем подгруппы: 0 (вся группа) первым
 		subgroups := make([]int, 0, len(gData.bySubgroup))
 		for sg := range gData.bySubgroup {
 			subgroups = append(subgroups, sg)
@@ -431,7 +415,6 @@ func formatUserStats(users []entities.User) string {
 		}
 	}
 
-	// Преподаватели
 	if len(teachers) > 0 {
 		fmt.Fprintf(&sb, "\n🎓 Преподаватели (%d чел.)\n", len(teachers))
 		for _, u := range teachers {
@@ -439,7 +422,6 @@ func formatUserStats(users []entities.User) string {
 		}
 	}
 
-	// Без группы
 	if len(noGroup) > 0 {
 		fmt.Fprintf(&sb, "\n❓ Без группы (%d чел.)\n", len(noGroup))
 		for _, u := range noGroup {
@@ -450,7 +432,6 @@ func formatUserStats(users []entities.User) string {
 	return sb.String()
 }
 
-// subgroupLabel возвращает текстовую метку подгруппы.
 func subgroupLabel(sg int) string {
 	switch sg {
 	case 0:
@@ -464,7 +445,6 @@ func subgroupLabel(sg int) string {
 	}
 }
 
-// formatUserMention возвращает @username или id:<chatID> если username отсутствует.
 func formatUserMention(u entities.User) string {
 	if u.Username != "" {
 		return "@" + u.Username

@@ -12,6 +12,7 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 type StudentParser interface {
@@ -199,8 +200,7 @@ func (s *ScraperService) Start(ctx context.Context, eventCh chan<- Event) {
 // Ночь (22:00 — 08:00): опрос каждые 20 минут.
 // Обычное время: раз в минуту.
 func (s *ScraperService) calculateInterval(now time.Time) time.Duration {
-	minskLoc := time.FixedZone("MSK", 3*3600)
-	localNow := now.In(minskLoc)
+	localNow := now.In(timeutil.MinskLocation)
 
 	weekday := localNow.Weekday()
 	hour := localNow.Hour()

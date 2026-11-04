@@ -54,7 +54,7 @@ jobs:
             mkdir -p data
             if [ -f data/bot.db ]; then
               rm -f data/bot.db.bak_latest
-              sqlite3 data/bot.db "VACUUM INTO 'data/bot.db.bak_latest'" || cp data/bot.db data/bot.db.bak_latest
+              sqlite3 data/bot.db "VACUUM INTO 'data/bot.db.bak_latest'" || sqlite3 data/bot.db ".backup 'data/bot.db.bak_latest'" || cp data/bot.db data/bot.db.bak_latest
             fi
 
             # Keep previous binary for rollback

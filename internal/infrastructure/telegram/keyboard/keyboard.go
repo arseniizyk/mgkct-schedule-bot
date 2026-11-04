@@ -15,7 +15,6 @@ const (
 	BtnWeek     = "📆 Неделя"
 	BtnCalls    = "⏰ Звонки"
 	BtnTeachers = "👨‍🏫 Преподаватели"
-	BtnApp      = "Приложение"
 
 	CurrentWeek = "currentweek"
 	PrevWeek    = "prevweek"
@@ -59,13 +58,10 @@ const (
 	btnNext         = "▶️"
 )
 
-var (
-	InlineEmptyKeyboard   = &tele.ReplyMarkup{}
-	ReplyScheduleKeyboard = &tele.ReplyMarkup{
-		ResizeKeyboard: true,
-		ReplyKeyboard:  scheduleReplyButtons(),
-	}
-)
+var ReplyScheduleKeyboard = &tele.ReplyMarkup{
+	ResizeKeyboard: true,
+	ReplyKeyboard:  scheduleReplyButtons(),
+}
 
 func BuildReplyScheduleKeyboard(_ string) *tele.ReplyMarkup {
 	markup := &tele.ReplyMarkup{

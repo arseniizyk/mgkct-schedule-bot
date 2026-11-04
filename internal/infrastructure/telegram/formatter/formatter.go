@@ -11,6 +11,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 func FormatErrorMessage(err error) string {
@@ -32,7 +33,7 @@ func FormatErrorMessage(err error) string {
 
 const secondShiftMinIndex = 3
 
-var minskLoc = time.FixedZone("MSK", 3*3600)
+var minskLoc = timeutil.MinskLocation
 
 func isCurrentWeek(week, currentWeekMonday time.Time) bool {
 	if week.IsZero() {
@@ -300,7 +301,7 @@ func FormatScheduleDayAt(group *entities.Group, dayIdx int) (string, error) {
 	return FormatScheduleDayAtForSubgroup(group, dayIdx, 0)
 }
 
-func FormatScheduleDayAtForSubgroup(group *entities.Group, dayIdx int, subgroup int) (string, error) {
+func FormatScheduleDayAtForSubgroup(group *entities.Group, dayIdx, subgroup int) (string, error) {
 	filtered := FilterGroupForSubgroup(group, subgroup)
 	if dayIdx < 0 || dayIdx >= len(filtered.Days) {
 		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(filtered.Days))
@@ -352,6 +353,7 @@ func GetDayEndTime(dayIdx, lastSubject int, loc *time.Location) (time.Time, bool
 func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
 	return GetDayEndTime(dayIdx, lastSubject, minskLoc)
 }
+
 func FormatScheduleWeek(group *entities.Group) string {
 	return FormatScheduleWeekForSubgroup(group, 0)
 }
@@ -382,12 +384,14 @@ func SplitMessage(text string, limit int) []string {
 
 	var chunks []string
 	var current strings.Builder
+	currentRuneCount := 0
 
 	for line := range strings.SplitSeq(text, "\n") {
 		lineRunes := []rune(line)
-		if current.Len() > 0 && len([]rune(current.String()))+len(lineRunes)+1 > limit {
+		if currentRuneCount > 0 && currentRuneCount+len(lineRunes)+1 > limit {
 			chunks = append(chunks, current.String())
 			current.Reset()
+			currentRuneCount = 0
 		}
 
 		if len(lineRunes) > limit {
@@ -399,10 +403,12 @@ func SplitMessage(text string, limit int) []string {
 			continue
 		}
 
-		if current.Len() > 0 {
+		if currentRuneCount > 0 {
 			current.WriteString("\n")
+			currentRuneCount++
 		}
 		current.WriteString(line)
+		currentRuneCount += len(lineRunes)
 	}
 
 	if current.Len() > 0 {

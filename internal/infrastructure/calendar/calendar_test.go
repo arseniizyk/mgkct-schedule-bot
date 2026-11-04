@@ -6,9 +6,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
 
 type mockDict struct {

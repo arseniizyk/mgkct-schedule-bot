@@ -3,8 +3,9 @@ package app
 import (
 	"testing"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
 
 func TestExtractUniqueRecipients(t *testing.T) {

@@ -751,6 +751,7 @@ func TestFilterGroupForSubgroup_SingleSubgroupInSlot(t *testing.T) {
 		assert.Contains(t, msg, "2. Лабораторная")
 	})
 }
+
 func TestIsCurrentWeek(t *testing.T) {
 	currentMonday := time.Date(2026, 10, 26, 0, 0, 0, 0, minskLoc)
 

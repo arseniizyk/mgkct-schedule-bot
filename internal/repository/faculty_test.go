@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func setupFacultyDB(t *testing.T) (*sql.DB, *repository.FacultyRepository) {

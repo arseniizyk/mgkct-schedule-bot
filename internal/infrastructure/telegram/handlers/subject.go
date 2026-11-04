@@ -15,7 +15,7 @@ import (
 
 type SubjectDict interface {
 	Lookup(shortName string) (string, bool)
-	Resolve(raw string) (cleaned string, fullName string, found bool)
+	Resolve(raw string) (cleaned, fullName string, found bool)
 	All() map[string]string
 	Search(query string) []entities.SubjectInfo
 }
