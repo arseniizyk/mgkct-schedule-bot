@@ -197,11 +197,20 @@ func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int
 	markup := &tele.ReplyMarkup{}
 	var rows []tele.Row
 
+	dateStr := "current"
+	if !weeks.Current.IsZero() {
+		dateStr = weeks.Current.Format("02.01.2006")
+	}
+
+	isInline := len(opts) > 0 && opts[0]
+
 	var navRow []tele.Btn
 	if !weeks.Prev.IsZero() {
 		navRow = append(navRow, markup.Data(btnPrev, PrevWeek, fmt.Sprintf("%d:%s:%d", groupID, weeks.Prev.Format("02.01.2006"), subgroup)))
 	}
-	if !weeks.Prev.IsZero() || !weeks.Next.IsZero() {
+	if isInline {
+		navRow = append(navRow, markup.Data(BtnDay, PrevDay, fmt.Sprintf("%d:%s:-2:%d", groupID, dateStr, subgroup)))
+	} else if !weeks.Prev.IsZero() || !weeks.Next.IsZero() {
 		navRow = append(navRow, markup.Data("Текущая", CurrentWeek, fmt.Sprintf("%d:%d", groupID, subgroup)))
 	}
 	if !weeks.Next.IsZero() {
@@ -225,22 +234,22 @@ func InlineWeekKeyboard(groupID int, weeks entities.WeekNavigation, subgroup int
 		sg0Title = "• Вся группа •"
 	}
 
-	dateStr := "current"
-	if !weeks.Current.IsZero() {
-		dateStr = weeks.Current.Format("02.01.2006")
-	}
-
 	rows = append(rows, markup.Row(
 		markup.Data(sg1Title, WeekSubgroup, fmt.Sprintf("%d:%s:1", groupID, dateStr)),
 		markup.Data(sg0Title, WeekSubgroup, fmt.Sprintf("%d:%s:0", groupID, dateStr)),
 		markup.Data(sg2Title, WeekSubgroup, fmt.Sprintf("%d:%s:2", groupID, dateStr)),
 	))
 
-	hideImage := len(opts) > 0 && opts[0]
+	hideImage := isInline
 	if !hideImage {
 		// 3-й ряд: 🖼 Картинкой | 📅 В календарь
 		rows = append(rows, markup.Row(
 			markup.Data(btnWeekImage, WeekImage, fmt.Sprintf("%d:%s:%d", groupID, dateStr, subgroup)),
+			markup.Data(btnWeekCalendar, WeekCalendar, fmt.Sprintf("%d:%s:%d", groupID, dateStr, subgroup)),
+		))
+	} else {
+		// В инлайн-режиме экспорт календаря отправляет .ics пользователю в ЛС
+		rows = append(rows, markup.Row(
 			markup.Data(btnWeekCalendar, WeekCalendar, fmt.Sprintf("%d:%s:%d", groupID, dateStr, subgroup)),
 		))
 	}
@@ -307,13 +316,22 @@ func InlineTeacherWeekKeyboard(teacherName string, weeks entities.WeekNavigation
 	markup := &tele.ReplyMarkup{}
 	var rows []tele.Row
 
+	dateStr := "current"
+	if !weeks.Current.IsZero() {
+		dateStr = weeks.Current.Format("02.01.2006")
+	}
+
+	isInline := len(opts) > 0 && opts[0]
+
 	var navRow []tele.Btn
 	hasNav := !weeks.Prev.IsZero() || !weeks.Next.IsZero()
 
 	if !weeks.Prev.IsZero() {
 		navRow = append(navRow, markup.Data(btnPrev, TeacherPrevWeek, fmt.Sprintf("%s:%s", teacherName, weeks.Prev.Format("02.01.2006"))))
 	}
-	if hasNav {
+	if isInline {
+		navRow = append(navRow, markup.Data(BtnDay, TeacherPrevDay, fmt.Sprintf("%s:%s:-2", teacherName, dateStr)))
+	} else if hasNav {
 		navRow = append(navRow, markup.Data("Текущая", TeacherCurrentWeek, teacherName))
 	}
 	if !weeks.Next.IsZero() {
@@ -324,15 +342,14 @@ func InlineTeacherWeekKeyboard(teacherName string, weeks entities.WeekNavigation
 		rows = append(rows, markup.Row(navRow...))
 	}
 
-	dateStr := "current"
-	if !weeks.Current.IsZero() {
-		dateStr = weeks.Current.Format("02.01.2006")
-	}
-
-	hideImage := len(opts) > 0 && opts[0]
+	hideImage := isInline
 	if !hideImage {
 		rows = append(rows, markup.Row(
 			markup.Data(btnWeekImage, TeacherWeekImage, fmt.Sprintf("%s:%s", teacherName, dateStr)),
+			markup.Data(btnWeekCalendar, TeacherWeekCalendar, fmt.Sprintf("%s:%s", teacherName, dateStr)),
+		))
+	} else {
+		rows = append(rows, markup.Row(
 			markup.Data(btnWeekCalendar, TeacherWeekCalendar, fmt.Sprintf("%s:%s", teacherName, dateStr)),
 		))
 	}

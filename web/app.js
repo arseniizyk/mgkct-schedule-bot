@@ -359,7 +359,12 @@
         url = `/api/v1/schedule/calendar.ics?teacher=${encodeURIComponent(state.selectedTeacher)}&week=${state.selectedWeek || ''}`;
       }
       if (url) {
-        window.open(url, '_blank');
+        const absoluteUrl = new URL(url, window.location.href).href;
+        if (tg && typeof tg.openLink === 'function') {
+          tg.openLink(absoluteUrl);
+        } else {
+          window.location.href = absoluteUrl;
+        }
       }
     });
   }

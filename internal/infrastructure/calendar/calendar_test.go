@@ -147,7 +147,25 @@ func TestGenerateTeacherCalendar(t *testing.T) {
 	// Вторник = monday + 1 день -> 20261110, пара 2 -> 10:50 - 12:40
 	assert.Contains(t, ics, "DTSTART;TZID=Europe/Minsk:20261110T105000")
 	assert.Contains(t, ics, "DTEND;TZID=Europe/Minsk:20261110T124000")
+	assert.Contains(t, ics, "UID:teacher-20261110-p2-tperson-")
 	assert.Contains(t, ics, "END:VCALENDAR")
+
+	t.Run("distinct Cyrillic teachers have different UIDs", func(t *testing.T) {
+		teacher2 := &entities.Teacher{
+			Name: "Петров П. П.",
+			Week: monday,
+			Days: teacher.Days,
+		}
+		ics2Bytes, err := GenerateTeacherCalendar(teacher2, nil)
+		require.NoError(t, err)
+		ics2 := UnfoldICS(string(ics2Bytes))
+
+		uid1 := extractUID(ics)
+		uid2 := extractUID(ics2)
+		assert.NotEmpty(t, uid1)
+		assert.NotEmpty(t, uid2)
+		assert.NotEqual(t, uid1, uid2, "teachers with different Cyrillic names must not collide in UID")
+	})
 
 	t.Run("nil teacher error", func(t *testing.T) {
 		_, err := GenerateTeacherCalendar(nil, nil)
@@ -192,4 +210,13 @@ func TestDayOfWeekIndex(t *testing.T) {
 	assert.Equal(t, 5, DayOfWeekIndex("Суббота", -1))
 	assert.Equal(t, 6, DayOfWeekIndex("Воскресенье", -1))
 	assert.Equal(t, 99, DayOfWeekIndex("Неизвестный день", 99))
+}
+
+func extractUID(ics string) string {
+	for line := range strings.SplitSeq(ics, "\r\n") {
+		if uid, ok := strings.CutPrefix(line, "UID:"); ok {
+			return uid
+		}
+	}
+	return ""
 }

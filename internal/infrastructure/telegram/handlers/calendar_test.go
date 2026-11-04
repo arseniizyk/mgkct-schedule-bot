@@ -80,16 +80,49 @@ func (m *mockCalendarTeacherService) GetFacultyMember(ctx context.Context, teach
 	return nil, nil
 }
 
+type mockCalendarAPI struct {
+	tele.API
+
+	sentTo   tele.Recipient
+	sentWhat any
+	sendErr  error
+}
+
+func (m *mockCalendarAPI) Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error) {
+	m.sentTo = to
+	m.sentWhat = what
+	if m.sendErr != nil {
+		return nil, m.sendErr
+	}
+	return &tele.Message{ID: 101}, nil
+}
+
 type mockCalendarTeleContext struct {
 	tele.Context
 
 	chat      *tele.Chat
+	sender    *tele.User
 	callback  *tele.Callback
 	sentWhat  any
 	sentOpts  []any
 	responded bool
 	respText  string
 	args      []string
+	api       *mockCalendarAPI
+}
+
+func (m *mockCalendarTeleContext) Sender() *tele.User {
+	if m.sender != nil {
+		return m.sender
+	}
+	return &tele.User{ID: 999}
+}
+
+func (m *mockCalendarTeleContext) Bot() tele.API {
+	if m.api != nil {
+		return m.api
+	}
+	return &mockCalendarAPI{}
 }
 
 func (m *mockCalendarTeleContext) Chat() *tele.Chat {
@@ -324,5 +357,59 @@ func TestHandleCalendarCallbacks(t *testing.T) {
 		require.True(t, ok, "expected *tele.Document sent")
 		assert.Equal(t, "text/calendar", doc.MIME)
 		assert.Contains(t, doc.FileName, "Расписание_Иванов_И._И._09.11.2026.ics")
+	})
+
+	t.Run("group calendar callback inline sends to sender PM", func(t *testing.T) {
+		api := &mockCalendarAPI{}
+		c := &mockCalendarTeleContext{
+			chat: nil,
+			api:  api,
+			sender: &tele.User{
+				ID: 777,
+			},
+			callback: &tele.Callback{
+				Data:      fmt.Sprintf("\f%s|80:09.11.2026:1", keyboard.WeekCalendar),
+				MessageID: "inline_123",
+			},
+		}
+
+		err := cbHandler(c)
+		require.NoError(t, err)
+		assert.True(t, c.responded)
+		assert.Contains(t, c.respText, "Календарь отправлен вам в личные сообщения")
+
+		require.NotNil(t, api.sentWhat)
+		doc, ok := api.sentWhat.(*tele.Document)
+		require.True(t, ok, "expected *tele.Document sent to PM")
+		assert.Equal(t, "text/calendar", doc.MIME)
+		assert.Contains(t, doc.FileName, "Расписание_Группа_80_09.11.2026.ics")
+		assert.Equal(t, "777", api.sentTo.Recipient())
+	})
+
+	t.Run("teacher calendar callback inline sends to sender PM", func(t *testing.T) {
+		api := &mockCalendarAPI{}
+		c := &mockCalendarTeleContext{
+			chat: nil,
+			api:  api,
+			sender: &tele.User{
+				ID: 888,
+			},
+			callback: &tele.Callback{
+				Data:      fmt.Sprintf("\f%s|Иванов И. И.:09.11.2026", keyboard.TeacherWeekCalendar),
+				MessageID: "inline_456",
+			},
+		}
+
+		err := cbHandler(c)
+		require.NoError(t, err)
+		assert.True(t, c.responded)
+		assert.Contains(t, c.respText, "Календарь отправлен вам в личные сообщения")
+
+		require.NotNil(t, api.sentWhat)
+		doc, ok := api.sentWhat.(*tele.Document)
+		require.True(t, ok, "expected *tele.Document sent to PM")
+		assert.Equal(t, "text/calendar", doc.MIME)
+		assert.Contains(t, doc.FileName, "Расписание_Иванов_И._И._09.11.2026.ics")
+		assert.Equal(t, "888", api.sentTo.Recipient())
 	})
 }

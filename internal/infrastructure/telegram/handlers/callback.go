@@ -74,7 +74,15 @@ func CallbacksHandler(
 			return c.Respond(&tele.CallbackResponse{Text: messages.Internal, ShowAlert: true})
 		}
 
-		return c.Respond()
+		if err := c.Respond(); err != nil {
+			if strings.Contains(err.Error(), "query is too old") ||
+				strings.Contains(err.Error(), "QUERY_ID_INVALID") ||
+				strings.Contains(err.Error(), "query ID is invalid") {
+				return nil
+			}
+			return err
+		}
+		return nil
 	}
 }
 

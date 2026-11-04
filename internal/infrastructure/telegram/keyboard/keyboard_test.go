@@ -264,10 +264,25 @@ func TestInlineWeekKeyboard(t *testing.T) {
 		}
 	})
 
-	t.Run("hideImage hides image button", func(t *testing.T) {
+	t.Run("inline mode provides day return and calendar while hiding image", func(t *testing.T) {
 		m := InlineWeekKeyboard(88, entities.WeekNavigation{}, 0, true)
-		if len(m.InlineKeyboard) != 1 {
-			t.Fatalf("expected 1 row (only subgroups), got %d", len(m.InlineKeyboard))
+		if len(m.InlineKeyboard) != 3 {
+			t.Fatalf("expected 3 rows (day button, subgroups, calendar), got %d", len(m.InlineKeyboard))
+		}
+		navDatas := btnFull(t, m.InlineKeyboard[0])
+		wantNav := []string{"prevday|88:current:-2:0"}
+		if strings.Join(navDatas, ",") != strings.Join(wantNav, ",") {
+			t.Errorf("nav button = %v, want %v", navDatas, wantNav)
+		}
+		if m.InlineKeyboard[0][0].Text != BtnDay {
+			t.Errorf("nav button text = %q, want %q", m.InlineKeyboard[0][0].Text, BtnDay)
+		}
+		lastRow := m.InlineKeyboard[2]
+		if len(lastRow) != 1 {
+			t.Fatalf("expected 1 button in last row, got %d", len(lastRow))
+		}
+		if lastRow[0].Unique != WeekCalendar {
+			t.Errorf("expected calendar button in last row, got %q", lastRow[0].Unique)
 		}
 	})
 }
@@ -538,10 +553,21 @@ func TestInlineTeacherWeekKeyboard(t *testing.T) {
 		t.Errorf("calBtn.Text = %q, want %q", calBtn.Text, btnWeekCalendar)
 	}
 
-	t.Run("hideImage hides image button", func(t *testing.T) {
+	t.Run("inline mode provides day return and calendar while hiding image", func(t *testing.T) {
 		mNoImg := InlineTeacherWeekKeyboard("Павлов В. С.", weeks, true)
-		if len(mNoImg.InlineKeyboard) != 1 {
-			t.Fatalf("expected 1 row (only nav), got %d", len(mNoImg.InlineKeyboard))
+		if len(mNoImg.InlineKeyboard) != 2 {
+			t.Fatalf("expected 2 rows (nav with day button, calendar), got %d", len(mNoImg.InlineKeyboard))
+		}
+		navRow := mNoImg.InlineKeyboard[0]
+		if navRow[1].Text != BtnDay {
+			t.Errorf("middle button = %q, want %q", navRow[1].Text, BtnDay)
+		}
+		if navRow[1].Unique != TeacherPrevDay {
+			t.Errorf("middle button unique = %q, want %q", navRow[1].Unique, TeacherPrevDay)
+		}
+		lastRow := mNoImg.InlineKeyboard[1]
+		if len(lastRow) != 1 || lastRow[0].Unique != TeacherWeekCalendar {
+			t.Fatalf("expected calendar button in last row, got %+v", lastRow)
 		}
 	})
 }
