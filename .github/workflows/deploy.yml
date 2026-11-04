@@ -39,6 +39,7 @@ jobs:
           strip_components: 0
 
       - name: Activate binary and restart service
+        id: activate
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -49,10 +50,11 @@ jobs:
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
 
-            # Rotate database backup
+            # Consistent online SQLite backup
             mkdir -p data
             if [ -f data/bot.db ]; then
-              cp data/bot.db data/bot.db.bak_latest
+              rm -f data/bot.db.bak_latest
+              sqlite3 data/bot.db "VACUUM INTO 'data/bot.db.bak_latest'" || cp data/bot.db data/bot.db.bak_latest
             fi
 
             # Keep previous binary for rollback
@@ -69,13 +71,12 @@ jobs:
 
       - name: Verify health endpoint
         run: |
-          sleep 3
           echo "Verifying service health..."
-          curl -f -s -S --max-time 15 "${{ secrets.HEALTH_URL }}"
+          curl -f -s -S --retry 5 --retry-delay 2 --retry-connrefused --max-time 15 "${{ secrets.HEALTH_URL }}"
           echo -e "\nService is healthy and responding!"
 
       - name: Rollback on failure
-        if: failure()
+        if: failure() && steps.activate.outcome == 'success'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -85,7 +86,7 @@ jobs:
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
             if [ -f mgkct-bot.prev ]; then
-              echo "Healthcheck or deployment failed. Rolling back..."
+              echo "Healthcheck failed after activation. Rolling back to previous binary..."
               mv mgkct-bot.prev mgkct-bot
               sudo systemctl restart mgkct
             fi
