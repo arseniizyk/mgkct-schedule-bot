@@ -132,11 +132,22 @@ func TestUserRepository_AllUsers_AndEveningNotification(t *testing.T) {
 	assert.Equal(t, 1, notifUsers[0].Subgroup)
 	assert.Equal(t, 2, notifUsers[1].Subgroup)
 
-	// Отключение уведомлений исключает пользователя из UserIDsByGroupID и AllUsers
+	// Отключение уведомлений исключает пользователя из UserIDsByGroupID и UsersForEveningNotification, но оставляет в AllUsers
 	require.NoError(t, repo.SetNotifyEvening(ctx, 1002, false))
 	groupUserIDs, err := repo.UserIDsByGroupID(ctx, 101)
 	require.NoError(t, err)
 	assert.Equal(t, []int64{1001}, groupUserIDs)
+
+	notifUsersAfter, err := repo.UsersForEveningNotification(ctx)
+	require.NoError(t, err)
+	require.Len(t, notifUsersAfter, 1)
+	assert.Equal(t, int64(1001), notifUsersAfter[0].ChatID)
+
+	allUsersAfter, err := repo.AllUsers(ctx)
+	require.NoError(t, err)
+	require.Len(t, allUsersAfter, 2)
+	assert.True(t, allUsersAfter[0].NotifyEvening)
+	assert.False(t, allUsersAfter[1].NotifyEvening)
 }
 
 func TestUserRepository_AllUsersWithUsernames(t *testing.T) {

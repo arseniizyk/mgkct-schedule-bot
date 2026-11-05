@@ -143,9 +143,9 @@ func TestNotifier_HandleNewWeek(t *testing.T) {
 	bot := &mockBotSender{}
 	store := &mockUserStore{
 		users: []entities.User{
-			{ChatID: 1001, Group: 101},
-			{ChatID: 1002, TeacherName: "Иванов И. И."},
-			{ChatID: 1003},
+			{ChatID: 1001, Group: 101, NotifyEvening: true},
+			{ChatID: 1002, TeacherName: "Иванов И. И.", NotifyEvening: true},
+			{ChatID: 1003, NotifyEvening: true},
 		},
 	}
 	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))
@@ -200,6 +200,25 @@ func TestNotifier_HandleNewWeek(t *testing.T) {
 	if len(bot.sentOpts[2]) != 0 {
 		t.Errorf("expected no inline buttons for user without role, got %v", bot.sentOpts[2])
 	}
+}
+
+func TestNotifier_HandleNewWeek_SkipsDisabledNotifications(t *testing.T) {
+	bot := &mockBotSender{}
+	store := &mockUserStore{
+		users: []entities.User{
+			{ChatID: 1001, Group: 101, NotifyEvening: true},
+			{ChatID: 1002, Group: 102, NotifyEvening: false},
+		},
+	}
+	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))
+
+	targetWeek := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+
+	err := n.HandleNewWeek(ctx, targetWeek)
+	require.NoError(t, err)
+	assert.Len(t, bot.sentChats, 1)
+	assert.Equal(t, int64(1001), bot.sentChats[0])
 }
 
 func TestNotifier_ScraperAlerts_MultipleAdmins(t *testing.T) {
@@ -477,7 +496,7 @@ func TestNotifier_FloodWaitRetry(t *testing.T) {
 	bot := &floodMockBot{}
 	store := &mockUserStore{
 		users: []entities.User{
-			{ChatID: 1001, Group: 101},
+			{ChatID: 1001, Group: 101, NotifyEvening: true},
 		},
 	}
 	n := New(slog.Default(), bot, store, nil, rate.NewLimiter(rate.Inf, 0))

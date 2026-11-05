@@ -50,9 +50,8 @@ func (r *UserRepository) SaveUser(ctx context.Context, u entities.User) error {
 func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) {
 	const op = "repository.UserRepository.AllUsers"
 
-	query := r.sb.Select("chat_id, group_id, subgroup, teacher_name").
-		From("users").
-		Where(sq.Eq{"notify_evening": 1})
+	query := r.sb.Select("chat_id, group_id, subgroup, teacher_name, notify_evening").
+		From("users")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -69,14 +68,15 @@ func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) 
 
 	for rows.Next() {
 		var (
-			chatID      int64
-			groupID     sql.NullInt64
-			subgroup    sql.NullInt64
-			teacherName sql.NullString
+			chatID        int64
+			groupID       sql.NullInt64
+			subgroup      sql.NullInt64
+			teacherName   sql.NullString
+			notifyEvening sql.NullInt64
 		)
 
-		if err := rows.Scan(&chatID, &groupID, &subgroup, &teacherName); err != nil {
-			return nil, fmt.Errorf("%s: failed scanning chat_id, group_id, subgroup, teacher_name: %w", op, err)
+		if err := rows.Scan(&chatID, &groupID, &subgroup, &teacherName, &notifyEvening); err != nil {
+			return nil, fmt.Errorf("%s: failed scanning chat_id, group_id, subgroup, teacher_name, notify_evening: %w", op, err)
 		}
 
 		group := 0
@@ -94,12 +94,17 @@ func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) 
 			tn = teacherName.String
 		}
 
+		ne := true
+		if notifyEvening.Valid {
+			ne = notifyEvening.Int64 == 1
+		}
+
 		users = append(users, entities.User{
 			ChatID:        chatID,
 			Group:         group,
 			Subgroup:      sg,
 			TeacherName:   tn,
-			NotifyEvening: true,
+			NotifyEvening: ne,
 		})
 	}
 
