@@ -298,9 +298,8 @@ func writeLine(buf *bytes.Buffer, line string) {
 
 	for _, r := range line {
 		rLen := utf8.RuneLen(r)
-		const limit = maxOctets
 
-		if currentOctets+rLen > limit && currentLine.Len() > 0 {
+		if currentOctets+rLen > maxOctets && currentLine.Len() > 0 {
 			buf.WriteString(currentLine.String())
 			buf.WriteString("\r\n")
 			currentLine.Reset()

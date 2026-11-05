@@ -384,17 +384,18 @@ func SplitMessage(text string, limit int) []string {
 
 	var chunks []string
 	var current strings.Builder
-	currentRuneCount := 0
+	currentRunes := 0
 
 	for line := range strings.SplitSeq(text, "\n") {
 		lineRunes := []rune(line)
-		if currentRuneCount > 0 && currentRuneCount+len(lineRunes)+1 > limit {
+		lineLen := len(lineRunes)
+		if current.Len() > 0 && currentRunes+lineLen+1 > limit {
 			chunks = append(chunks, current.String())
 			current.Reset()
-			currentRuneCount = 0
+			currentRunes = 0
 		}
 
-		if len(lineRunes) > limit {
+		if lineLen > limit {
 			for len(lineRunes) > 0 {
 				take := min(limit, len(lineRunes))
 				chunks = append(chunks, string(lineRunes[:take]))
@@ -403,12 +404,12 @@ func SplitMessage(text string, limit int) []string {
 			continue
 		}
 
-		if currentRuneCount > 0 {
+		if currentRunes > 0 {
 			current.WriteString("\n")
-			currentRuneCount++
+			currentRunes++
 		}
 		current.WriteString(line)
-		currentRuneCount += len(lineRunes)
+		currentRunes += lineLen
 	}
 
 	if current.Len() > 0 {

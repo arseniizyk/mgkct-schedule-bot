@@ -35,7 +35,7 @@ tasks:
   test:
     desc: Запуск модульных тестов
     cmds:
-      - go test -v ./internal/...
+      - go test -v -race ./internal/...
 
   install-formatters:
     desc: Устанавливает форматтеры gofumpt и gci в каталог bin

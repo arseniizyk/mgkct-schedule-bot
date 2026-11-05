@@ -556,6 +556,24 @@ func TestSplitMessage_WithDiffHTML(t *testing.T) {
 	}
 }
 
+func TestSplitMessage_RuneAccuracyAndLineSplitting(t *testing.T) {
+	lines := []string{
+		"Строка 1 с кириллицей",
+		"Строка 2 подлиннее для проверки",
+		"Строка 3",
+		strings.Repeat("ДлиннаяСтрокаБезПробелов", 5),
+		"Строка 4",
+	}
+	text := strings.Join(lines, "\n")
+	limit := 30
+	chunks := SplitMessage(text, limit)
+
+	assert.NotEmpty(t, chunks)
+	for _, chunk := range chunks {
+		assert.LessOrEqual(t, len([]rune(chunk)), limit)
+	}
+}
+
 func TestParsePairSubgroup(t *testing.T) {
 	tests := []struct {
 		name string

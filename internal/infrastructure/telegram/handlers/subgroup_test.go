@@ -385,6 +385,31 @@ func (m *mockTeacherService) GetTeacherArchiveSchedule(ctx context.Context, name
 	return m.teacher, nil
 }
 
+type mockAnalyticsService struct {
+	cabinetSched *entities.CabinetSchedule
+	err          error
+}
+
+func (m *mockAnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockAnalyticsService) GetCabinetSchedule(ctx context.Context, query string, week time.Time) (*entities.CabinetSchedule, []string, error) {
+	return m.cabinetSched, nil, m.err
+}
+
+func (m *mockAnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time.Time) (*entities.EndingsStat, error) {
+	return nil, nil
+}
+
+func (m *mockAnalyticsService) GetGroupStats(ctx context.Context, groupID int32, week time.Time) ([]entities.SubjectStat, int, error) {
+	return nil, 0, nil
+}
+
+func (m *mockAnalyticsService) GetTeacherStats(ctx context.Context, teacherName string, week time.Time) ([]entities.SubjectStat, int, error) {
+	return nil, 0, nil
+}
+
 func (m *mockTeacherService) ValidateTeacher(ctx context.Context, name string) (string, []string, bool) {
 	if m.teacher == nil {
 		return "", nil, false
@@ -439,7 +464,21 @@ func TestCallbacksHandler_DaySubgroupAndTeacher(t *testing.T) {
 	}
 	teacherSvc := &mockTeacherService{teacher: sampleTeacher}
 
-	handler := handlers.CallbacksHandler(logger, schedSvc, teacherSvc, nil, repo, nil)
+	sampleCabinetSched := &entities.CabinetSchedule{
+		Cabinet: "101",
+		Days: []*entities.CabinetDaySchedule{
+			{
+				DayName:  "Понедельник",
+				DayIndex: 0,
+				Bookings: []*entities.CabinetBooking{
+					{Subject: "Физика", GroupID: 101, Class: "101"},
+				},
+			},
+		},
+	}
+	analyticsSvc := &mockAnalyticsService{cabinetSched: sampleCabinetSched}
+
+	handler := handlers.CallbacksHandler(logger, schedSvc, teacherSvc, analyticsSvc, repo, nil)
 
 	t.Run("group day subgroup switch to subgroup 2", func(t *testing.T) {
 		ctx := &mockContext{
@@ -494,6 +533,45 @@ func TestCallbacksHandler_DaySubgroupAndTeacher(t *testing.T) {
 		err := handler(ctx)
 		require.NoError(t, err)
 		assert.Contains(t, ctx.editedWhat, "Физика")
+		require.NotEmpty(t, ctx.editedOpts)
+		rm, ok := ctx.editedOpts[len(ctx.editedOpts)-1].(*tele.ReplyMarkup)
+		require.True(t, ok)
+		assert.NotEmpty(t, rm.InlineKeyboard, "must have inline keyboard attached")
+	})
+
+	t.Run("teacher week nav callback attaches inline keyboard", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 401,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.TeacherPrevWeek + "|Иванов И. И.:26.10.2026",
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, ctx.editedWhat, "Физика")
+		require.NotEmpty(t, ctx.editedOpts)
+		rm, ok := ctx.editedOpts[len(ctx.editedOpts)-1].(*tele.ReplyMarkup)
+		require.True(t, ok)
+		assert.NotEmpty(t, rm.InlineKeyboard, "must have inline keyboard attached")
+	})
+
+	t.Run("cabinet week callback attaches InlineCabinetWeekKeyboard", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 401,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.CabinetCurrentWeek + "|101",
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, ctx.editedWhat, "101")
+		require.NotEmpty(t, ctx.editedOpts)
+		rm, ok := ctx.editedOpts[len(ctx.editedOpts)-1].(*tele.ReplyMarkup)
+		require.True(t, ok)
+		assert.NotEmpty(t, rm.InlineKeyboard, "must have inline keyboard attached")
+		assert.Equal(t, keyboard.CabinetCurrentWeek, rm.InlineKeyboard[0][0].Unique)
 	})
 }
 
