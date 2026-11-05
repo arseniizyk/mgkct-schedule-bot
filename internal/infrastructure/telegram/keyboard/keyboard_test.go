@@ -291,8 +291,8 @@ func TestReplyScheduleKeyboard(t *testing.T) {
 	if !ReplyScheduleKeyboard.ResizeKeyboard {
 		t.Errorf("expected ReplyScheduleKeyboard.ResizeKeyboard = true, got false")
 	}
-	if ReplyScheduleKeyboard.IsPersistent {
-		t.Errorf("expected ReplyScheduleKeyboard.IsPersistent = false to allow swipe gestures, got true")
+	if !ReplyScheduleKeyboard.IsPersistent {
+		t.Errorf("expected ReplyScheduleKeyboard.IsPersistent = true, got false")
 	}
 	if len(ReplyScheduleKeyboard.ReplyKeyboard) != 2 {
 		t.Errorf("expected 2 rows in ReplyScheduleKeyboard, got %d", len(ReplyScheduleKeyboard.ReplyKeyboard))
