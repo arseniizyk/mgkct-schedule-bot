@@ -228,7 +228,7 @@ func sanitizeUID(s string) string {
 		}
 	}
 	h := sha256.Sum256([]byte(s))
-	hashSuffix := hex.EncodeToString(h[:4])
+	hashSuffix := hex.EncodeToString(h[:8])
 	if sb.Len() == 0 {
 		return "person-" + hashSuffix
 	}
@@ -297,12 +297,8 @@ func writeLine(buf *bytes.Buffer, line string) {
 
 	for _, r := range line {
 		rLen := utf8.RuneLen(r)
-		limit := maxOctets
-		if currentOctets > 0 {
-			limit = maxOctets // лимит октетов на строку
-		}
 
-		if currentOctets+rLen > limit && currentLine.Len() > 0 {
+		if currentOctets+rLen > maxOctets && currentLine.Len() > 0 {
 			buf.WriteString(currentLine.String())
 			buf.WriteString("\r\n")
 			currentLine.Reset()

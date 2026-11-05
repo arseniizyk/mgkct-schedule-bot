@@ -751,7 +751,7 @@ func handleTeacherCurrentWeek(ctx context.Context, log *slog.Logger, c tele.Cont
 	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := svc.GetAvailableWeeks(ctx, teacherName, teacher.Week)
 	if err != nil {
-		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		weeks = entities.WeekNavigation{Current: teacher.Week}
 	}
 
 	isInline := c.Callback() != nil && c.Callback().IsInline()
@@ -783,7 +783,7 @@ func handleTeacherWeekNav(ctx context.Context, log *slog.Logger, c tele.Context,
 	msg := profile + formatter.FormatTeacherScheduleWeek(teacher)
 	weeks, err := svc.GetAvailableWeeks(ctx, teacherName, date)
 	if err != nil {
-		return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		weeks = entities.WeekNavigation{Current: date}
 	}
 
 	isInline := c.Callback() != nil && c.Callback().IsInline()
@@ -836,7 +836,7 @@ func handleCabinetWeek(ctx context.Context, log *slog.Logger, c tele.Context, da
 	}
 
 	msg := formatter.FormatCabinetWeek(sched)
-	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineCabinetWeekKeyboard(cabinet))
 }
 
 func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) error {
