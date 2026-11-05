@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func setupTestDB(t *testing.T) (*sql.DB, *repository.UserRepository) {
@@ -221,4 +221,46 @@ func TestUserRepository_ActivityTracking(t *testing.T) {
 	assert.Equal(t, 1, stats.DAU)
 	assert.Equal(t, 1, stats.WAU)
 	assert.Equal(t, 1, stats.MAU)
+}
+
+func TestUserRepository_DistinctSubscribed(t *testing.T) {
+	db, repo := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Insert test users
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 101, NotifyEvening: true})
+	_ = repo.SetUserGroup(ctx, 101, 10, 1)
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 102, NotifyEvening: true})
+	_ = repo.SetUserGroup(ctx, 102, 10, 1) // Duplicate (10, 1)
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 103, NotifyEvening: true})
+	_ = repo.SetUserGroup(ctx, 103, 10, 2)
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 104, NotifyEvening: true})
+	_ = repo.SetUserGroup(ctx, 104, 20, 0)
+	_ = repo.SetNotifyEvening(ctx, 104, false) // notifications disabled
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 201, NotifyEvening: true})
+	_ = repo.SetTeacher(ctx, 201, "Иванов И.И.")
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 202, NotifyEvening: true})
+	_ = repo.SetTeacher(ctx, 202, "Иванов И.И.") // Duplicate teacher
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 203, NotifyEvening: true})
+	_ = repo.SetTeacher(ctx, 203, "Петров П.П.")
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 204, NotifyEvening: true})
+	_ = repo.SetTeacher(ctx, 204, "Сидоров С.С.")
+	_ = repo.SetNotifyEvening(ctx, 204, false) // notifications disabled
+
+	targets, err := repo.DistinctSubscribedGroups(ctx)
+	require.NoError(t, err)
+	assert.Len(t, targets, 2) // (10, 1) and (10, 2)
+
+	teachers, err := repo.DistinctSubscribedTeachers(ctx)
+	require.NoError(t, err)
+	assert.Len(t, teachers, 2) // "Иванов И.И." and "Петров П.П."
 }

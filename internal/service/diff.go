@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 var (
-	minskLoc = time.FixedZone("MSK", 3*3600)
+	minskLoc = timeutil.MinskLocation
 
 	dayNames = [6]string{"Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
 

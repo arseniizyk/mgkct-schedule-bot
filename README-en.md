@@ -86,7 +86,7 @@ Main settings configured in `configs/.env` or system environment:
 | Variable | Default | Description |
 |---|---|---|
 | `ENV` | `dev` | Application mode (`dev` or `prod`) |
-| `BOT_TOKEN` | — | Telegram Bot token from [@BotFather](https://t.me/BotFather) (legacy `TELEGRAM_TOKEN` also supported) |
+| `BOT_TOKEN` | — | Telegram Bot token from [@BotFather](https://t.me/BotFather) |
 | `BOT_HEALTH_PORT` | `8081` | HTTP server port (`/healthz`, REST API and WebApp) |
 | `BOT_WEB_APP_URL` | — | Public HTTPS URL for Telegram Mini App |
 | `DB_PATH` | `bot.db` | Path to SQLite database file |

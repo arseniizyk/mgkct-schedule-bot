@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
@@ -16,8 +18,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type mockUserRepo struct {
@@ -60,7 +60,7 @@ func (m *mockUserRepo) GetUserProfile(ctx context.Context, chatID int64) (int, i
 	return grp, sg, teacher, nil
 }
 
-func (m *mockUserRepo) SetUserGroup(ctx context.Context, chatID int64, groupID int, subgroup int) error {
+func (m *mockUserRepo) SetUserGroup(ctx context.Context, chatID int64, groupID, subgroup int) error {
 	m.userGroup[chatID] = groupID
 	m.userSubgroup[chatID] = subgroup
 	delete(m.userTeacher, chatID)
@@ -327,18 +327,23 @@ type mockScheduleService struct {
 func (m *mockScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockScheduleService) GetAvailableWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error) {
 	return entities.WeekNavigation{}, nil
 }
+
 func (m *mockScheduleService) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
 	return nil, nil
 }
+
 func (m *mockScheduleService) GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockScheduleService) HasGroup(ctx context.Context, groupID int32) (bool, error) {
 	if len(m.groups) > 0 {
 		return slices.Contains(m.groups, groupID), nil
@@ -356,21 +361,26 @@ type mockTeacherService struct {
 func (m *mockTeacherService) GetTeacherLatestSchedule(ctx context.Context, name string) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
+
 func (m *mockTeacherService) GetTeacherScheduleByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
+
 func (m *mockTeacherService) GetAvailableWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error) {
 	return entities.WeekNavigation{}, nil
 }
+
 func (m *mockTeacherService) GetAllTeacherNames(ctx context.Context) ([]string, error) {
 	if m.teacher == nil {
 		return nil, nil
 	}
 	return []string{m.teacher.Name}, nil
 }
+
 func (m *mockTeacherService) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
 	return nil, nil
 }
+
 func (m *mockTeacherService) GetTeacherArchiveSchedule(ctx context.Context, name string, targetDate time.Time) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
@@ -399,15 +409,18 @@ func (m *mockAnalyticsService) GetGroupStats(ctx context.Context, groupID int32,
 func (m *mockAnalyticsService) GetTeacherStats(ctx context.Context, teacherName string, week time.Time) ([]entities.SubjectStat, int, error) {
 	return nil, 0, nil
 }
+
 func (m *mockTeacherService) ValidateTeacher(ctx context.Context, name string) (string, []string, bool) {
 	if m.teacher == nil {
 		return "", nil, false
 	}
 	return m.teacher.Name, nil, true
 }
+
 func (m *mockTeacherService) FindSimilarTeachers(ctx context.Context, name string, limit int) ([]string, error) {
 	return nil, nil
 }
+
 func (m *mockTeacherService) GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error) {
 	return nil, nil
 }

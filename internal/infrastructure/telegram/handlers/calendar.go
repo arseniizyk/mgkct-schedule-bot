@@ -18,7 +18,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
 
-// ScheduleCalendar обрабатывает команды /calendar и /export для скачивания .ics файла расписания
+// ScheduleCalendar обрабатывает команду /calendar для скачивания .ics файла расписания
 func ScheduleCalendar(
 	log *slog.Logger,
 	schedSvc ScheduleService,

@@ -264,7 +264,7 @@ func (r *UserRepository) UserIDsByGroupID(ctx context.Context, groupID int) ([]i
 	return usersID, nil
 }
 
-func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID int, subgroup int) error {
+func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID, subgroup int) error {
 	const op = "repository.UserRepository.SetUserGroup"
 
 	query := r.sb.Insert("users").
@@ -633,6 +633,86 @@ func (r *UserRepository) UsersForEveningNotification(ctx context.Context) ([]ent
 		return nil, fmt.Errorf("%s: rows err: %w", op, err)
 	}
 	return users, nil
+}
+
+// DistinctSubscribedGroups возвращает уникальные пары (group_id, subgroup) пользователей с включенными уведомлениями.
+func (r *UserRepository) DistinctSubscribedGroups(ctx context.Context) ([]entities.GroupSubgroupTarget, error) {
+	const op = "repository.UserRepository.DistinctSubscribedGroups"
+
+	query := r.sb.Select("DISTINCT group_id, subgroup").
+		From("users").
+		Where(sq.Eq{"notify_evening": 1}).
+		Where(sq.Gt{"group_id": 0})
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: build query: %w", op, err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query distinct groups: %w", op, err)
+	}
+	defer rows.Close()
+
+	var targets []entities.GroupSubgroupTarget
+	for rows.Next() {
+		var (
+			groupID  int
+			subgroup sql.NullInt64
+		)
+		if err := rows.Scan(&groupID, &subgroup); err != nil {
+			return nil, fmt.Errorf("%s: scan row: %w", op, err)
+		}
+		var sg int
+		if subgroup.Valid {
+			sg = int(subgroup.Int64)
+		}
+		targets = append(targets, entities.GroupSubgroupTarget{
+			GroupID:  groupID,
+			Subgroup: sg,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows err: %w", op, err)
+	}
+	return targets, nil
+}
+
+// DistinctSubscribedTeachers возвращает список уникальных преподавателей пользователей с включенными уведомлениями.
+func (r *UserRepository) DistinctSubscribedTeachers(ctx context.Context) ([]string, error) {
+	const op = "repository.UserRepository.DistinctSubscribedTeachers"
+
+	query := r.sb.Select("DISTINCT teacher_name").
+		From("users").
+		Where(sq.Eq{"notify_evening": 1}).
+		Where(sq.NotEq{"teacher_name": ""})
+
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("%s: build query: %w", op, err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: query distinct teachers: %w", op, err)
+	}
+	defer rows.Close()
+
+	var teachers []string
+	for rows.Next() {
+		var teacher string
+		if err := rows.Scan(&teacher); err != nil {
+			return nil, fmt.Errorf("%s: scan row: %w", op, err)
+		}
+		if teacher != "" {
+			teachers = append(teachers, teacher)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: rows err: %w", op, err)
+	}
+	return teachers, nil
 }
 
 // UpdateActivity обновляет отметку времени последней активности пользователя.

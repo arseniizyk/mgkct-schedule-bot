@@ -5,20 +5,23 @@
 - Single Go module (`github.com/arseniizyk/mgkct-schedule-bot`, Go 1.27), root `go.mod`.
 - Monolithic application combining schedule scraping (Scraper) and Telegram bot functionality:
   - Entry point: `cmd/bot/main.go`.
-  - Initialization and graceful shutdown layer: `internal/app`.
+  - Initialization and graceful shutdown layer: `internal/app` (`app.go`, background digest scheduling in `digest.go`).
   - Configuration: `internal/config` (cleanenv + godotenv).
   - Domain entities: `internal/domain/entities` (pure Go structures without protobuf).
   - Data storage: `internal/repository` (SQLite via `modernc.org/sqlite` in WAL mode).
   - Database and migrations: `internal/infrastructure/db` (embedded goose migrations in `internal/infrastructure/db/migrations/000001_init.sql`).
   - Parsing: `internal/infrastructure/parser` (Colly + goquery, independent parsing across multiple weeks).
   - Business logic: `internal/service` (`ScheduleService`, `TeacherService`, `ScraperService` with Smart Polling).
-  - Telegram: `internal/infrastructure/telegram` (telebot handlers, custom keyboards, formatting, throttled broadcasts).
+  - Telegram: `internal/infrastructure/telegram` (telebot routing in `routes.go`, decomposed handlers in `handlers/` & `handlers/admin/`, custom keyboards, formatting, throttled broadcasts in `botutil`, FSM state in `state/`, activity middleware in `middleware/activity.go`).
+  - HTTP Server: `internal/infrastructure/http` (modular endpoints decomposed into subpackages under `handlers/`: `health`, `schedule`, `directory`, `analytics`, `archive`, `user`, `static`).
+  - Shared Utilities: `internal/pkg/timeutil` (centralized Europe/Minsk UTC+3 timezone and date helpers).
 
 ## Development Commands
 
 - Build binary: `task build` (`go build -o bin/bot ./cmd/bot`).
 - Run locally: `task run` (`go run ./cmd/bot`).
 - Run tests: `task test` (`go test -v -race ./internal/...`).
+- Generate test mocks: `task mock` (`mockery`).
 - Linter and formatting: `task lint`, `task lint:fix`, `task format`.
 - Clean dependencies: `task tidy` (`go mod tidy`).
 - Docker containers: `task up` (`docker compose --env-file=./configs/.env up --build -d`), `task down`.
@@ -27,7 +30,7 @@
 
 - Configuration is automatically loaded from `configs/.env` or process environment variables.
 - `ENV`: `dev` or `prod`.
-- `BOT_TOKEN` (or legacy `TELEGRAM_TOKEN`): Telegram bot token.
+- `BOT_TOKEN`: Telegram bot token.
 - `BOT_HEALTH_PORT`: HTTP health check port (default: 8081).
 - `BOT_WEB_APP_URL`: Public HTTPS URL for Telegram Mini App.
 - `BOT_API_URL`: Custom Telegram Bot API URL (e.g. Cloudflare Worker reverse proxy).

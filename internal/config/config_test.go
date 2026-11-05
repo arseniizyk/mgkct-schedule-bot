@@ -3,9 +3,10 @@ package config_test
 import (
 	"testing"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 )
 
 func TestConfig_AdminIDs(t *testing.T) {

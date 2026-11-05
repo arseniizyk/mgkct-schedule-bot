@@ -2,9 +2,14 @@ version: '3'
 
 vars:
   GOLANGCI_LINT_VERSION: 'v2.14.0'
+  GOFUMPT_VERSION: 'v0.12.0'
+  GCI_VERSION: 'v0.14.0'
   BIN_DIR: '{{.ROOT_DIR}}/bin'
   BIN_EXT: '{{if eq OS "windows"}}.exe{{end}}'
   GOLANGCI_LINT: '{{.BIN_DIR}}/golangci-lint{{.BIN_EXT}}'
+  GOFUMPT: '{{.BIN_DIR}}/gofumpt{{.BIN_EXT}}'
+  GCI: '{{.BIN_DIR}}/gci{{.BIN_EXT}}'
+  MOCKERY: '{{.BIN_DIR}}/mockery{{.BIN_EXT}}'
 
 tasks:
   build:
@@ -22,15 +27,37 @@ tasks:
     cmds:
       - go mod tidy
 
+  mock:
+    desc: Генерация моков через mockery
+    cmds:
+      - '{{.MOCKERY}}'
+
   test:
     desc: Запуск модульных тестов
     cmds:
       - go test -v -race ./internal/...
 
-  format:
-    desc: Форматирование кода
+  install-formatters:
+    desc: Устанавливает форматтеры gofumpt и gci в каталог bin
+    status:
+      - test -f {{.GOFUMPT}}
+      - test -f {{.GCI}}
     cmds:
-      - go fmt ./...
+      - |
+        echo "📦 Устанавливаем gofumpt {{.GOFUMPT_VERSION}}..."
+        CGO_ENABLED=0 GOBIN={{.BIN_DIR}} go install mvdan.cc/gofumpt@{{.GOFUMPT_VERSION}}
+        echo "📦 Устанавливаем gci {{.GCI_VERSION}}..."
+        CGO_ENABLED=0 GOBIN={{.BIN_DIR}} go install github.com/daixiang0/gci@{{.GCI_VERSION}}
+
+  format:
+    desc: Форматирование кода (gofumpt + gci + golangci-lint fmt)
+    deps:
+      - install-formatters
+      - install-golangci-lint
+    cmds:
+      - '{{.GOFUMPT}} -extra -w .'
+      - '{{.GCI}} write -s standard -s default -s "prefix(github.com/arseniizyk/mgkct-schedule-bot)" .'
+      - '{{.GOLANGCI_LINT}} fmt'
 
   install-golangci-lint:
     desc: Устанавливает golangci-lint в каталог bin
@@ -51,6 +78,7 @@ tasks:
   lint:fix:
     desc: Автоматическое исправление замечаний линтера
     deps:
+      - format
       - install-golangci-lint
     cmds:
       - '{{.GOLANGCI_LINT}} run --fix ./...'

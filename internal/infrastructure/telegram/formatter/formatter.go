@@ -11,6 +11,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 func FormatErrorMessage(err error) string {
@@ -32,7 +33,7 @@ func FormatErrorMessage(err error) string {
 
 const secondShiftMinIndex = 3
 
-var minskLoc = time.FixedZone("MSK", 3*3600)
+var minskLoc = timeutil.MinskLocation
 
 func isCurrentWeek(week, currentWeekMonday time.Time) bool {
 	if week.IsZero() {
@@ -300,7 +301,7 @@ func FormatScheduleDayAt(group *entities.Group, dayIdx int) (string, error) {
 	return FormatScheduleDayAtForSubgroup(group, dayIdx, 0)
 }
 
-func FormatScheduleDayAtForSubgroup(group *entities.Group, dayIdx int, subgroup int) (string, error) {
+func FormatScheduleDayAtForSubgroup(group *entities.Group, dayIdx, subgroup int) (string, error) {
 	filtered := FilterGroupForSubgroup(group, subgroup)
 	if dayIdx < 0 || dayIdx >= len(filtered.Days) {
 		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(filtered.Days))
@@ -352,6 +353,7 @@ func GetDayEndTime(dayIdx, lastSubject int, loc *time.Location) (time.Time, bool
 func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
 	return GetDayEndTime(dayIdx, lastSubject, minskLoc)
 }
+
 func FormatScheduleWeek(group *entities.Group) string {
 	return FormatScheduleWeekForSubgroup(group, 0)
 }
@@ -402,7 +404,7 @@ func SplitMessage(text string, limit int) []string {
 			continue
 		}
 
-		if current.Len() > 0 {
+		if currentRunes > 0 {
 			current.WriteString("\n")
 			currentRunes++
 		}

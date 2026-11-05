@@ -618,7 +618,7 @@ func IsKnorinaCabinet(cabinet string) bool {
 }
 
 // resolveEndingCampus определяет корпус (Казинца или Кнорина) для группы/подгруппы на указанный день
-func resolveEndingCampus(grp *entities.Group, dayIdx int, sg int) string {
+func resolveEndingCampus(grp *entities.Group, dayIdx, sg int) string {
 	if grp == nil || dayIdx < 0 || dayIdx >= len(grp.Days) {
 		return entities.CampusKazintsa
 	}

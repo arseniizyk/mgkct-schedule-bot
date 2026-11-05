@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/db"
-	"github.com/stretchr/testify/require"
 )
 
 func TestConnect_MigrationsAndTriggers(t *testing.T) {

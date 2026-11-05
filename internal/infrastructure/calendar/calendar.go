@@ -11,9 +11,10 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
-var minskLocation = time.FixedZone("Europe/Minsk", 3*3600)
+var minskLocation = timeutil.MinskLocation
 
 // PairTimeSlots определяет время начала и окончания каждой пары (1-based, индексы 0..5 соответствуют 1..6 парам).
 // Каждая пара представлена [2][2]int: {{startHour, startMin}, {endHour, endMin}}.
@@ -28,7 +29,7 @@ var PairTimeSlots = [6][2][2]int{
 
 // SubjectDictionary интерфейс для опционального разрешения полных названий предметов.
 type SubjectDictionary interface {
-	Resolve(raw string) (cleaned string, fullName string, found bool)
+	Resolve(raw string) (cleaned, fullName string, found bool)
 }
 
 // DayOfWeekIndex возвращает индекс дня (0=Пн..6=Вс) по его русскому названию, либо defaultIdx при несовпадении.

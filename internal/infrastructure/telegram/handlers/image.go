@@ -14,7 +14,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 )
 
-// ScheduleImage обрабатывает команды /pic и /image для получения расписания недели в виде картинки
+// ScheduleImage обрабатывает команду /pic для получения расписания недели в виде картинки
 func ScheduleImage(
 	log *slog.Logger,
 	schedSvc ScheduleService,

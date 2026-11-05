@@ -13,13 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 )
 
 var (
