@@ -5,10 +5,39 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	tele "gopkg.in/telebot.v4"
 )
+
+// ExtractFloodRetry extracts retry-after seconds if err represents a Telegram 429 flood error.
+func ExtractFloodRetry(err error) (int, bool) {
+	if err == nil {
+		return 0, false
+	}
+	if fErr, ok := errors.AsType[tele.FloodError](err); ok {
+		return fErr.RetryAfter, true
+	}
+	var fErrPtr *tele.FloodError
+	if errors.As(err, &fErrPtr) && fErrPtr != nil {
+		return fErrPtr.RetryAfter, true
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "retry after") || strings.Contains(msg, "FLOOD_WAIT") {
+		if _, after, ok := strings.Cut(msg, "retry after "); ok {
+			fields := strings.Fields(after)
+			if len(fields) > 0 {
+				if sec, parseErr := strconv.Atoi(fields[0]); parseErr == nil {
+					return sec, true
+				}
+			}
+		}
+		return 0, true
+	}
+	return 0, false
+}
 
 // SendWithFloodRetry executes sendFunc and retries on Telegram 429 FloodError up to 3 times.
 func SendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (*tele.Message, error)) (*tele.Message, error) {
@@ -20,8 +49,8 @@ func SendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (
 			return msg, nil
 		}
 		lastErr = err
-		if floodErr, ok := errors.AsType[tele.FloodError](err); ok {
-			waitDur := time.Duration(floodErr.RetryAfter) * time.Second
+		if retryAfter, ok := ExtractFloodRetry(err); ok {
+			waitDur := time.Duration(retryAfter) * time.Second
 			if waitDur <= 0 {
 				waitDur = time.Second
 			}

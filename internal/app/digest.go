@@ -16,12 +16,12 @@ type groupSubgroupKey struct {
 
 func (a *App) isGroupDayEnded(ctx context.Context, groupID, subgroup, dayIdx int, now time.Time) bool {
 	grp, err := a.scheduleSvc.GetGroupLatestSchedule(ctx, int32(groupID))
-	if err != nil || dayIdx >= len(grp.Days) {
+	if err != nil || grp == nil || dayIdx < 0 || dayIdx >= len(grp.Days) || grp.Days[dayIdx] == nil {
 		return false
 	}
 
 	filtered := formatter.FilterGroupForSubgroup(grp, subgroup)
-	if dayIdx >= len(filtered.Days) || filtered.Days[dayIdx] == nil {
+	if filtered == nil || dayIdx >= len(filtered.Days) || filtered.Days[dayIdx] == nil {
 		return false
 	}
 
@@ -40,7 +40,7 @@ func (a *App) isGroupDayEnded(ctx context.Context, groupID, subgroup, dayIdx int
 
 func (a *App) isTeacherDayEnded(ctx context.Context, teacherName string, dayIdx int, now time.Time) bool {
 	teacher, err := a.teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
-	if err != nil || dayIdx >= len(teacher.Days) {
+	if err != nil || teacher == nil || dayIdx < 0 || dayIdx >= len(teacher.Days) || teacher.Days[dayIdx] == nil {
 		return false
 	}
 
@@ -167,8 +167,8 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 			todayStr := timeutil.TodayStr()
 
 			// Основная логика: отправка дайджеста по окончании пар
-			// Ограничиваем окно проверки: с 12:00 до 21:00
-			if localTime.Hour() >= 12 && localTime.Hour() < 21 {
+			// Ограничиваем окно проверки: с 12:00 до 20:00 (в 20:00 начинает работу фоллбэк)
+			if localTime.Hour() >= 12 && localTime.Hour() < 20 {
 				users, err := a.notifier.UsersForNotification(ctx)
 				if err == nil && len(users) > 0 {
 					targets, teachers := extractUniqueRecipients(users)

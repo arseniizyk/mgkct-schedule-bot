@@ -95,12 +95,9 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	stateMgr := state.NewMemoryManager()
 	actWorker := middleware.NewActivityWorker(log, userRepo)
 
+	bot.Use(middleware.ActivityMiddleware(actWorker))
 	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
 		return func(c tele.Context) error {
-			if sender := c.Sender(); sender != nil && sender.ID != 0 {
-				actWorker.Touch(sender.ID)
-			}
-
 			if c.Message() != nil && strings.HasPrefix(c.Message().Text, "/") {
 				_ = stateMgr.Clear(c.Chat().ID)
 			}

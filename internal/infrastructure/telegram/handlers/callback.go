@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"strings"
 	"time"
 
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/calendar"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/botutil"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
@@ -57,7 +57,7 @@ func CallbacksHandler(
 			if errors.Is(err, tele.ErrTrueResult) || strings.Contains(err.Error(), "result is True") || strings.Contains(err.Error(), "message is not modified") {
 				return c.Respond()
 			}
-			if retryAfter, ok := extractFloodRetry(err); ok {
+			if retryAfter, ok := botutil.ExtractFloodRetry(err); ok {
 				log.Warn("rate limited by telegram (flood control)", "retry_after", retryAfter, "data", data)
 				text := "⏳ Слишком частые переключения. Подождите немного."
 				if retryAfter > 0 {
@@ -89,33 +89,6 @@ func callbackChatID(c tele.Context) int64 {
 		return c.Sender().ID
 	}
 	return 0
-}
-
-func extractFloodRetry(err error) (int, bool) {
-	if err == nil {
-		return 0, false
-	}
-	if fErr, ok := errors.AsType[tele.FloodError](err); ok {
-		return fErr.RetryAfter, true
-	}
-	var fErrPtr *tele.FloodError
-	if errors.As(err, &fErrPtr) && fErrPtr != nil {
-		return fErrPtr.RetryAfter, true
-	}
-	msg := err.Error()
-	if strings.Contains(msg, "retry after") || strings.Contains(msg, "FLOOD_WAIT") {
-		if _, after, ok := strings.Cut(msg, "retry after "); ok {
-			rem := after
-			fields := strings.Fields(rem)
-			if len(fields) > 0 {
-				if sec, parseErr := strconv.Atoi(fields[0]); parseErr == nil {
-					return sec, true
-				}
-			}
-		}
-		return 0, true
-	}
-	return 0, false
 }
 
 func dispatchCallback(
