@@ -23,7 +23,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/renderer"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/handlers"
-	kbd "github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/middleware"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/notifier"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
@@ -83,6 +82,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 	)
 	scraperSvc.SetFaculty(facultyParser, facultyRepo)
 	scraperSvc.SetTeacherCache(teacherSvc)
+	scraperSvc.SetAnalyticsCache(analyticsSvc)
 
 	botPref, webhookHandler := telegram.BuildBotPref(cfg)
 
@@ -104,8 +104,6 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 			return next(c)
 		}
 	})
-
-	kbd.InitKeyboard(cfg.Bot.WebAppURL)
 
 	telegram.RegisterHandlers(
 		bot,

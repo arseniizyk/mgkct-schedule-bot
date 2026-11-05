@@ -33,11 +33,13 @@ type ScheduleService struct {
 	log          *slog.Logger
 	scheduleRepo ScheduleRepository
 
-	mu         sync.RWMutex
-	cache      *entities.Schedule
-	weeksCache map[string]scheduleCacheItem
-	allGroups  []int32
-	nowFunc    func() time.Time
+	mu               sync.RWMutex
+	cache            *entities.Schedule
+	cachedTargetWeek time.Time
+	cacheAt          time.Time
+	weeksCache       map[string]scheduleCacheItem
+	allGroups        []int32
+	nowFunc          func() time.Time
 }
 
 func NewScheduleService(log *slog.Logger, scheduleRepo ScheduleRepository) *ScheduleService {
@@ -49,8 +51,11 @@ func NewScheduleService(log *slog.Logger, scheduleRepo ScheduleRepository) *Sche
 }
 
 func (s *ScheduleService) now() time.Time {
-	if s.nowFunc != nil {
-		return s.nowFunc()
+	s.mu.RLock()
+	fn := s.nowFunc
+	s.mu.RUnlock()
+	if fn != nil {
+		return fn()
 	}
 	return time.Now()
 }
@@ -65,13 +70,28 @@ func (s *ScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID in
 	const op = "service.ScheduleService.GetGroupLatestSchedule"
 	log := s.log.With("operation", op, "group_id", groupID)
 
-	targetWeek := EffectiveScheduleWeek(s.now())
+	now := s.now()
+	targetWeek := EffectiveScheduleWeek(now)
+	targetMonday := CurrentWeekMonday(targetWeek)
 
 	s.mu.RLock()
 	if s.cache != nil {
-		group, ok := s.cache.Groups[groupID]
-		if ok && CurrentWeekMonday(group.Week).Equal(CurrentWeekMonday(targetWeek)) {
+		var cachedWeek time.Time
+		for _, g := range s.cache.Groups {
+			if !g.Week.IsZero() {
+				cachedWeek = g.Week
+				break
+			}
+		}
+		isSameTarget := (!cachedWeek.IsZero() && CurrentWeekMonday(cachedWeek).Equal(targetMonday)) ||
+			(s.cachedTargetWeek.Equal(targetMonday) && time.Since(s.cacheAt) < scheduleCacheTTL)
+		if isSameTarget {
+			group, ok := s.cache.Groups[groupID]
 			s.mu.RUnlock()
+			if !ok {
+				log.WarnContext(ctx, "group not found in cached schedule")
+				return nil, domainerr.ErrGroupNotFound
+			}
 			return group, nil
 		}
 	}
@@ -91,7 +111,7 @@ func (s *ScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID in
 		}
 	}
 
-	s.SetCache(sch)
+	s.setActiveCache(sch, targetMonday)
 
 	group, ok := sch.Groups[groupID]
 	if !ok {
@@ -110,10 +130,12 @@ func (s *ScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID in
 	s.mu.RLock()
 	if s.weeksCache != nil {
 		if item, ok := s.weeksCache[weekKey]; ok && item.schedule != nil && time.Since(item.cachedAt) < scheduleCacheTTL {
-			if group, exists := item.schedule.Groups[groupID]; exists {
-				s.mu.RUnlock()
-				return group, nil
+			group, exists := item.schedule.Groups[groupID]
+			s.mu.RUnlock()
+			if !exists {
+				return nil, domainerr.ErrGroupNotFound
 			}
+			return group, nil
 		}
 	}
 	s.mu.RUnlock()
@@ -157,31 +179,36 @@ func (s *ScheduleService) GetAvailableWeeks(ctx context.Context, week time.Time)
 	return s.scheduleRepo.GetWeeks(ctx, week)
 }
 
+func (s *ScheduleService) setActiveCache(sch *entities.Schedule, targetMonday time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cache = sch
+	s.cachedTargetWeek = targetMonday
+	s.cacheAt = time.Now()
+	s.mergeAllGroupsLocked(sch)
+	if sch != nil {
+		if s.weeksCache == nil {
+			s.weeksCache = make(map[string]scheduleCacheItem)
+		}
+		for _, g := range sch.Groups {
+			if !g.Week.IsZero() {
+				s.weeksCache[g.Week.Format("2006-01-02")] = scheduleCacheItem{
+					schedule: sch,
+					cachedAt: s.cacheAt,
+				}
+				break
+			}
+		}
+	}
+}
+
 func (s *ScheduleService) SetCache(sch *entities.Schedule) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cache = sch
-	if sch != nil && len(s.allGroups) > 0 {
-		var added bool
-		groupSet := make(map[int32]struct{}, len(s.allGroups)+len(sch.Groups))
-		for _, id := range s.allGroups {
-			groupSet[id] = struct{}{}
-		}
-		for id := range sch.Groups {
-			if _, ok := groupSet[id]; !ok {
-				groupSet[id] = struct{}{}
-				added = true
-			}
-		}
-		if added {
-			merged := make([]int32, 0, len(groupSet))
-			for id := range groupSet {
-				merged = append(merged, id)
-			}
-			slices.Sort(merged)
-			s.allGroups = merged
-		}
-	}
+	s.cachedTargetWeek = time.Time{}
+	s.cacheAt = time.Now()
+	s.mergeAllGroupsLocked(sch)
 	// Сбрасываем кэш недель при обновлении расписания в БД
 	s.weeksCache = make(map[string]scheduleCacheItem)
 	if sch != nil {
@@ -189,11 +216,36 @@ func (s *ScheduleService) SetCache(sch *entities.Schedule) {
 			if !g.Week.IsZero() {
 				s.weeksCache[g.Week.Format("2006-01-02")] = scheduleCacheItem{
 					schedule: sch,
-					cachedAt: time.Now(),
+					cachedAt: s.cacheAt,
 				}
 				break
 			}
 		}
+	}
+}
+
+func (s *ScheduleService) mergeAllGroupsLocked(sch *entities.Schedule) {
+	if sch == nil || len(s.allGroups) == 0 {
+		return
+	}
+	var added bool
+	groupSet := make(map[int32]struct{}, len(s.allGroups)+len(sch.Groups))
+	for _, id := range s.allGroups {
+		groupSet[id] = struct{}{}
+	}
+	for id := range sch.Groups {
+		if _, ok := groupSet[id]; !ok {
+			groupSet[id] = struct{}{}
+			added = true
+		}
+	}
+	if added {
+		merged := make([]int32, 0, len(groupSet))
+		for id := range groupSet {
+			merged = append(merged, id)
+		}
+		slices.Sort(merged)
+		s.allGroups = merged
 	}
 }
 
@@ -203,6 +255,7 @@ func (s *ScheduleService) ClearWeeksCache() {
 	defer s.mu.Unlock()
 	s.weeksCache = make(map[string]scheduleCacheItem)
 	s.cache = nil
+	s.cachedTargetWeek = time.Time{}
 }
 
 func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {
@@ -210,9 +263,8 @@ func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {
 
 	s.mu.RLock()
 	if len(s.allGroups) > 0 {
-		defer s.mu.RUnlock()
-		cp := make([]int32, len(s.allGroups))
-		copy(cp, s.allGroups)
+		cp := slices.Clone(s.allGroups)
+		s.mu.RUnlock()
 		return cp, nil
 	}
 	s.mu.RUnlock()
@@ -263,9 +315,7 @@ func (s *ScheduleService) GetAllGroupIDs(ctx context.Context) ([]int32, error) {
 	s.allGroups = ids
 	s.mu.Unlock()
 
-	cp := make([]int32, len(ids))
-	copy(cp, ids)
-	return cp, nil
+	return slices.Clone(ids), nil
 }
 
 func (s *ScheduleService) HasGroup(ctx context.Context, groupID int32) (bool, error) {

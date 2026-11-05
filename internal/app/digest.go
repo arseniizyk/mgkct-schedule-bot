@@ -6,6 +6,7 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/notifier"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
@@ -57,18 +58,35 @@ func (a *App) isTeacherDayEnded(ctx context.Context, teacherName string, dayIdx 
 	return true
 }
 
+func (a *App) isTargetGroupScheduleAvailable(ctx context.Context, groupID int, now time.Time) bool {
+	targetDate, dayIdx := notifier.CalculateTomorrowDate(now)
+	targetMonday := targetDate.AddDate(0, 0, -dayIdx)
+	grp, err := a.scheduleSvc.GetGroupScheduleByWeek(ctx, int32(groupID), targetMonday)
+	return err == nil && grp != nil
+}
+
+func (a *App) isTargetTeacherScheduleAvailable(ctx context.Context, teacherName string, now time.Time) bool {
+	targetDate, dayIdx := notifier.CalculateTomorrowDate(now)
+	targetMonday := targetDate.AddDate(0, 0, -dayIdx)
+	t, err := a.teacherSvc.GetTeacherScheduleByWeek(ctx, teacherName, targetMonday)
+	return err == nil && t != nil
+}
+
 func (a *App) seedDigestLogIfNeeded(ctx context.Context) {
 	log := a.log.With("operation", "app.App.seedDigestLogIfNeeded")
 
 	now := timeutil.Now()
 	weekday := now.Weekday()
+	todayStr := timeutil.TodayStr()
+
+	if err := a.digestRepo.DeleteOldEntries(ctx, todayStr); err != nil {
+		log.Warn("failed deleting old digest entries", "error", err)
+	}
 
 	// В воскресенье до 20:00 рассылка не происходит — сидировать нечего.
 	if weekday == time.Sunday && now.Hour() < 20 {
 		return
 	}
-
-	todayStr := timeutil.TodayStr()
 
 	// Оптимальный запрос: получаем только уникальные пары (группа, подгруппа)
 	// и преподавателей подписчиков без выгрузки всех пользователей в память.
@@ -87,10 +105,13 @@ func (a *App) seedDigestLogIfNeeded(ctx context.Context) {
 
 	seeded := 0
 
-	// Если бот запущен после 20:00, помечаем все группы и преподавателей как отправленные,
-	// чтобы при перезапуске ночью не разослать дайджест повторно.
+	// Если бот запущен после 20:00, помечаем группы и преподавателей как отправленные
+	// только если целевое расписание уже было опубликовано.
 	if now.Hour() >= 20 {
 		for _, target := range groupTargets {
+			if !a.isTargetGroupScheduleAvailable(ctx, target.GroupID, now) {
+				continue
+			}
 			if err := a.digestRepo.MarkGroupDigestSent(ctx, target.GroupID, target.Subgroup, todayStr); err != nil {
 				log.Warn("failed seeding group digest log", "group", target.GroupID, "subgroup", target.Subgroup, "error", err)
 				continue
@@ -98,6 +119,9 @@ func (a *App) seedDigestLogIfNeeded(ctx context.Context) {
 			seeded++
 		}
 		for _, teacherName := range teachers {
+			if !a.isTargetTeacherScheduleAvailable(ctx, teacherName, now) {
+				continue
+			}
 			if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
 				log.Warn("failed seeding teacher digest log", "teacher", teacherName, "error", err)
 				continue
@@ -116,6 +140,9 @@ func (a *App) seedDigestLogIfNeeded(ctx context.Context) {
 		if !a.isGroupDayEnded(ctx, target.GroupID, target.Subgroup, dayIdx, now) {
 			continue
 		}
+		if !a.isTargetGroupScheduleAvailable(ctx, target.GroupID, now) {
+			continue
+		}
 
 		if err := a.digestRepo.MarkGroupDigestSent(ctx, target.GroupID, target.Subgroup, todayStr); err != nil {
 			log.Warn("failed seeding group digest log", "group", target.GroupID, "subgroup", target.Subgroup, "error", err)
@@ -126,6 +153,9 @@ func (a *App) seedDigestLogIfNeeded(ctx context.Context) {
 
 	for _, teacherName := range teachers {
 		if !a.isTeacherDayEnded(ctx, teacherName, dayIdx, now) {
+			continue
+		}
+		if !a.isTargetTeacherScheduleAvailable(ctx, teacherName, now) {
 			continue
 		}
 
@@ -145,6 +175,8 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
+	lastCleanupDate := timeutil.TodayStr()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -152,11 +184,18 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 		case <-ticker.C:
 			localTime := timeutil.Now()
 			weekday := localTime.Weekday()
+			todayStr := timeutil.TodayStr()
+
+			if todayStr != lastCleanupDate {
+				if err := a.digestRepo.DeleteOldEntries(ctx, todayStr); err != nil {
+					a.log.Warn("failed cleaning up old digest entries", "error", err)
+				}
+				lastCleanupDate = todayStr
+			}
 
 			// В воскресенье отправляем дайджест на понедельник строго в 20:00 (фоллбэк)
 			if weekday == time.Sunday {
 				if localTime.Hour() >= 20 {
-					todayStr := timeutil.TodayStr()
 					a.sendEveningDigestFallback(ctx, todayStr)
 				}
 				continue
@@ -164,7 +203,6 @@ func (a *App) startEveningDigestScheduler(ctx context.Context) {
 
 			// Будние дни и суббота: Пн=0..Сб=5
 			dayIdx := int(weekday - 1)
-			todayStr := timeutil.TodayStr()
 
 			// Основная логика: отправка дайджеста по окончании пар
 			// Ограничиваем окно проверки: с 12:00 до 20:00 (в 20:00 начинает работу фоллбэк)
@@ -202,13 +240,14 @@ func (a *App) sendEveningDigestFallback(ctx context.Context, todayStr string) {
 			continue
 		}
 
-		if err := a.digestRepo.MarkGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr); err != nil {
-			a.log.Warn("failed marking group digest as sent in fallback", "group", target.groupID, "subgroup", target.subgroup, "error", err)
-		}
-
 		a.log.Info("Sending 20:00 fallback digest for group/subgroup", "group", target.groupID, "subgroup", target.subgroup)
 		if _, sendErr := a.notifier.SendNextDayDigestForGroupSubgroup(ctx, a.scheduleSvc, target.groupID, target.subgroup, users); sendErr != nil {
 			a.log.Warn("failed sending 20:00 fallback digest for group/subgroup", "group", target.groupID, "subgroup", target.subgroup, "error", sendErr)
+			continue
+		}
+
+		if err := a.digestRepo.MarkGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr); err != nil {
+			a.log.Warn("failed marking group digest as sent in fallback", "group", target.groupID, "subgroup", target.subgroup, "error", err)
 		}
 	}
 
@@ -221,13 +260,14 @@ func (a *App) sendEveningDigestFallback(ctx context.Context, todayStr string) {
 			continue
 		}
 
-		if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
-			a.log.Warn("failed marking teacher digest as sent in fallback", "teacher", teacherName, "error", err)
-		}
-
 		a.log.Info("Sending 20:00 fallback digest for teacher", "teacher", teacherName)
 		if _, sendErr := a.notifier.SendNextDayDigestForTeacher(ctx, a.teacherSvc, teacherName, users); sendErr != nil {
 			a.log.Warn("failed sending 20:00 fallback digest for teacher", "teacher", teacherName, "error", sendErr)
+			continue
+		}
+
+		if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
+			a.log.Warn("failed marking teacher digest as sent in fallback", "teacher", teacherName, "error", err)
 		}
 	}
 }
@@ -266,10 +306,6 @@ func (a *App) notifyGroupsAfterLessons(
 			continue
 		}
 
-		if err := a.digestRepo.MarkGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr); err != nil {
-			a.log.Warn("failed marking group digest as sent", "group", target.groupID, "subgroup", target.subgroup, "error", err)
-		}
-
 		a.log.Info("Lessons ended for group/subgroup, sending next day digest",
 			"group", target.groupID,
 			"subgroup", target.subgroup,
@@ -282,6 +318,11 @@ func (a *App) notifyGroupsAfterLessons(
 				"subgroup", target.subgroup,
 				"error", sendErr,
 			)
+			continue
+		}
+
+		if err := a.digestRepo.MarkGroupDigestSent(ctx, target.groupID, target.subgroup, todayStr); err != nil {
+			a.log.Warn("failed marking group digest as sent", "group", target.groupID, "subgroup", target.subgroup, "error", err)
 		}
 	}
 }
@@ -307,10 +348,6 @@ func (a *App) notifyTeachersAfterLessons(
 			continue
 		}
 
-		if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
-			a.log.Warn("failed marking teacher digest as sent", "teacher", teacherName, "error", err)
-		}
-
 		a.log.Info("Lessons ended for teacher, sending next day digest",
 			"teacher", teacherName,
 			"time", localTime.Format("15:04:05"),
@@ -321,6 +358,11 @@ func (a *App) notifyTeachersAfterLessons(
 				"teacher", teacherName,
 				"error", sendErr,
 			)
+			continue
+		}
+
+		if err := a.digestRepo.MarkTeacherDigestSent(ctx, teacherName, todayStr); err != nil {
+			a.log.Warn("failed marking teacher digest as sent", "teacher", teacherName, "error", err)
 		}
 	}
 }
