@@ -9,7 +9,6 @@ vars:
   GOLANGCI_LINT: '{{.BIN_DIR}}/golangci-lint{{.BIN_EXT}}'
   GOFUMPT: '{{.BIN_DIR}}/gofumpt{{.BIN_EXT}}'
   GCI: '{{.BIN_DIR}}/gci{{.BIN_EXT}}'
-  MOCKERY: '{{.BIN_DIR}}/mockery{{.BIN_EXT}}'
 
 tasks:
   build:
@@ -26,11 +25,6 @@ tasks:
     desc: Очистка и обновление зависимостей
     cmds:
       - go mod tidy
-
-  mock:
-    desc: Генерация моков через mockery
-    cmds:
-      - '{{.MOCKERY}}'
 
   test:
     desc: Запуск модульных тестов
@@ -91,4 +85,4 @@ tasks:
   down:
     desc: Остановка Docker Compose
     cmds:
-      - docker compose down -v
+      - docker compose down

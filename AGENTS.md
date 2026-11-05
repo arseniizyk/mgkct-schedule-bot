@@ -21,7 +21,6 @@
 - Build binary: `task build` (`go build -o bin/bot ./cmd/bot`).
 - Run locally: `task run` (`go run ./cmd/bot`).
 - Run tests: `task test` (`go test -v -race ./internal/...`).
-- Generate test mocks: `task mock` (`mockery`).
 - Linter and formatting: `task lint`, `task lint:fix`, `task format`.
 - Clean dependencies: `task tidy` (`go mod tidy`).
 - Docker containers: `task up` (`docker compose --env-file=./configs/.env up --build -d`), `task down`.
