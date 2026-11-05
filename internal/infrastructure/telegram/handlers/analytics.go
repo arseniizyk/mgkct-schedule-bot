@@ -34,38 +34,41 @@ func Cabinet(log *slog.Logger, analyticsSvc AnalyticsService, sm StateManager) t
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		query := strings.Join(args, " ")
-		cabSched, candidates, err := analyticsSvc.GetCabinetSchedule(ctx, query, time.Time{})
-		if err != nil {
-			log.Warn("failed getting cabinet schedule", "query", query, "error", err)
-			return c.Send("Ошибка при получении расписания кабинета.", keyboard.ReplyScheduleKeyboard)
-		}
-
-		if cabSched == nil {
-			if len(candidates) > 0 {
-				var sb strings.Builder
-				fmt.Fprintf(&sb, "По запросу *%s* найдено несколько кабинетов:\n\n", formatter.EscapeMD(query))
-				for _, cand := range candidates {
-					fmt.Fprintf(&sb, "• `/cabinet %s`\n", cand)
-				}
-				return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-			}
-			return c.Send(fmt.Sprintf("Кабинет *%s* не найден в расписании.", formatter.EscapeMD(query)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-		}
-
-		dayIdx := service.EffectiveEndingsDayIndex()
-		if dayIdx >= len(cabSched.Days) {
-			dayIdx = 0
-		}
-
-		msg := formatter.FormatCabinetDay(cabSched, dayIdx)
-		return c.Send(
-			msg,
-			tele.ModeMarkdown,
-			keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineCabinetDayKeyboard(cabSched.Cabinet, dayIdx, len(cabSched.Days)),
-		)
+		return sendCabinetScheduleByQuery(ctx, log, c, analyticsSvc, strings.Join(args, " "))
 	}
+}
+
+func sendCabinetScheduleByQuery(ctx context.Context, log *slog.Logger, c tele.Context, analyticsSvc AnalyticsService, query string) error {
+	cabSched, candidates, err := analyticsSvc.GetCabinetSchedule(ctx, query, time.Time{})
+	if err != nil {
+		log.Warn("failed getting cabinet schedule", "query", query, "error", err)
+		return c.Send("Ошибка при получении расписания кабинета.", keyboard.ReplyScheduleKeyboard)
+	}
+
+	if cabSched == nil {
+		if len(candidates) > 0 {
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "По запросу *%s* найдено несколько кабинетов:\n\n", formatter.EscapeMD(query))
+			for _, cand := range candidates {
+				fmt.Fprintf(&sb, "• `/cabinet %s`\n", cand)
+			}
+			return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+		}
+		return c.Send(fmt.Sprintf("Кабинет *%s* не найден в расписании.", formatter.EscapeMD(query)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+	}
+
+	dayIdx := service.EffectiveEndingsDayIndex()
+	if dayIdx >= len(cabSched.Days) {
+		dayIdx = 0
+	}
+
+	msg := formatter.FormatCabinetDay(cabSched, dayIdx)
+	return c.Send(
+		msg,
+		tele.ModeMarkdown,
+		keyboard.ReplyScheduleKeyboard,
+		keyboard.InlineCabinetDayKeyboard(cabSched.Cabinet, dayIdx, len(cabSched.Days)),
+	)
 }
 
 // Endings обрабатывает команду /endings (аналитика окончания пар)
@@ -94,7 +97,7 @@ func Endings(log *slog.Logger, analyticsSvc AnalyticsService) tele.HandlerFunc {
 }
 
 // Stats обрабатывает команду /stats [группа/преподаватель]
-func Stats(log *slog.Logger, analyticsSvc AnalyticsService, userRepo UserRepo, teacherSvc TeacherService) tele.HandlerFunc {
+func Stats(_ *slog.Logger, analyticsSvc AnalyticsService, userRepo UserRepo, teacherSvc TeacherService) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -127,8 +130,8 @@ func Stats(log *slog.Logger, analyticsSvc AnalyticsService, userRepo UserRepo, t
 			}
 		}
 
-		// Если без аргументов — смотрим сохраненную группу или преподавателя пользователя
-		grpID, _ := userRepo.GroupByChatID(ctx, c.Chat().ID)
+		// Если без аргументов — смотрим сохраненную группу или преподавателя пользователя за один запрос
+		grpID, _, teacherName, _ := userRepo.GetUserProfile(ctx, c.Chat().ID)
 		if grpID > 0 {
 			stats, total, err := analyticsSvc.GetGroupStats(ctx, int32(grpID), time.Time{})
 			if err == nil {
@@ -137,7 +140,6 @@ func Stats(log *slog.Logger, analyticsSvc AnalyticsService, userRepo UserRepo, t
 			}
 		}
 
-		teacherName, _ := userRepo.GetTeacher(ctx, c.Chat().ID)
 		if teacherName != "" {
 			stats, total, err := analyticsSvc.GetTeacherStats(ctx, teacherName, time.Time{})
 			if err == nil {

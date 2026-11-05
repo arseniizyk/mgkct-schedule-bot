@@ -32,10 +32,6 @@ func (m *mockAdminUserRepo) AllUsers(ctx context.Context) ([]entities.User, erro
 	return m.users, nil
 }
 
-func (m *mockAdminUserRepo) CountUsers(ctx context.Context) (int, error) {
-	return len(m.users), nil
-}
-
 func (m *mockAdminUserRepo) GetActivityStats(ctx context.Context) (entities.ActivityStats, error) {
 	return entities.ActivityStats{DAU: 1, WAU: 2, MAU: 3}, nil
 }

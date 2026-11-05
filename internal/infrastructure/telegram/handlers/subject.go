@@ -32,32 +32,35 @@ func Subject(dict SubjectDict, sm StateManager) tele.HandlerFunc {
 			return c.Send(messages.WaitingSubject)
 		}
 
-		query := strings.Join(args, " ")
-		cleaned, fullName, found := dict.Resolve(query)
-		if found {
-			return c.Send(
-				fmt.Sprintf("📖 *%s*\n%s", formatter.EscapeMD(cleaned), formatter.EscapeMD(fullName)),
-				tele.ModeMarkdown,
-				keyboard.ReplyScheduleKeyboard,
-			)
-		}
+		return sendSubjectByQuery(c, dict, strings.Join(args, " "))
+	}
+}
 
-		// Поиск похожих совпадений
-		similar := dict.Search(query)
-		if len(similar) > 0 {
-			var sb strings.Builder
-			fmt.Fprintf(&sb, "Предмет *%s* не найден. Возможно, вы имели в виду:\n\n", formatter.EscapeMD(query))
-			limit := min(len(similar), 8)
-			for i := range limit {
-				fmt.Fprintf(&sb, "• *%s* — %s\n", formatter.EscapeMD(similar[i].ShortName), formatter.EscapeMD(similar[i].FullName))
-			}
-			return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-		}
-
+func sendSubjectByQuery(c tele.Context, dict SubjectDict, query string) error {
+	cleaned, fullName, found := dict.Resolve(query)
+	if found {
 		return c.Send(
-			fmt.Sprintf("Предмет *%s* не найден в справочнике колледжа.", formatter.EscapeMD(query)),
+			fmt.Sprintf("📖 *%s*\n%s", formatter.EscapeMD(cleaned), formatter.EscapeMD(fullName)),
 			tele.ModeMarkdown,
 			keyboard.ReplyScheduleKeyboard,
 		)
 	}
+
+	// Поиск похожих совпадений
+	similar := dict.Search(query)
+	if len(similar) > 0 {
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "Предмет *%s* не найден. Возможно, вы имели в виду:\n\n", formatter.EscapeMD(query))
+		limit := min(len(similar), 8)
+		for i := range limit {
+			fmt.Fprintf(&sb, "• *%s* — %s\n", formatter.EscapeMD(similar[i].ShortName), formatter.EscapeMD(similar[i].FullName))
+		}
+		return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+	}
+
+	return c.Send(
+		fmt.Sprintf("Предмет *%s* не найден в справочнике колледжа.", formatter.EscapeMD(query)),
+		tele.ModeMarkdown,
+		keyboard.ReplyScheduleKeyboard,
+	)
 }

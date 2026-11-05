@@ -540,7 +540,7 @@ func TestNotifier_ForbiddenDeactivatesNotifications(t *testing.T) {
 		},
 	}
 
-	err := n.SendEveningDigest(context.Background(), schedProv, nil)
+	_, err := n.SendNextDayDigestForGroupSubgroup(context.Background(), schedProv, 101, 0)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}

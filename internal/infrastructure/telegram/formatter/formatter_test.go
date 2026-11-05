@@ -68,7 +68,7 @@ func TestFormatSubjectsEscapesDynamicFields(t *testing.T) {
 		},
 	}
 
-	got := formatScheduleDay(day)
+	got := formatScheduleDayWithTag(day, "")
 
 	if !strings.Contains(got, "Основы C\\* и C\\_") {
 		t.Errorf("subject name should be escaped, got:\n%s", got)
@@ -92,7 +92,7 @@ func TestFormatScheduleDaySecondShift(t *testing.T) {
 		},
 	}
 
-	got := formatScheduleDay(day)
+	got := formatScheduleDayWithTag(day, "")
 
 	if !strings.Contains(got, "*Понедельник (2 смена") {
 		t.Errorf("день второй смены должен иметь маркер в заголовке, got:\n%s", got)

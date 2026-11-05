@@ -94,10 +94,6 @@ func (m *mockUserRepo) AllUsers(ctx context.Context) ([]entities.User, error) {
 	return nil, nil
 }
 
-func (m *mockUserRepo) CountUsers(ctx context.Context) (int, error) {
-	return 0, nil
-}
-
 func (m *mockUserRepo) UpdateActivity(ctx context.Context, chatID int64) error {
 	return nil
 }

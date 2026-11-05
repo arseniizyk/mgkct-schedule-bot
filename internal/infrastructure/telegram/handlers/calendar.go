@@ -124,7 +124,7 @@ func promptTeacherCalendar(
 	}
 
 	kb := keyboard.InlineCalendarChoiceKeyboard("teacher", teacherName, 0, availableWeeks)
-	text := fmt.Sprintf("📅 *Экспорт в календарь (.ics)*\nПреподаватель: *%s*\n\nВыберите неделю для выгрузки:", teacherName)
+	text := fmt.Sprintf("📅 *Экспорт в календарь (.ics)*\nПреподаватель: *%s*\n\nВыберите неделю для выгрузки:", formatter.EscapeMD(teacherName))
 	return c.Send(text, kb, tele.ModeMarkdown)
 }
 

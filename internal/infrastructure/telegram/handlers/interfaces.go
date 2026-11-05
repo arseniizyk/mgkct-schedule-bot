@@ -42,7 +42,6 @@ type UserRepo interface {
 	GetNotifyEvening(ctx context.Context, chatID int64) (bool, error)
 	AllUsersWithUsernames(ctx context.Context) ([]entities.User, error)
 	AllUsers(ctx context.Context) ([]entities.User, error)
-	CountUsers(ctx context.Context) (int, error)
 	UpdateActivity(ctx context.Context, chatID int64) error
 	GetActivityStats(ctx context.Context) (entities.ActivityStats, error)
 }

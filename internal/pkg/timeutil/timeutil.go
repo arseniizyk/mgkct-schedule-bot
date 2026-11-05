@@ -13,11 +13,6 @@ func Now() time.Time {
 	return time.Now().In(MinskLocation)
 }
 
-// InMinsk converts a given time to Minsk timezone.
-func InMinsk(t time.Time) time.Time {
-	return t.In(MinskLocation)
-}
-
 // TodayStr returns the current date string in YYYY-MM-DD format in Minsk timezone.
 func TodayStr() string {
 	return Now().Format(DateFormat)

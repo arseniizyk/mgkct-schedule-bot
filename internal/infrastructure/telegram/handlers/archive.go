@@ -50,61 +50,84 @@ func Archive(
 
 		// Если передан только один аргумент и это дата:
 		if hasDate && len(targetArgs) == 0 {
-			// Берем цель из профиля
-			if groupID, err := userRepo.GroupByChatID(ctx, c.Chat().ID); err == nil && groupID > 0 {
-				return sendGroupArchiveSchedule(ctx, c, schedSvc, int32(groupID), targetDate)
+			groupID, subgroup, teacher, _ := userRepo.GetUserProfile(ctx, c.Chat().ID)
+			if groupID > 0 {
+				return sendGroupArchiveSchedule(ctx, c, schedSvc, int32(groupID), subgroup, targetDate)
 			}
-			if teacher, err := userRepo.GetTeacher(ctx, c.Chat().ID); err == nil && teacher != "" {
+			if teacher != "" {
 				return sendTeacherArchiveSchedule(ctx, c, teacherSvc, userRepo, teacher, targetDate)
 			}
 			return c.Send("Укажите группу или преподавателя для поиска в архиве: `/archive <группа> <дата>`", tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 		}
 
 		targetStr := strings.Join(targetArgs, " ")
-
-		// Проверяем, является ли цель группой (числом)
-		if gID, err := strconv.Atoi(targetStr); err == nil && gID > 0 {
-			if hasDate {
-				return sendGroupArchiveSchedule(ctx, c, schedSvc, int32(gID), targetDate)
-			}
-			weeks, err := schedSvc.GetAllWeeks(ctx)
-			if err != nil || len(weeks) == 0 {
-				return c.Send(fmt.Sprintf("Архив расписаний для группы %d пока пуст.", gID), keyboard.ReplyScheduleKeyboard)
-			}
-			msg := fmt.Sprintf("📦 *Архив расписания группы %d*\nВыберите неделю:", gID)
-			kbd := keyboard.InlineArchiveWeeksKeyboard("g", strconv.Itoa(gID), weeks)
-			return c.Send(msg, tele.ModeMarkdown, kbd)
+		if !hasDate {
+			return sendArchiveWeeksForTarget(ctx, c, schedSvc, teacherSvc, targetStr)
 		}
 
-		// Иначе пробуем как имя преподавателя
+		if gID, err := strconv.Atoi(targetStr); err == nil && gID > 0 {
+			subgroup := 0
+			if userRepo != nil {
+				if userGrp, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, c.Chat().ID); err == nil && userGrp == gID {
+					subgroup = userSg
+				}
+			}
+			return sendGroupArchiveSchedule(ctx, c, schedSvc, int32(gID), subgroup, targetDate)
+		}
+
 		validatedName, candidates, ok := teacherSvc.ValidateTeacher(ctx, targetStr)
 		if !ok {
-			if len(candidates) > 0 {
-				var sb strings.Builder
-				fmt.Fprintf(&sb, "По запросу *%s* найдено несколько преподавателей:\n\n", formatter.EscapeMD(targetStr))
-				for _, cand := range candidates {
-					fmt.Fprintf(&sb, "• `/archive %s`\n", cand)
-				}
-				return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-			}
-			return c.Send(fmt.Sprintf("Преподаватель или группа *%s* не найдены в архиве.", formatter.EscapeMD(targetStr)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+			return sendArchiveAmbiguousOrNotFound(c, targetStr, candidates)
 		}
 
-		if hasDate {
-			return sendTeacherArchiveSchedule(ctx, c, teacherSvc, userRepo, validatedName, targetDate)
-		}
-
-		weeks, err := teacherSvc.GetAllWeeks(ctx, validatedName)
-		if err != nil || len(weeks) == 0 {
-			return c.Send(fmt.Sprintf("Архив расписаний для преподавателя *%s* пока пуст.", formatter.EscapeMD(validatedName)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-		}
-		msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю:", formatter.EscapeMD(validatedName))
-		kbd := keyboard.InlineArchiveWeeksKeyboard("t", validatedName, weeks)
-		return c.Send(msg, tele.ModeMarkdown, kbd)
+		return sendTeacherArchiveSchedule(ctx, c, teacherSvc, userRepo, validatedName, targetDate)
 	}
 }
 
-func sendGroupArchiveSchedule(ctx context.Context, c tele.Context, svc ScheduleService, groupID int32, date time.Time) error {
+func sendArchiveWeeksForTarget(
+	ctx context.Context,
+	c tele.Context,
+	schedSvc ScheduleService,
+	teacherSvc TeacherService,
+	targetStr string,
+) error {
+	if gID, err := strconv.Atoi(targetStr); err == nil && gID > 0 {
+		weeks, err := schedSvc.GetAllWeeks(ctx)
+		if err != nil || len(weeks) == 0 {
+			return c.Send(fmt.Sprintf("Архив расписаний для группы %d пока пуст.", gID), keyboard.ReplyScheduleKeyboard)
+		}
+		msg := fmt.Sprintf("📦 *Архив расписания группы %d*\nВыберите неделю:", gID)
+		kbd := keyboard.InlineArchiveWeeksKeyboard("g", strconv.Itoa(gID), weeks)
+		return c.Send(msg, tele.ModeMarkdown, kbd)
+	}
+
+	validatedName, candidates, ok := teacherSvc.ValidateTeacher(ctx, targetStr)
+	if !ok {
+		return sendArchiveAmbiguousOrNotFound(c, targetStr, candidates)
+	}
+
+	weeks, err := teacherSvc.GetAllWeeks(ctx, validatedName)
+	if err != nil || len(weeks) == 0 {
+		return c.Send(fmt.Sprintf("Архив расписаний для преподавателя *%s* пока пуст.", formatter.EscapeMD(validatedName)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+	}
+	msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю:", formatter.EscapeMD(validatedName))
+	kbd := keyboard.InlineArchiveWeeksKeyboard("t", validatedName, weeks)
+	return c.Send(msg, tele.ModeMarkdown, kbd)
+}
+
+func sendArchiveAmbiguousOrNotFound(c tele.Context, targetStr string, candidates []string) error {
+	if len(candidates) > 0 {
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "По запросу *%s* найдено несколько преподавателей:\n\n", formatter.EscapeMD(targetStr))
+		for _, cand := range candidates {
+			fmt.Fprintf(&sb, "• `/archive %s`\n", cand)
+		}
+		return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+	}
+	return c.Send(fmt.Sprintf("Преподаватель или группа *%s* не найдены в архиве.", formatter.EscapeMD(targetStr)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
+}
+
+func sendGroupArchiveSchedule(ctx context.Context, c tele.Context, svc ScheduleService, groupID int32, subgroup int, date time.Time) error {
 	group, err := svc.GetArchiveSchedule(ctx, groupID, date)
 	if err != nil {
 		return c.Send(
@@ -114,7 +137,7 @@ func sendGroupArchiveSchedule(ctx context.Context, c tele.Context, svc ScheduleS
 		)
 	}
 
-	msg := formatter.FormatScheduleWeek(group)
+	msg := formatter.FormatScheduleWeekForSubgroup(group, subgroup)
 	return c.Send(msg, tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
 }
 
@@ -161,8 +184,8 @@ func handleArchiveNoArgs(
 	userRepo UserRepo,
 	sm StateManager,
 ) error {
-	groupID, err := userRepo.GroupByChatID(ctx, c.Chat().ID)
-	if err == nil && groupID > 0 {
+	groupID, _, teacher, _ := userRepo.GetUserProfile(ctx, c.Chat().ID)
+	if groupID > 0 {
 		weeks, err := schedSvc.GetAllWeeks(ctx)
 		if err != nil || len(weeks) == 0 {
 			return c.Send("📦 Архив расписаний для групп пока пуст.", keyboard.ReplyScheduleKeyboard)
@@ -172,8 +195,7 @@ func handleArchiveNoArgs(
 		return c.Send(msg, tele.ModeMarkdown, kbd)
 	}
 
-	teacher, err := userRepo.GetTeacher(ctx, c.Chat().ID)
-	if err == nil && teacher != "" {
+	if teacher != "" {
 		weeks, err := teacherSvc.GetAllWeeks(ctx, teacher)
 		if err != nil || len(weeks) == 0 {
 			return c.Send(fmt.Sprintf("📦 Архив расписаний для преподавателя *%s* пока пуст.", formatter.EscapeMD(teacher)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)

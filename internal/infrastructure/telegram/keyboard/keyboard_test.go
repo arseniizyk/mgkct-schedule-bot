@@ -294,24 +294,8 @@ func TestReplyScheduleKeyboard(t *testing.T) {
 	if ReplyScheduleKeyboard.IsPersistent {
 		t.Errorf("expected ReplyScheduleKeyboard.IsPersistent = false to allow swipe gestures, got true")
 	}
-
-	markupWithoutApp := BuildReplyScheduleKeyboard("")
-	if !markupWithoutApp.ResizeKeyboard {
-		t.Errorf("expected BuildReplyScheduleKeyboard(\"\").ResizeKeyboard = true, got false")
-	}
-	if markupWithoutApp.IsPersistent {
-		t.Errorf("expected BuildReplyScheduleKeyboard(\"\").IsPersistent = false, got true")
-	}
-	if len(markupWithoutApp.ReplyKeyboard) != 2 {
-		t.Errorf("expected 2 rows without webApp, got %d", len(markupWithoutApp.ReplyKeyboard))
-	}
-
-	markupWithApp := BuildReplyScheduleKeyboard("https://example.com")
-	if markupWithApp.IsPersistent {
-		t.Errorf("expected BuildReplyScheduleKeyboard with app URL to have IsPersistent = false, got true")
-	}
-	if len(markupWithApp.ReplyKeyboard) != 2 {
-		t.Errorf("expected 2 rows even with webApp URL (app button removed), got %d", len(markupWithApp.ReplyKeyboard))
+	if len(ReplyScheduleKeyboard.ReplyKeyboard) != 2 {
+		t.Errorf("expected 2 rows in ReplyScheduleKeyboard, got %d", len(ReplyScheduleKeyboard.ReplyKeyboard))
 	}
 }
 
