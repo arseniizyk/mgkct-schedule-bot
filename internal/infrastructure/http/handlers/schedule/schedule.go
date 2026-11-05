@@ -185,7 +185,15 @@ func (h *Handler) CalendarICS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		subgroup, _ := strconv.Atoi(q.Get("subgroup"))
+		subgroup := 0
+		if sgStr := q.Get("subgroup"); sgStr != "" {
+			sg, sgErr := strconv.Atoi(sgStr)
+			if sgErr != nil || sg < 0 || sg > 2 {
+				http.Error(w, "invalid subgroup", http.StatusBadRequest)
+				return
+			}
+			subgroup = sg
+		}
 
 		var group *entities.Group
 		if !targetWeek.IsZero() {

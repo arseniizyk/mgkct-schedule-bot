@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http/auth"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http/httputil"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
@@ -78,9 +80,10 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	groupID, _ := h.userRepo.GroupByChatID(ctx, u.ID)
-	subgroup, _ := h.userRepo.SubgroupByChatID(ctx, u.ID)
-	teacherName, _ := h.userRepo.GetTeacher(ctx, u.ID)
+	groupID, subgroup, teacherName, err := h.userRepo.GetUserProfile(ctx, u.ID)
+	if err != nil && !errors.Is(err, domainerr.ErrUserNoGroup) {
+		h.log.Warn("failed getting user profile in webapp", "chat_id", u.ID, "error", err)
+	}
 
 	httputil.WriteJSON(w, h.log, http.StatusOK, map[string]any{
 		"chat_id":      u.ID,
@@ -123,6 +126,10 @@ func (h *Handler) SetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	if u.Username != "" {
+		_ = h.userRepo.SaveUser(ctx, entities.NewUser(u.ID, u.Username))
+	}
+
 	if req.GroupID > 0 {
 		if h.scheduleSvc != nil {
 			exists, err := h.scheduleSvc.HasGroup(ctx, int32(req.GroupID))

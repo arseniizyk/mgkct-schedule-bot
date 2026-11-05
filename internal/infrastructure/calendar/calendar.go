@@ -68,7 +68,7 @@ func GenerateGroupCalendar(group *entities.Group, subgroup int, dict SubjectDict
 	}
 
 	var events []event
-	weekMonday := getWeekMonday(group.Week)
+	weekMonday := timeutil.CurrentWeekMonday(group.Week)
 
 	for dIdx, day := range filtered.Days {
 		if day == nil {
@@ -103,7 +103,12 @@ func GenerateGroupCalendar(group *entities.Group, subgroup int, dict SubjectDict
 
 				var descParts []string
 				if p.Group != "" {
-					descParts = append(descParts, fmt.Sprintf("Подгруппа/Инфо: %s", p.Group))
+					lowerGrp := strings.ToLower(p.Group)
+					if strings.Contains(lowerGrp, "п/г") || strings.Contains(lowerGrp, "подгруппа") {
+						descParts = append(descParts, fmt.Sprintf("Подгруппа: %s", p.Group))
+					} else {
+						descParts = append(descParts, fmt.Sprintf("Преподаватель: %s", p.Group))
+					}
 				}
 				descParts = append(descParts, fmt.Sprintf("Группа: %d", group.ID))
 				descParts = append(descParts, fmt.Sprintf("Пара: %d", subjIdx+1))
@@ -134,7 +139,7 @@ func GenerateTeacherCalendar(teacher *entities.Teacher, dict SubjectDictionary) 
 
 	calName := fmt.Sprintf("Преподаватель %s", teacher.Name)
 	var events []event
-	weekMonday := getWeekMonday(teacher.Week)
+	weekMonday := timeutil.CurrentWeekMonday(teacher.Week)
 
 	for dIdx, day := range teacher.Days {
 		if day == nil {
@@ -199,15 +204,6 @@ type event struct {
 	Summary     string
 	Location    string
 	Description string
-}
-
-func getWeekMonday(t time.Time) time.Time {
-	if t.IsZero() {
-		t = time.Now()
-	}
-	m := t.In(minskLocation)
-	weekday := (int(m.Weekday()) + 6) % 7 // Пн=0..Вс=6
-	return time.Date(m.Year(), m.Month(), m.Day(), 0, 0, 0, 0, minskLocation).AddDate(0, 0, -weekday)
 }
 
 func formatLocation(class string) string {
