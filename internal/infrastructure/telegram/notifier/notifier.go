@@ -81,6 +81,9 @@ func (n *Notifier) HandleNewWeek(ctx context.Context, week time.Time) error {
 	}
 
 	for _, u := range users {
+		if !u.NotifyEvening {
+			continue
+		}
 		if err := n.limiter.Wait(ctx); err != nil {
 			log.WarnContext(ctx, "broadcast cancelled by context")
 			return ctx.Err()
