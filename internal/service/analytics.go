@@ -128,7 +128,7 @@ func (s *AnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error)
 	s.mu.Lock()
 	s.cabinetsCache = &cabinetsCacheItem{
 		cabinets:  cabinets,
-		expiresAt: s.now().Add(cabinetsCacheTTL),
+		expiresAt: now.Add(cabinetsCacheTTL),
 	}
 	s.mu.Unlock()
 

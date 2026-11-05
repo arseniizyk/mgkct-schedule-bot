@@ -144,8 +144,29 @@ func (h *Handler) Teacher(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func parseSubgroupParam(raw string) (int, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	sg, err := strconv.Atoi(raw)
+	if err != nil || sg < 0 || sg > 2 {
+		return 0, errors.New("invalid subgroup")
+	}
+	return sg, nil
+}
+
+func parseCalendarWeek(weekStr string) (time.Time, error) {
+	if weekStr == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.Parse("2006-01-02", weekStr)
+	if err != nil {
+		parsed, err = time.Parse("02.01.2006", weekStr)
+	}
+	return parsed, err
+}
+
 func (h *Handler) CalendarICS(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	q := r.URL.Query()
 
 	groupIDStr := q.Get("group")
@@ -162,18 +183,10 @@ func (h *Handler) CalendarICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	weekStr := q.Get("week")
-	var targetWeek time.Time
-	if weekStr != "" {
-		parsed, err := time.Parse("2006-01-02", weekStr)
-		if err != nil {
-			parsed, err = time.Parse("02.01.2006", weekStr)
-		}
-		if err != nil {
-			http.Error(w, "invalid week format", http.StatusBadRequest)
-			return
-		}
-		targetWeek = parsed
+	targetWeek, err := parseCalendarWeek(q.Get("week"))
+	if err != nil {
+		http.Error(w, "invalid week format", http.StatusBadRequest)
+		return
 	}
 
 	dict := dictionary.GetDefaultDictionary()
@@ -185,43 +198,49 @@ func (h *Handler) CalendarICS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		subgroup := 0
-		if sgStr := q.Get("subgroup"); sgStr != "" {
-			sg, sgErr := strconv.Atoi(sgStr)
-			if sgErr != nil || sg < 0 || sg > 2 {
-				http.Error(w, "invalid subgroup", http.StatusBadRequest)
-				return
-			}
-			subgroup = sg
-		}
-
-		var group *entities.Group
-		if !targetWeek.IsZero() {
-			group, err = h.scheduleSvc.GetGroupScheduleByWeek(ctx, int32(groupID), targetWeek)
-		} else {
-			group, err = h.scheduleSvc.GetGroupLatestSchedule(ctx, int32(groupID))
-		}
+		subgroup, err := parseSubgroupParam(q.Get("subgroup"))
 		if err != nil {
-			http.Error(w, "schedule not found", http.StatusNotFound)
+			http.Error(w, "invalid subgroup", http.StatusBadRequest)
 			return
 		}
 
-		icsData, err := calendar.GenerateGroupCalendar(group, subgroup, dict)
-		if err != nil {
-			h.log.Error("failed generating group calendar", "error", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		filename := fmt.Sprintf("schedule_group_%d_%s.ics", group.ID, group.Week.Format("20060102"))
-		w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(icsData) //nolint:gosec // icsData is generated RFC 5545 calendar with text/calendar content type
+		h.serveGroupCalendar(w, r, groupID, targetWeek, subgroup, dict)
 		return
 	}
 
-	// Преподаватель
+	h.serveTeacherCalendar(w, r, teacherName, targetWeek, dict)
+}
+
+func (h *Handler) serveGroupCalendar(w http.ResponseWriter, r *http.Request, groupID int, targetWeek time.Time, subgroup int, dict *dictionary.SubjectDictionary) {
+	ctx := r.Context()
+	var group *entities.Group
+	var err error
+	if !targetWeek.IsZero() {
+		group, err = h.scheduleSvc.GetGroupScheduleByWeek(ctx, int32(groupID), targetWeek)
+	} else {
+		group, err = h.scheduleSvc.GetGroupLatestSchedule(ctx, int32(groupID))
+	}
+	if err != nil {
+		http.Error(w, "schedule not found", http.StatusNotFound)
+		return
+	}
+
+	icsData, err := calendar.GenerateGroupCalendar(group, subgroup, dict)
+	if err != nil {
+		h.log.Error("failed generating group calendar", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	filename := fmt.Sprintf("schedule_group_%d_%s.ics", group.ID, group.Week.Format("20060102"))
+	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(icsData) //nolint:gosec // icsData is generated RFC 5545 calendar with text/calendar content type
+}
+
+func (h *Handler) serveTeacherCalendar(w http.ResponseWriter, r *http.Request, teacherName string, targetWeek time.Time, dict *dictionary.SubjectDictionary) {
+	ctx := r.Context()
 	var teacher *entities.Teacher
 	var err error
 	if !targetWeek.IsZero() {
