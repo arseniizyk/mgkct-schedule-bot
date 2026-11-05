@@ -18,8 +18,9 @@ import (
 const teacherURL = `https://mgkct.minskedu.gov.by/personnel/for-teachers/weekly-timetable`
 
 var (
-	ErrBadTeacher = errors.New("bad teacher")
-	teacherRe     = regexp.MustCompile(`Преподаватель\s*[-–—]\s*(.+)`)
+	ErrBadTeacher      = errors.New("bad teacher")
+	teacherRe          = regexp.MustCompile(`Преподаватель\s*[-–—]\s*(.+)`)
+	teacherCellGroupRe = regexp.MustCompile(`^(\d+\*?)\s*[-–—]\s*(.+)$`)
 )
 
 type TeacherParser struct {
@@ -28,16 +29,8 @@ type TeacherParser struct {
 }
 
 func NewTeacherParser(log *slog.Logger) *TeacherParser {
-	c := colly.NewCollector(
-		colly.AllowURLRevisit(),
-		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
-	)
-
-	c.WithTransport(getSharedTransport())
-	c.SetRequestTimeout(requestTimeout)
-
 	return &TeacherParser{
-		c:   c,
+		c:   newCollector(),
 		log: log,
 	}
 }
@@ -133,66 +126,24 @@ func (tp *TeacherParser) Parse(ctx context.Context) ([]*entities.Teacher, error)
 func parseTeacherName(text string) (string, error) {
 	text = cleanText(text)
 
-	if strings.Contains(text, "Кол") || strings.Contains(text, "кол") {
-		return "", ErrBadTeacher
-	}
-
 	matches := teacherRe.FindStringSubmatch(text)
 	if len(matches) < 2 {
+		if strings.Contains(text, "Кол") || strings.Contains(text, "кол") {
+			return "", ErrBadTeacher
+		}
 		return "", fmt.Errorf("no teacher name in %q", text)
 	}
 
-	return strings.TrimSpace(matches[1]), nil
+	name := strings.TrimSpace(matches[1])
+	if name == "" {
+		return "", ErrBadTeacher
+	}
+
+	return name, nil
 }
 
 func parseTeacherRows(trs *goquery.Selection) []*entities.Day {
-	res := make([]*entities.Day, 0, 6)
-
-	ths := trs.Eq(0).Find("th")
-	for col := 1; col < ths.Length(); col++ {
-		day := strings.ReplaceAll(ths.Eq(col).Text(), ",", " |")
-		res = append(res, &entities.Day{Name: cleanText(day)})
-	}
-
-	for row := 2; row < trs.Length(); row++ {
-		tr := trs.Eq(row)
-
-		num, ok := parsePairNumber(tr)
-		if !ok {
-			if len(res) == 0 {
-				continue
-			}
-			num = len(res[0].Subjects) + 1
-		}
-
-		ensurePairIndex(res, num)
-		parseTeacherColumns(tr.Find("td"), res)
-	}
-
-	return res
-}
-
-func parseTeacherColumns(tds *goquery.Selection, days []*entities.Day) {
-	for col := 0; col < tds.Length(); col += 2 {
-		daysIdx := col / 2
-		if daysIdx >= len(days) {
-			break
-		}
-
-		nameParts := splitByBr(tds.Eq(col))
-		classParts := splitByBr(tds.Eq(col + 1))
-
-		if len(nameParts) == 0 {
-			days[daysIdx].Subjects = append(days[daysIdx].Subjects, &entities.Subject{IsEmpty: true})
-			continue
-		}
-
-		pairs := parseTeacherPairs(nameParts, classParts)
-		days[daysIdx].Subjects = append(days[daysIdx].Subjects, &entities.Subject{
-			Pairs:   pairs,
-			IsEmpty: pairsAreEmpty(pairs),
-		})
-	}
+	return parseRowsWith(trs, parseTeacherPairs)
 }
 
 func parseTeacherPairs(nameParts, classParts []string) []*entities.Pair {
@@ -231,6 +182,10 @@ func parseTeacherPairs(nameParts, classParts []string) []*entities.Pair {
 
 func splitTeacherCellSubject(raw string) (group, subject string) {
 	raw = cleanText(raw)
+
+	if matches := teacherCellGroupRe.FindStringSubmatch(raw); len(matches) == 3 {
+		return strings.TrimSpace(matches[1]), strings.TrimSpace(matches[2])
+	}
 
 	if g, s, found := strings.Cut(raw, " - "); found {
 		return strings.TrimSpace(g), strings.TrimSpace(s)

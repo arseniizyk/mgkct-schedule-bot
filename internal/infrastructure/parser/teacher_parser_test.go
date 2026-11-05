@@ -35,6 +35,18 @@ func TestSplitTeacherCellSubject_UnicodeDashes(t *testing.T) {
 			wantSubject: "Базы данных",
 		},
 		{
+			name:        "compact hyphen without spaces",
+			input:       "107-Бел Яз",
+			wantGroup:   "107",
+			wantSubject: "Бел Яз",
+		},
+		{
+			name:        "compact hyphen with star group",
+			input:       "169*-КПиЯП",
+			wantGroup:   "169*",
+			wantSubject: "КПиЯП",
+		},
+		{
 			name:        "no separator",
 			input:       "Дежурство",
 			wantGroup:   "",
@@ -48,12 +60,36 @@ func TestSplitTeacherCellSubject_UnicodeDashes(t *testing.T) {
 			gotGroup, gotSubj := splitTeacherCellSubject(tt.input)
 			assert.Equal(t, tt.wantGroup, gotGroup)
 			assert.Equal(t, tt.wantSubject, gotSubj)
-			// Убедимся, что нет битых байтов UTF-8 в начале названия предмета
 			if gotSubj != "" {
 				assert.NotEmpty(t, gotSubj)
 				assert.NotEmpty(t, string([]rune(gotSubj)[0]))
 			}
 		})
+	}
+}
+
+func TestParseTeacherName_SurnamesWithKol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input   string
+		want    string
+		wantErr error
+	}{
+		{input: "Преподаватель - Соколов Н. Д.", want: "Соколов Н. Д."},
+		{input: "Преподаватель – Николаева Л. Н.", want: "Николаева Л. Н."},
+		{input: "Преподаватель — Колесников А. В.", want: "Колесников А. В."},
+		{input: "Колледж МГКЦТ", wantErr: ErrBadTeacher},
+	}
+
+	for _, tt := range tests {
+		got, err := parseTeacherName(tt.input)
+		if tt.wantErr != nil {
+			require.ErrorIs(t, err, tt.wantErr)
+			continue
+		}
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, got)
 	}
 }
 

@@ -59,7 +59,7 @@ func TestUserRepository_SetUserGroup_WithSubgroup(t *testing.T) {
 	assert.Equal(t, 1, sg)
 
 	// 2. Меняем на 2-ю подгруппу
-	err = repo.SetUserSubgroup(ctx, 12345, 2)
+	err = repo.SetUserGroup(ctx, 12345, 101, 2)
 	require.NoError(t, err)
 
 	sg, err = repo.SubgroupByChatID(ctx, 12345)
@@ -131,9 +131,15 @@ func TestUserRepository_AllUsers_AndEveningNotification(t *testing.T) {
 	require.Len(t, notifUsers, 2)
 	assert.Equal(t, 1, notifUsers[0].Subgroup)
 	assert.Equal(t, 2, notifUsers[1].Subgroup)
+
+	// Отключение уведомлений исключает пользователя из UserIDsByGroupID и AllUsers
+	require.NoError(t, repo.SetNotifyEvening(ctx, 1002, false))
+	groupUserIDs, err := repo.UserIDsByGroupID(ctx, 101)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{1001}, groupUserIDs)
 }
 
-func TestUserRepository_AllUsersWithUsernames_And_CountUsers(t *testing.T) {
+func TestUserRepository_AllUsersWithUsernames(t *testing.T) {
 	db, repo := setupTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
@@ -152,10 +158,6 @@ func TestUserRepository_AllUsersWithUsernames_And_CountUsers(t *testing.T) {
 	require.NoError(t, err)
 	err = repo.SetTeacher(ctx, 2003, "Иванов И. И.")
 	require.NoError(t, err)
-
-	count, err := repo.CountUsers(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 3, count)
 
 	users, err := repo.AllUsersWithUsernames(ctx)
 	require.NoError(t, err)

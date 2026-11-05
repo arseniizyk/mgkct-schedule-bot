@@ -50,7 +50,9 @@ func (r *UserRepository) SaveUser(ctx context.Context, u entities.User) error {
 func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) {
 	const op = "repository.UserRepository.AllUsers"
 
-	query := r.sb.Select("chat_id, group_id, subgroup, teacher_name").From("users")
+	query := r.sb.Select("chat_id, group_id, subgroup, teacher_name").
+		From("users").
+		Where(sq.Eq{"notify_evening": 1})
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -93,10 +95,11 @@ func (r *UserRepository) AllUsers(ctx context.Context) ([]entities.User, error) 
 		}
 
 		users = append(users, entities.User{
-			ChatID:      chatID,
-			Group:       group,
-			Subgroup:    sg,
-			TeacherName: tn,
+			ChatID:        chatID,
+			Group:         group,
+			Subgroup:      sg,
+			TeacherName:   tn,
+			NotifyEvening: true,
 		})
 	}
 
@@ -235,7 +238,9 @@ func (r *UserRepository) GetUserProfile(ctx context.Context, chatID int64) (int,
 func (r *UserRepository) UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error) {
 	const op = "repository.UserRepository.UserIDsByGroupID"
 
-	query := r.sb.Select("chat_id").From("users").Where(sq.Eq{"group_id": groupID})
+	query := r.sb.Select("chat_id").
+		From("users").
+		Where(sq.Eq{"group_id": groupID, "notify_evening": 1})
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -248,7 +253,7 @@ func (r *UserRepository) UserIDsByGroupID(ctx context.Context, groupID int) ([]i
 	}
 	defer rows.Close()
 
-	usersID := make([]int64, 0, 10)
+	var usersID []int64
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
@@ -271,26 +276,6 @@ func (r *UserRepository) SetUserGroup(ctx context.Context, chatID int64, groupID
 		Columns("chat_id", "group_id", "subgroup", "teacher_name", "last_activity_at").
 		Values(chatID, groupID, subgroup, nil, sq.Expr("CURRENT_TIMESTAMP")).
 		Suffix("ON CONFLICT(chat_id) DO UPDATE SET group_id = excluded.group_id, subgroup = excluded.subgroup, teacher_name = NULL, last_activity_at = CURRENT_TIMESTAMP")
-
-	sqlQuery, args, err := query.ToSql()
-	if err != nil {
-		return fmt.Errorf("%s: failed to build sql query: %w", op, err)
-	}
-
-	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
-		return fmt.Errorf("%s: failed to execute sql query: %w", op, err)
-	}
-
-	return nil
-}
-
-func (r *UserRepository) SetUserSubgroup(ctx context.Context, chatID int64, subgroup int) error {
-	const op = "repository.UserRepository.SetUserSubgroup"
-
-	query := r.sb.Insert("users").
-		Columns("chat_id", "subgroup", "last_activity_at").
-		Values(chatID, subgroup, sq.Expr("CURRENT_TIMESTAMP")).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET subgroup = excluded.subgroup, last_activity_at = CURRENT_TIMESTAMP")
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -349,55 +334,12 @@ func (r *UserRepository) GetTeacher(ctx context.Context, chatID int64) (string, 
 	return teacherName.String, nil
 }
 
-func (r *UserRepository) GetState(ctx context.Context, chatID int64) (string, error) {
-	const op = "repository.UserRepository.GetState"
-
-	query := r.sb.Select("state").From("users").Where(sq.Eq{"chat_id": chatID})
-
-	sqlQuery, args, err := query.ToSql()
-	if err != nil {
-		return "", fmt.Errorf("%s: failed to build sql query: %w", op, err)
-	}
-
-	var state sql.NullString
-	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&state); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", nil
-		}
-		return "", fmt.Errorf("%s: failed to execute sql query: %w", op, err)
-	}
-
-	if !state.Valid {
-		return "", nil
-	}
-
-	return state.String, nil
-}
-
-func (r *UserRepository) SetState(ctx context.Context, chatID int64, state string) error {
-	const op = "repository.UserRepository.SetState"
-
-	query := r.sb.Insert("users").
-		Columns("chat_id", "state").
-		Values(chatID, state).
-		Suffix("ON CONFLICT(chat_id) DO UPDATE SET state = excluded.state")
-
-	sqlQuery, args, err := query.ToSql()
-	if err != nil {
-		return fmt.Errorf("%s: failed to build sql query: %w", op, err)
-	}
-
-	if _, err = r.db.ExecContext(ctx, sqlQuery, args...); err != nil {
-		return fmt.Errorf("%s: failed to execute sql query: %w", op, err)
-	}
-
-	return nil
-}
-
 func (r *UserRepository) UserIDsByTeacherName(ctx context.Context, teacherName string) ([]int64, error) {
 	const op = "repository.UserRepository.UserIDsByTeacherName"
 
-	query := r.sb.Select("chat_id").From("users").Where(sq.Eq{"teacher_name": teacherName})
+	query := r.sb.Select("chat_id").
+		From("users").
+		Where(sq.Eq{"teacher_name": teacherName, "notify_evening": 1})
 
 	sqlQuery, args, err := query.ToSql()
 	if err != nil {
@@ -410,7 +352,7 @@ func (r *UserRepository) UserIDsByTeacherName(ctx context.Context, teacherName s
 	}
 	defer rows.Close()
 
-	userIDs := make([]int64, 0, 10)
+	var userIDs []int64
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
@@ -555,25 +497,6 @@ func (r *UserRepository) AllUsersWithUsernames(ctx context.Context) ([]entities.
 	}
 
 	return users, nil
-}
-
-// CountUsers возвращает общее количество зарегистрированных пользователей.
-func (r *UserRepository) CountUsers(ctx context.Context) (int, error) {
-	const op = "repository.UserRepository.CountUsers"
-
-	query := r.sb.Select("COUNT(*)").From("users")
-
-	sqlQuery, args, err := query.ToSql()
-	if err != nil {
-		return 0, fmt.Errorf("%s: failed to build sql query: %w", op, err)
-	}
-
-	var count int
-	if err := r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(&count); err != nil {
-		return 0, fmt.Errorf("%s: failed to execute sql query: %w", op, err)
-	}
-
-	return count, nil
 }
 
 func (r *UserRepository) UsersForEveningNotification(ctx context.Context) ([]entities.User, error) {

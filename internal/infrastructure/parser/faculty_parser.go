@@ -37,17 +37,9 @@ type FacultyParser struct {
 }
 
 func NewFacultyParser(log *slog.Logger) *FacultyParser {
-	c := colly.NewCollector(
-		colly.AllowURLRevisit(),
-		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
-	)
-
-	c.WithTransport(getSharedTransport())
-	c.SetRequestTimeout(requestTimeout)
-
 	return &FacultyParser{
 		log: log,
-		c:   c,
+		c:   newCollector(),
 	}
 }
 

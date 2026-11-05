@@ -5,18 +5,32 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/gocolly/colly"
 )
 
 const (
 	requestTimeout = 12 * time.Second
 	maxAttempts    = 3
 	retryDelay     = 1 * time.Second
+	defaultUA      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 )
 
 var (
 	sharedTransport     *http.Transport
 	sharedTransportOnce sync.Once
 )
+
+// newCollector создает преднастроенный экземпляр colly.Collector с общим HTTP-транспортом и таймаутом.
+func newCollector() *colly.Collector {
+	c := colly.NewCollector(
+		colly.AllowURLRevisit(),
+		colly.UserAgent(defaultUA),
+	)
+	c.WithTransport(getSharedTransport())
+	c.SetRequestTimeout(requestTimeout)
+	return c
+}
 
 // getSharedTransport возвращает синглтон http.Transport с включенным Keep-Alive и HTTP/2,
 // переиспользующий открытые соединения между вызовами парсеров.
