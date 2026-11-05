@@ -61,6 +61,7 @@ const (
 var ReplyScheduleKeyboard = &tele.ReplyMarkup{
 	ResizeKeyboard: true,
 	ReplyKeyboard:  scheduleReplyButtons(),
+	IsPersistent:   true,
 }
 
 func InlineWebAppKeyboard(webAppURL string) *tele.ReplyMarkup {
