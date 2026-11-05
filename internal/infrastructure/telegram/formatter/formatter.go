@@ -332,7 +332,7 @@ var pairTimeEnd = map[int][2]int{
 }
 
 // GetDayEndTime возвращает время окончания пар для указанного дня (0=Пн..5=Сб) и номера последней пары (1-based).
-func GetDayEndTime(_ int, lastSubject int, loc *time.Location) (time.Time, bool) {
+func GetDayEndTime(_, lastSubject int, loc *time.Location) (time.Time, bool) {
 	hhmm, ok := pairTimeEnd[lastSubject]
 	if !ok {
 		return time.Time{}, false
