@@ -63,18 +63,6 @@ var ReplyScheduleKeyboard = &tele.ReplyMarkup{
 	ReplyKeyboard:  scheduleReplyButtons(),
 }
 
-func BuildReplyScheduleKeyboard(_ string) *tele.ReplyMarkup {
-	markup := &tele.ReplyMarkup{
-		ResizeKeyboard: true,
-	}
-	markup.ReplyKeyboard = scheduleReplyButtons()
-	return markup
-}
-
-func InitKeyboard(webAppURL string) {
-	ReplyScheduleKeyboard = BuildReplyScheduleKeyboard(webAppURL)
-}
-
 func InlineWebAppKeyboard(webAppURL string) *tele.ReplyMarkup {
 	if webAppURL == "" {
 		return nil

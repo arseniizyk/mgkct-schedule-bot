@@ -1,5 +1,8 @@
 # Target backend host or URL for Telegram webhooks forwarding
 BACKEND_HOST=https://your-bot-domain.com
 
+# Telegram Bot token for strict egress path validation (/bot<BOT_TOKEN>/*)
+BOT_TOKEN=your_telegram_bot_token
+
 # (Optional) Secret token matching Telegram bot's SecretToken for Edge validation
 # WEBHOOK_SECRET=your_secret_token_here

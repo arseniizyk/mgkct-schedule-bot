@@ -17,7 +17,13 @@ var (
 	tagRe = regexp.MustCompile(`<[^>]*>`)
 )
 
+type pairParserFunc func(nameParts, classParts []string) []*entities.Pair
+
 func parseRows(trs *goquery.Selection) []*entities.Day {
+	return parseRowsWith(trs, parsePairs)
+}
+
+func parseRowsWith(trs *goquery.Selection, pairParser pairParserFunc) []*entities.Day {
 	res := make([]*entities.Day, 0, 6)
 
 	ths := trs.Eq(0).Find("th")
@@ -38,7 +44,7 @@ func parseRows(trs *goquery.Selection) []*entities.Day {
 		}
 
 		ensurePairIndex(res, num)
-		parseColumns(tr.Find("td"), res)
+		parseColumnsWith(tr.Find("td"), res, pairParser)
 	}
 
 	return res
@@ -66,22 +72,27 @@ func ensurePairIndex(days []*entities.Day, num int) {
 	}
 }
 
-func parseColumns(tds *goquery.Selection, days []*entities.Day) {
-	for col := 0; col < tds.Length(); col += 2 {
-		daysIdx := col / 2
-		if daysIdx >= len(days) {
-			break
+func parseColumnsWith(tds *goquery.Selection, days []*entities.Day, pairParser pairParserFunc) {
+	tdCount := tds.Length()
+	for daysIdx := range days {
+		col := daysIdx * 2
+		if col >= tdCount {
+			days[daysIdx].Subjects = append(days[daysIdx].Subjects, &entities.Subject{IsEmpty: true})
+			continue
 		}
 
 		nameParts := splitByBr(tds.Eq(col))
-		classParts := splitByBr(tds.Eq(col + 1))
+		var classParts []string
+		if col+1 < tdCount {
+			classParts = splitByBr(tds.Eq(col + 1))
+		}
 
 		if len(nameParts) == 0 {
 			days[daysIdx].Subjects = append(days[daysIdx].Subjects, &entities.Subject{IsEmpty: true})
 			continue
 		}
 
-		pairs := parsePairs(nameParts, classParts)
+		pairs := pairParser(nameParts, classParts)
 		days[daysIdx].Subjects = append(days[daysIdx].Subjects, &entities.Subject{
 			Pairs:   pairs,
 			IsEmpty: pairsAreEmpty(pairs),

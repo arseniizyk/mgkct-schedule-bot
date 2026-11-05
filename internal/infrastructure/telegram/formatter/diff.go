@@ -26,61 +26,19 @@ var russianMonths = map[time.Month]string{
 
 // FormatGroupScheduleDiff форматирует изменения в расписании учебной группы в виде HTML-сообщения.
 func FormatGroupScheduleDiff(diff *entities.ScheduleDiff) string {
-	if diff == nil || len(diff.Days) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	sb.WriteString("🔔 <b>Изменения в расписании</b>\n")
-
-	for i, day := range diff.Days {
-		if i > 0 {
-			sb.WriteString("\n")
-		}
-		fmt.Fprintf(&sb, "📅 <b>%s, %d %s</b>\n\n",
-			html.EscapeString(day.DayName),
-			day.Date.Day(),
-			russianMonths[day.Date.Month()],
-		)
-
-		for pIdx, pair := range day.Pairs {
-			for sgIdx, sg := range pair.SubgroupDiffs {
-				if pIdx > 0 || sgIdx > 0 {
-					sb.WriteString("\n")
-				}
-
-				if sg.Subgroup != "" {
-					fmt.Fprintf(&sb, "▫️ <b>%d пара • %s</b>\n", pair.Number, html.EscapeString(sg.Subgroup))
-				} else {
-					fmt.Fprintf(&sb, "▫️ <b>%d пара</b>\n", pair.Number)
-				}
-
-				switch sg.Type {
-				case entities.ChangeTypeModified:
-					if isOnlyAuditoryChange(sg.OldPair, sg.NewPair) {
-						hdr := formatGroupPairWithoutAuditory(sg.OldPair)
-						formatAuditoryDiff(&sb, hdr, sg.OldPair.Class, sg.NewPair.Class)
-					} else {
-						oldStr := formatGroupPairHTML(sg.OldPair)
-						newStr := formatGroupPairHTML(sg.NewPair)
-						fmt.Fprintf(&sb, "  <s>%s</s>\n  👉 <b>%s</b>\n", oldStr, newStr)
-					}
-				case entities.ChangeTypeAdded:
-					newStr := formatGroupPairHTML(sg.NewPair)
-					fmt.Fprintf(&sb, "  🆕 <i>Новая пара:</i> <b>%s</b>\n", newStr)
-				case entities.ChangeTypeRemoved:
-					oldStr := formatGroupPairHTML(sg.OldPair)
-					fmt.Fprintf(&sb, "  ❌ <i>Отменена:</i> <s>%s</s>\n", oldStr)
-				}
-			}
-		}
-	}
-
-	return strings.TrimRight(sb.String(), "\n")
+	return formatScheduleDiff(diff, formatGroupPairWithoutAuditory, formatGroupPairHTML)
 }
 
 // FormatTeacherScheduleDiff форматирует изменения в расписании преподавателя в виде HTML-сообщения.
 func FormatTeacherScheduleDiff(diff *entities.ScheduleDiff) string {
+	return formatScheduleDiff(diff, formatTeacherPairWithoutAuditory, formatTeacherPairHTML)
+}
+
+func formatScheduleDiff(
+	diff *entities.ScheduleDiff,
+	withoutAudFn func(*entities.Pair) string,
+	pairHTMLFn func(*entities.Pair) string,
+) string {
 	if diff == nil || len(diff.Days) == 0 {
 		return ""
 	}
@@ -113,18 +71,18 @@ func FormatTeacherScheduleDiff(diff *entities.ScheduleDiff) string {
 				switch sg.Type {
 				case entities.ChangeTypeModified:
 					if isOnlyAuditoryChange(sg.OldPair, sg.NewPair) {
-						hdr := formatTeacherPairWithoutAuditory(sg.OldPair)
+						hdr := withoutAudFn(sg.OldPair)
 						formatAuditoryDiff(&sb, hdr, sg.OldPair.Class, sg.NewPair.Class)
 					} else {
-						oldStr := formatTeacherPairHTML(sg.OldPair)
-						newStr := formatTeacherPairHTML(sg.NewPair)
+						oldStr := pairHTMLFn(sg.OldPair)
+						newStr := pairHTMLFn(sg.NewPair)
 						fmt.Fprintf(&sb, "  <s>%s</s>\n  👉 <b>%s</b>\n", oldStr, newStr)
 					}
 				case entities.ChangeTypeAdded:
-					newStr := formatTeacherPairHTML(sg.NewPair)
+					newStr := pairHTMLFn(sg.NewPair)
 					fmt.Fprintf(&sb, "  🆕 <i>Новая пара:</i> <b>%s</b>\n", newStr)
 				case entities.ChangeTypeRemoved:
-					oldStr := formatTeacherPairHTML(sg.OldPair)
+					oldStr := pairHTMLFn(sg.OldPair)
 					fmt.Fprintf(&sb, "  ❌ <i>Отменена:</i> <s>%s</s>\n", oldStr)
 				}
 			}
@@ -163,60 +121,30 @@ func formatAuditoryDiff(sb *strings.Builder, subjectHeader, oldClass, newClass s
 }
 
 func formatGroupPairWithoutAuditory(p *entities.Pair) string {
-	if p == nil {
-		return ""
-	}
-	var parts []string
-	if name := strings.TrimSpace(p.Name); name != "" && name != "-" && name != "—" && name != "–" {
-		parts = append(parts, html.EscapeString(name))
-	}
-	if pType := strings.TrimSpace(p.Type); pType != "" && pType != "-" {
-		parts = append(parts, html.EscapeString(pType))
-	}
-	return strings.Join(parts, " • ")
+	return formatPairFieldsHTML(p, false, false)
 }
 
 func formatTeacherPairWithoutAuditory(p *entities.Pair) string {
-	if p == nil {
-		return ""
-	}
-	var parts []string
-	if grp := strings.TrimSpace(p.Group); grp != "" && grp != "-" {
-		parts = append(parts, html.EscapeString(grp))
-	}
-	if name := strings.TrimSpace(p.Name); name != "" && name != "-" && name != "—" && name != "–" {
-		parts = append(parts, html.EscapeString(name))
-	}
-	if pType := strings.TrimSpace(p.Type); pType != "" && pType != "-" {
-		parts = append(parts, html.EscapeString(pType))
-	}
-	return strings.Join(parts, " • ")
+	return formatPairFieldsHTML(p, true, false)
 }
 
 func formatGroupPairHTML(p *entities.Pair) string {
-	if p == nil {
-		return ""
-	}
-	var parts []string
-	if name := strings.TrimSpace(p.Name); name != "" && name != "-" && name != "—" && name != "–" {
-		parts = append(parts, html.EscapeString(name))
-	}
-	if pType := strings.TrimSpace(p.Type); pType != "" && pType != "-" {
-		parts = append(parts, html.EscapeString(pType))
-	}
-	if aud := formatAuditory(p.Class); aud != "" {
-		parts = append(parts, html.EscapeString(aud))
-	}
-	return strings.Join(parts, " • ")
+	return formatPairFieldsHTML(p, false, true)
 }
 
 func formatTeacherPairHTML(p *entities.Pair) string {
+	return formatPairFieldsHTML(p, true, true)
+}
+
+func formatPairFieldsHTML(p *entities.Pair, includeGroup, includeAuditory bool) string {
 	if p == nil {
 		return ""
 	}
 	var parts []string
-	if grp := strings.TrimSpace(p.Group); grp != "" && grp != "-" {
-		parts = append(parts, html.EscapeString(grp))
+	if includeGroup {
+		if grp := strings.TrimSpace(p.Group); grp != "" && grp != "-" {
+			parts = append(parts, html.EscapeString(grp))
+		}
 	}
 	if name := strings.TrimSpace(p.Name); name != "" && name != "-" && name != "—" && name != "–" {
 		parts = append(parts, html.EscapeString(name))
@@ -224,8 +152,10 @@ func formatTeacherPairHTML(p *entities.Pair) string {
 	if pType := strings.TrimSpace(p.Type); pType != "" && pType != "-" {
 		parts = append(parts, html.EscapeString(pType))
 	}
-	if aud := formatAuditory(p.Class); aud != "" {
-		parts = append(parts, html.EscapeString(aud))
+	if includeAuditory {
+		if aud := formatAuditory(p.Class); aud != "" {
+			parts = append(parts, html.EscapeString(aud))
+		}
 	}
 	return strings.Join(parts, " • ")
 }

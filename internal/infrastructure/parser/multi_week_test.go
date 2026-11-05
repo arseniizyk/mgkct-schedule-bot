@@ -61,12 +61,12 @@ func TestParseMultipleWeeksHTML(t *testing.T) {
 		if err != nil {
 			return
 		}
-		h3Sel := e.DOM.NextAllFiltered("h3").First()
+		h3Sel := e.DOM.NextUntil("h2").Filter("h3").First()
 		week, err := parseWeek(h3Sel.Text())
 		if err != nil {
 			return
 		}
-		tableSel := e.DOM.NextAllFiltered("table").First()
+		tableSel := e.DOM.NextUntil("h2").Filter("table").First()
 		days := parseRows(tableSel.Find("tbody tr"))
 
 		group := &entities.Group{

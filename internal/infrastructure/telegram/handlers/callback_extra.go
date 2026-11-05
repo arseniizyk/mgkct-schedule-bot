@@ -17,14 +17,14 @@ import (
 )
 
 func dataFromCallbackData(data string) string {
-	parts := strings.Split(data, "|")
-	if len(parts) > 1 {
-		return parts[1]
+	_, after, found := strings.Cut(data, "|")
+	if found {
+		return after
 	}
 	return ""
 }
 
-func handleRoleSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, sm StateManager) error {
+func handleRoleSelect(_ context.Context, log *slog.Logger, c tele.Context, data string, sm StateManager) error {
 	raw := dataFromCallbackData(data)
 	chatID := callbackChatID(c)
 
@@ -109,7 +109,7 @@ func handleTeacherSetSelect(ctx context.Context, log *slog.Logger, c tele.Contex
 	return c.Send(messages.TeacherSaved, keyboard.ReplyScheduleKeyboard)
 }
 
-func handleCabinetDayNav(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc AnalyticsService) error {
+func handleCabinetDayNav(ctx context.Context, _ *slog.Logger, c tele.Context, data string, svc AnalyticsService) error {
 	raw := dataFromCallbackData(data)
 	cabinet, dayStr, found := strings.CutLast(raw, ":")
 	if !found {
@@ -136,7 +136,7 @@ func handleCabinetDayNav(ctx context.Context, log *slog.Logger, c tele.Context, 
 	return safeEdit(c, msg, tele.ModeMarkdown, keyboard.InlineCabinetDayKeyboard(cabinet, dayIdx, len(sched.Days)))
 }
 
-func handleCabinetWeek(ctx context.Context, log *slog.Logger, c tele.Context, data string, svc AnalyticsService) error {
+func handleCabinetWeek(ctx context.Context, _ *slog.Logger, c tele.Context, data string, svc AnalyticsService) error {
 	cabinet := dataFromCallbackData(data)
 	sched, _, err := svc.GetCabinetSchedule(ctx, cabinet, time.Time{})
 	if err != nil {
@@ -150,7 +150,7 @@ func handleCabinetWeek(ctx context.Context, log *slog.Logger, c tele.Context, da
 	return editLongMessage(c, msg, tele.ModeMarkdown, keyboard.InlineCabinetWeekKeyboard(cabinet))
 }
 
-func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) error {
+func handleArchiveSelect(ctx context.Context, _ *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) error {
 	raw := dataFromCallbackData(data)
 	parts := strings.Split(raw, ":")
 	if len(parts) < 3 {
@@ -177,7 +177,13 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 		if err != nil {
 			return err
 		}
-		msg := formatter.FormatScheduleWeek(group)
+		subgroup := 0
+		if userRepo != nil {
+			if userGroup, userSg, err := userRepo.GroupAndSubgroupByChatID(ctx, callbackChatID(c)); err == nil && userGroup == groupID {
+				subgroup = userSg
+			}
+		}
+		msg := formatter.FormatScheduleWeekForSubgroup(group, subgroup)
 		return editLongMessage(c, msg, tele.ModeMarkdown, kbd)
 	}
 
@@ -194,7 +200,7 @@ func handleArchiveSelect(ctx context.Context, log *slog.Logger, c tele.Context, 
 	return editLongMessage(c, msg, tele.ModeMarkdown, kbd)
 }
 
-func handleArchiveBack(ctx context.Context, log *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService) error {
+func handleArchiveBack(ctx context.Context, _ *slog.Logger, c tele.Context, data string, schedSvc ScheduleService, teacherSvc TeacherService) error {
 	raw := dataFromCallbackData(data)
 	parts := strings.Split(raw, ":")
 	if len(parts) < 2 {
@@ -218,11 +224,12 @@ func handleArchiveBack(ctx context.Context, log *slog.Logger, c tele.Context, da
 		return safeEdit(c, msg, tele.ModeMarkdown, kbd)
 	}
 
+	escapedTeacher := formatter.EscapeMD(targetID)
 	weeks, err := teacherSvc.GetAllWeeks(ctx, targetID)
 	if err != nil || len(weeks) == 0 {
-		return safeEdit(c, fmt.Sprintf("📦 Архив расписаний для преподавателя *%s* пока пуст.", targetID), tele.ModeMarkdown)
+		return safeEdit(c, fmt.Sprintf("📦 Архив расписаний для преподавателя *%s* пока пуст.", escapedTeacher), tele.ModeMarkdown)
 	}
-	msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю для просмотра:", targetID)
+	msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю для просмотра:", escapedTeacher)
 	kbd := keyboard.InlineArchiveWeeksKeyboard("t", targetID, weeks)
 	return safeEdit(c, msg, tele.ModeMarkdown, kbd)
 }

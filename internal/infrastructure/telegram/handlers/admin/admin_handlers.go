@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -28,8 +29,8 @@ type BotSender interface {
 type UserRepo interface {
 	AllUsersWithUsernames(ctx context.Context) ([]entities.User, error)
 	AllUsers(ctx context.Context) ([]entities.User, error)
-	CountUsers(ctx context.Context) (int, error)
 	GetActivityStats(ctx context.Context) (entities.ActivityStats, error)
+	SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error
 }
 
 // StateManager — интерфейс управления состояниями пользователей (FSM).
@@ -299,6 +300,17 @@ func getBroadcastLimiter() Limiter {
 	return broadcastLimiter
 }
 
+func isForbiddenErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, tele.ErrBlockedByUser) || errors.Is(err, tele.ErrUserIsDeactivated) {
+		return true
+	}
+	var teleErr *tele.Error
+	return errors.As(err, &teleErr) && teleErr.Code == 403
+}
+
 func executeBroadcast(
 	ctx context.Context,
 	log *slog.Logger,
@@ -347,6 +359,9 @@ func executeBroadcast(
 			return bot.Send(tele.ChatID(u.ChatID), text)
 		}); sendErr != nil {
 			log.Warn("broadcast: failed sending to user", "chat_id", u.ChatID, "error", sendErr)
+			if isForbiddenErr(sendErr) {
+				_ = userRepo.SetNotifyEvening(ctx, u.ChatID, false)
+			}
 			failed++
 		} else {
 			sent++

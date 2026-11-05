@@ -12,6 +12,11 @@ func SPAHandler(files fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(files))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
 		path := strings.TrimPrefix(r.URL.Path, "/")
 		if path == "" {
 			path = "index.html"
@@ -28,8 +33,9 @@ func SPAHandler(files fs.FS) http.Handler {
 			return
 		}
 
-		// Если файл не найден (например, глубокий маршрут SPA), отдаём index.html
-		r.URL.Path = "/"
-		fileServer.ServeHTTP(w, r)
+		// Если файл не найден (например, глубокий маршрут SPA), отдаём index.html без мутации исходного r
+		rClone := r.Clone(r.Context())
+		rClone.URL.Path = "/"
+		fileServer.ServeHTTP(w, rClone)
 	})
 }

@@ -20,7 +20,6 @@ var (
 )
 
 type SubjectDictionary struct {
-	mu       sync.RWMutex
 	lookup   map[string]string // key: lowercase short_name -> full_name
 	original map[string]string // key: original short_name -> full_name
 }
@@ -77,9 +76,6 @@ func CleanName(raw string) string {
 
 // Lookup ищет полное наименование дисциплины по ее сокращенному названию
 func (d *SubjectDictionary) Lookup(shortName string) (string, bool) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	full, ok := d.lookup[strings.ToLower(strings.TrimSpace(shortName))]
 	return full, ok
 }
@@ -97,9 +93,6 @@ func (d *SubjectDictionary) Resolve(raw string) (cleaned, fullName string, found
 
 // All возвращает копию словаря всех предметов
 func (d *SubjectDictionary) All() map[string]string {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	res := make(map[string]string, len(d.original))
 	maps.Copy(res, d.original)
 	return res
@@ -107,9 +100,6 @@ func (d *SubjectDictionary) All() map[string]string {
 
 // Search выполняет поиск по сокращенному или полному названию
 func (d *SubjectDictionary) Search(query string) []entities.SubjectInfo {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
 	q := strings.ToLower(strings.TrimSpace(query))
 	var res []entities.SubjectInfo
 

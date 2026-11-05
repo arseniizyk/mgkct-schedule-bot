@@ -14,7 +14,7 @@ func NewHandler(database *sql.DB) http.HandlerFunc {
 		defer cancel()
 
 		if err := database.PingContext(pingCtx); err != nil {
-			http.Error(w, "database unhealthy: "+err.Error(), http.StatusServiceUnavailable)
+			http.Error(w, "database unhealthy", http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)

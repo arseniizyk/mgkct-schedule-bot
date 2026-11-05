@@ -103,17 +103,19 @@ func buildEmptyQueryResults(
 	}
 
 	userID := c.Query().Sender.ID
+	groupID, subgroup, teacherName, err := userRepo.GetUserProfile(ctx, userID)
+	if err != nil {
+		return buildDefaultHelpResults()
+	}
 
-	// Проверяем, сохранен ли преподаватель
-	if teacherName, err := userRepo.GetTeacher(ctx, userID); err == nil && teacherName != "" {
+	if teacherName != "" {
 		res := buildTeacherQueryResults(ctx, log, teacherSvc, teacherName, nowFunc)
 		if len(res) > 0 {
 			return res
 		}
 	}
 
-	// Проверяем, сохранена ли группа
-	if groupID, subgroup, err := userRepo.GroupAndSubgroupByChatID(ctx, userID); err == nil && groupID > 0 {
+	if groupID > 0 {
 		res := buildGroupQueryResults(ctx, log, schedSvc, groupID, subgroup, nowFunc)
 		if len(res) > 0 {
 			return res
@@ -172,7 +174,7 @@ func buildGroupQueryResults(
 		allWeeks = []time.Time{latestGroup.Week}
 	}
 
-	curMonday := currentWeekMonday(nowFunc())
+	curMonday := timeutil.CurrentWeekMonday(nowFunc())
 	sortWeeksByRelevance(allWeeks, curMonday)
 
 	const maxWeeks = 4
@@ -307,7 +309,7 @@ func buildTeacherQueryResults(
 		allWeeks = []time.Time{latestTeacher.Week}
 	}
 
-	curMonday := currentWeekMonday(nowFunc())
+	curMonday := timeutil.CurrentWeekMonday(nowFunc())
 	sortWeeksByRelevance(allWeeks, curMonday)
 
 	const maxWeeks = 4
@@ -407,13 +409,6 @@ func weekRelevanceWeight(w, curMonday time.Time) int {
 }
 
 var minskLoc = timeutil.MinskLocation
-
-func currentWeekMonday(now time.Time) time.Time {
-	localNow := now.In(minskLoc)
-	weekday := localNow.Weekday()
-	offset := (int(weekday) + 6) % 7 // Пн=0, Вт=1, ..., Вс=6
-	return time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
-}
 
 func determineWeekLabel(w, curMonday time.Time) string {
 	wNorm := time.Date(w.Year(), w.Month(), w.Day(), 0, 0, 0, 0, minskLoc)

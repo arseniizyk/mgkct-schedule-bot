@@ -8,7 +8,6 @@ type User struct {
 	Group          int        `json:"group"`
 	Subgroup       int        `json:"subgroup"`
 	TeacherName    string     `json:"teacher_name"`
-	State          string     `json:"state"`
 	NotifyEvening  bool       `json:"notify_evening"`
 	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
 }

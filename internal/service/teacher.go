@@ -74,13 +74,18 @@ func NewTeacherService(
 }
 
 func (s *TeacherService) now() time.Time {
-	if s.nowFunc != nil {
-		return s.nowFunc()
+	s.mu.RLock()
+	fn := s.nowFunc
+	s.mu.RUnlock()
+	if fn != nil {
+		return fn()
 	}
 	return time.Now()
 }
 
 func (s *TeacherService) SetNowFunc(fn func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.nowFunc = fn
 }
 
@@ -89,7 +94,7 @@ func (s *TeacherService) GetTeacherLatestSchedule(ctx context.Context, name stri
 	log := s.log.With("operation", op, "name", name)
 
 	targetWeek := EffectiveScheduleWeek(s.now())
-	t, err := s.repo.GetByWeek(ctx, name, targetWeek)
+	t, err := s.GetTeacherScheduleByWeek(ctx, name, targetWeek)
 	if err == nil && t != nil {
 		return t, nil
 	}
@@ -102,6 +107,10 @@ func (s *TeacherService) GetTeacherLatestSchedule(ctx context.Context, name stri
 		}
 		log.ErrorContext(ctx, "failed get by latest", "error", err)
 		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	if t != nil && !t.Week.IsZero() {
+		s.cacheTeacherWeek(name, t.Week, t)
 	}
 
 	return t, nil
@@ -131,7 +140,17 @@ func (s *TeacherService) GetTeacherScheduleByWeek(ctx context.Context, name stri
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
+	if t != nil {
+		s.cacheTeacherWeek(name, week, t)
+	}
+
+	return t, nil
+}
+
+func (s *TeacherService) cacheTeacherWeek(name string, week time.Time, t *entities.Teacher) {
+	cacheKey := fmt.Sprintf("%s:%s", name, week.Format("2006-01-02"))
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.weeksCache == nil {
 		s.weeksCache = make(map[string]teacherCacheItem)
 	}
@@ -145,9 +164,6 @@ func (s *TeacherService) GetTeacherScheduleByWeek(ctx context.Context, name stri
 		teacher:  t,
 		cachedAt: now,
 	}
-	s.mu.Unlock()
-
-	return t, nil
 }
 
 // ClearWeeksCache принудительно очищает in-memory кэш недель преподавателей.

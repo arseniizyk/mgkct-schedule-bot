@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -237,13 +238,13 @@ func (n *Notifier) HandleScraperError(ctx context.Context, err error, fails int)
 	}
 	errMsg := "неизвестная ошибка"
 	if err != nil {
-		errMsg = err.Error()
+		errMsg = strings.ReplaceAll(err.Error(), "`", "'")
 	}
 	msg := fmt.Sprintf(
 		"⚠️ *Внимание! Сбой парсера расписания!*\n\nСайт колледжа недоступен или парсер упал *%d* раз подряд.\n\n*Ошибка:* `%s`\n_Время: %s_",
 		fails,
 		errMsg,
-		time.Now().Format("15:04:05 02.01.2006"),
+		timeutil.Now().Format("15:04:05 02.01.2006"),
 	)
 	var firstErr error
 	for _, adminID := range n.adminIDs {
@@ -263,7 +264,7 @@ func (n *Notifier) HandleScraperRecovered(ctx context.Context) error {
 	}
 	msg := fmt.Sprintf(
 		"✅ *Парсер восстановил работу!*\n\nСайт колледжа снова отвечает, расписание успешно обработано.\n_Время: %s_",
-		time.Now().Format("15:04:05 02.01.2006"),
+		timeutil.Now().Format("15:04:05 02.01.2006"),
 	)
 	var firstErr error
 	for _, adminID := range n.adminIDs {
@@ -398,7 +399,7 @@ func (n *Notifier) SendNextDayDigestForGroupSubgroup(
 		}
 	}
 
-	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
+	targetDate, dayIdx := CalculateTomorrowDate(timeutil.Now())
 
 	dummyUser := entities.User{
 		Group:    targetGroup,
@@ -455,7 +456,7 @@ func (n *Notifier) SendNextDayDigestForTeacher(
 		}
 	}
 
-	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
+	targetDate, dayIdx := CalculateTomorrowDate(timeutil.Now())
 	dummyUser := entities.User{TeacherName: targetTeacher}
 
 	msg, err := FormatNextDayDigest(ctx, dummyUser, targetDate, dayIdx, nil, teacherProvider)
@@ -486,81 +487,4 @@ func (n *Notifier) SendNextDayDigestForTeacher(
 	}
 
 	return sentIDs, nil
-}
-
-// SendNextDayDigestForTarget отправляет расписание на следующий день всем подписчикам конкретной группы или преподавателя.
-func (n *Notifier) SendNextDayDigestForTarget(
-	ctx context.Context,
-	schedProvider ScheduleProvider,
-	teacherProvider TeacherProvider,
-	targetGroup int,
-	targetTeacher string,
-) ([]int64, error) {
-	if targetGroup > 0 {
-		return n.SendNextDayDigestForGroupSubgroup(ctx, schedProvider, targetGroup, 0)
-	}
-	if targetTeacher != "" {
-		return n.SendNextDayDigestForTeacher(ctx, teacherProvider, targetTeacher)
-	}
-	return nil, errors.New("neither group nor teacher specified")
-}
-
-// SendEveningDigest рассылает расписание на завтра всем пользователям с включенными уведомлениями.
-// Опциональный параметр skipChatIDs позволяет пропустить пользователей, уже получивших дайджест ранее.
-func (n *Notifier) SendEveningDigest(
-	ctx context.Context,
-	schedProvider ScheduleProvider,
-	teacherProvider TeacherProvider,
-	skipChatIDs ...map[int64]bool,
-) error {
-	log := n.log.With("operation", "notifier.Notifier.SendEveningDigest")
-	log.InfoContext(ctx, "starting evening digest broadcast")
-
-	users, err := n.userStore.UsersForEveningNotification(ctx)
-	if err != nil {
-		log.ErrorContext(ctx, "failed getting users for evening digest", "error", err)
-		return err
-	}
-
-	if len(users) == 0 {
-		log.InfoContext(ctx, "no users subscribed to evening digest")
-		return nil
-	}
-
-	var skip map[int64]bool
-	if len(skipChatIDs) > 0 && skipChatIDs[0] != nil {
-		skip = skipChatIDs[0]
-	}
-
-	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
-
-	sentCount := 0
-	for _, u := range users {
-		if skip != nil && skip[u.ChatID] {
-			continue
-		}
-
-		if err := n.limiter.Wait(ctx); err != nil {
-			log.WarnContext(ctx, "evening digest cancelled by context")
-			return ctx.Err()
-		}
-		msg, err := FormatNextDayDigest(ctx, u, targetDate, dayIdx, schedProvider, teacherProvider)
-		if err != nil {
-			continue
-		}
-		if _, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
-			return n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown)
-		}); sendErr == nil {
-			sentCount++
-			if skip != nil {
-				skip[u.ChatID] = true
-			}
-		} else if isForbidden(sendErr) {
-			_ = n.userStore.SetNotifyEvening(ctx, u.ChatID, false)
-			log.InfoContext(ctx, "user blocked bot or deactivated, disabled evening notifications", "chat_id", u.ChatID)
-		}
-	}
-
-	log.InfoContext(ctx, "evening digest broadcast completed", "total_users", len(users), "sent_count", sentCount)
-	return nil
 }

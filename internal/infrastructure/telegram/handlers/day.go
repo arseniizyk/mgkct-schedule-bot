@@ -24,25 +24,13 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 			// Если аргумент число — расписание группы
 			groupID, err := strconv.Atoi(args[0])
 			if err == nil && groupID > 0 {
-				group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
-				if err != nil {
-					log.Warn("failed getting group schedule", "group_id", groupID, "error", err)
-					return c.Send(formatter.FormatErrorMessage(err))
+				subgroup := 0
+				if len(args) > 1 {
+					if sg, sgErr := strconv.Atoi(args[1]); sgErr == nil && (sg == 1 || sg == 2) {
+						subgroup = sg
+					}
 				}
-
-				msg := formatter.FormatScheduleDay(group)
-				dayIdx := formatter.EffectiveDayIndex(group)
-				weeks, _ := schedSvc.GetAvailableWeeks(ctx, group.Week)
-				if weeks.Current.IsZero() {
-					weeks.Current = group.Week
-				}
-
-				return c.Send(
-					msg,
-					tele.ModeMarkdown,
-					keyboard.ReplyScheduleKeyboard,
-					keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), 0, weeks),
-				)
+				return sendGroupDaySchedule(ctx, log, c, schedSvc, groupID, subgroup)
 			}
 
 			// Иначе пробуем найти преподавателя по фамилии
@@ -52,25 +40,7 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, query, candidates)
 			}
 
-			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, matched)
-			if err != nil {
-				log.Warn("failed getting teacher schedule", "name", matched, "error", err)
-				return c.Send(formatter.FormatErrorMessage(err))
-			}
-
-			msg := formatter.FormatTeacherScheduleDay(teacher)
-			dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
-			weeks, _ := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
-			if weeks.Current.IsZero() {
-				weeks.Current = teacher.Week
-			}
-
-			return c.Send(
-				msg,
-				tele.ModeMarkdown,
-				keyboard.ReplyScheduleKeyboard,
-				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days), weeks),
-			)
+			return sendTeacherDaySchedule(ctx, log, c, teacherSvc, matched)
 		}
 
 		// Без аргументов: определяем роль пользователя за один SQL-запрос
@@ -80,48 +50,56 @@ func Day(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, 
 		}
 
 		if teacherName != "" {
-			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
-			if err != nil {
-				log.Warn("failed getting teacher schedule", "name", teacherName, "error", err)
-				return c.Send(formatter.FormatErrorMessage(err))
-			}
-
-			msg := formatter.FormatTeacherScheduleDay(teacher)
-			dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
-			weeks, _ := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
-			if weeks.Current.IsZero() {
-				weeks.Current = teacher.Week
-			}
-
-			return c.Send(
-				msg,
-				tele.ModeMarkdown,
-				keyboard.ReplyScheduleKeyboard,
-				keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days), weeks),
-			)
+			return sendTeacherDaySchedule(ctx, log, c, teacherSvc, teacherName)
 		}
 
-		group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
-		if err != nil {
-			log.Warn("failed getting group schedule", "group_id", groupID, "error", err)
-			return c.Send(formatter.FormatErrorMessage(err))
-		}
-
-		filtered := formatter.FilterGroupForSubgroup(group, subgroup)
-		msg := formatter.FormatScheduleDay(filtered)
-		dayIdx := formatter.EffectiveDayIndex(filtered)
-		weeks, _ := schedSvc.GetAvailableWeeks(ctx, group.Week)
-		if weeks.Current.IsZero() {
-			weeks.Current = group.Week
-		}
-
-		return c.Send(
-			msg,
-			tele.ModeMarkdown,
-			keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), subgroup, weeks),
-		)
+		return sendGroupDaySchedule(ctx, log, c, schedSvc, groupID, subgroup)
 	}
+}
+
+func sendGroupDaySchedule(ctx context.Context, log *slog.Logger, c tele.Context, schedSvc ScheduleService, groupID, subgroup int) error {
+	group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
+	if err != nil {
+		log.Warn("failed getting group schedule", "group_id", groupID, "error", err)
+		return c.Send(formatter.FormatErrorMessage(err))
+	}
+
+	filtered := formatter.FilterGroupForSubgroup(group, subgroup)
+	msg := formatter.FormatScheduleDay(filtered)
+	dayIdx := formatter.EffectiveDayIndex(filtered)
+	weeks, _ := schedSvc.GetAvailableWeeks(ctx, group.Week)
+	if weeks.Current.IsZero() {
+		weeks.Current = group.Week
+	}
+
+	return c.Send(
+		msg,
+		tele.ModeMarkdown,
+		keyboard.ReplyScheduleKeyboard,
+		keyboard.InlineDayKeyboard(int(group.ID), dayIdx, len(group.Days), subgroup, weeks),
+	)
+}
+
+func sendTeacherDaySchedule(ctx context.Context, log *slog.Logger, c tele.Context, teacherSvc TeacherService, teacherName string) error {
+	teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
+	if err != nil {
+		log.Warn("failed getting teacher schedule", "name", teacherName, "error", err)
+		return c.Send(formatter.FormatErrorMessage(err))
+	}
+
+	msg := formatter.FormatTeacherScheduleDay(teacher)
+	dayIdx := formatter.EffectiveTeacherDayIndex(teacher)
+	weeks, _ := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+	if weeks.Current.IsZero() {
+		weeks.Current = teacher.Week
+	}
+
+	return c.Send(
+		msg,
+		tele.ModeMarkdown,
+		keyboard.ReplyScheduleKeyboard,
+		keyboard.InlineTeacherDayKeyboard(teacher.Name, dayIdx, len(teacher.Days), weeks),
+	)
 }
 
 func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService, userRepo UserRepo) tele.HandlerFunc {
@@ -134,25 +112,13 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 			// Если аргумент число — расписание группы на неделю
 			groupID, err := strconv.Atoi(args[0])
 			if err == nil && groupID > 0 {
-				group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
-				if err != nil {
-					log.Warn("failed getting group schedule for week", "group_id", groupID, "error", err)
-					return c.Send(formatter.FormatErrorMessage(err))
+				subgroup := 0
+				if len(args) > 1 {
+					if sg, sgErr := strconv.Atoi(args[1]); sgErr == nil && (sg == 1 || sg == 2) {
+						subgroup = sg
+					}
 				}
-
-				msg := formatter.FormatScheduleWeek(group)
-				weeks, err := schedSvc.GetAvailableWeeks(ctx, group.Week)
-				if err != nil {
-					weeks = entities.WeekNavigation{}
-				}
-
-				return sendLongMessage(
-					c,
-					msg,
-					tele.ModeMarkdown,
-					keyboard.ReplyScheduleKeyboard,
-					keyboard.InlineWeekKeyboard(int(group.ID), weeks, 0),
-				)
+				return sendGroupWeekSchedule(ctx, log, c, schedSvc, groupID, subgroup)
 			}
 
 			// Иначе пробуем найти преподавателя по фамилии
@@ -162,25 +128,7 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 				return sendTeacherNotFoundOrSuggestions(ctx, c, teacherSvc, query, candidates)
 			}
 
-			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, matched)
-			if err != nil {
-				log.Warn("failed getting teacher week schedule", "name", matched, "error", err)
-				return c.Send(formatter.FormatErrorMessage(err))
-			}
-
-			msg := formatter.FormatTeacherScheduleWeek(teacher)
-			weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
-			if err != nil {
-				weeks = entities.WeekNavigation{}
-			}
-
-			return sendLongMessage(
-				c,
-				msg,
-				tele.ModeMarkdown,
-				keyboard.ReplyScheduleKeyboard,
-				keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
-			)
+			return sendTeacherWeekSchedule(ctx, log, c, teacherSvc, matched)
 		}
 
 		// Без аргументов: определяем роль пользователя за один SQL-запрос
@@ -190,45 +138,53 @@ func Week(log *slog.Logger, schedSvc ScheduleService, teacherSvc TeacherService,
 		}
 
 		if teacherName != "" {
-			teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
-			if err != nil {
-				log.Warn("failed getting teacher week schedule", "name", teacherName, "error", err)
-				return c.Send(formatter.FormatErrorMessage(err))
-			}
-
-			msg := formatter.FormatTeacherScheduleWeek(teacher)
-			weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
-			if err != nil {
-				weeks = entities.WeekNavigation{}
-			}
-
-			return sendLongMessage(
-				c,
-				msg,
-				tele.ModeMarkdown,
-				keyboard.ReplyScheduleKeyboard,
-				keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
-			)
+			return sendTeacherWeekSchedule(ctx, log, c, teacherSvc, teacherName)
 		}
 
-		group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
-		if err != nil {
-			log.Warn("failed getting group schedule for week", "group_id", groupID, "error", err)
-			return c.Send(formatter.FormatErrorMessage(err))
-		}
-
-		msg := formatter.FormatScheduleWeekForSubgroup(group, subgroup)
-		weeks, err := schedSvc.GetAvailableWeeks(ctx, group.Week)
-		if err != nil {
-			weeks = entities.WeekNavigation{}
-		}
-
-		return sendLongMessage(
-			c,
-			msg,
-			tele.ModeMarkdown,
-			keyboard.ReplyScheduleKeyboard,
-			keyboard.InlineWeekKeyboard(int(group.ID), weeks, subgroup),
-		)
+		return sendGroupWeekSchedule(ctx, log, c, schedSvc, groupID, subgroup)
 	}
+}
+
+func sendGroupWeekSchedule(ctx context.Context, log *slog.Logger, c tele.Context, schedSvc ScheduleService, groupID, subgroup int) error {
+	group, err := schedSvc.GetGroupLatestSchedule(ctx, int32(groupID))
+	if err != nil {
+		log.Warn("failed getting group schedule for week", "group_id", groupID, "error", err)
+		return c.Send(formatter.FormatErrorMessage(err))
+	}
+
+	msg := formatter.FormatScheduleWeekForSubgroup(group, subgroup)
+	weeks, err := schedSvc.GetAvailableWeeks(ctx, group.Week)
+	if err != nil {
+		weeks = entities.WeekNavigation{}
+	}
+
+	return sendLongMessage(
+		c,
+		msg,
+		tele.ModeMarkdown,
+		keyboard.ReplyScheduleKeyboard,
+		keyboard.InlineWeekKeyboard(int(group.ID), weeks, subgroup),
+	)
+}
+
+func sendTeacherWeekSchedule(ctx context.Context, log *slog.Logger, c tele.Context, teacherSvc TeacherService, teacherName string) error {
+	teacher, err := teacherSvc.GetTeacherLatestSchedule(ctx, teacherName)
+	if err != nil {
+		log.Warn("failed getting teacher week schedule", "name", teacherName, "error", err)
+		return c.Send(formatter.FormatErrorMessage(err))
+	}
+
+	msg := formatter.FormatTeacherScheduleWeek(teacher)
+	weeks, err := teacherSvc.GetAvailableWeeks(ctx, teacher.Name, teacher.Week)
+	if err != nil {
+		weeks = entities.WeekNavigation{}
+	}
+
+	return sendLongMessage(
+		c,
+		msg,
+		tele.ModeMarkdown,
+		keyboard.ReplyScheduleKeyboard,
+		keyboard.InlineTeacherWeekKeyboard(teacher.Name, weeks),
+	)
 }

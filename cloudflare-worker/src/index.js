@@ -61,14 +61,14 @@ export default {
     }
 
     // 2. Исходящие запросы от бота к Telegram API: проксируем в api.telegram.org
-    // Ограничение путей strictly to /bot${env.BOT_TOKEN}/* для исключения открытого прокси
-    if (env.BOT_TOKEN) {
-      const allowedPrefix = `/bot${env.BOT_TOKEN}/`;
-      if (!url.pathname.startsWith(allowedPrefix)) {
-        return new Response('Forbidden: invalid bot path', { status: 403 });
-      }
-    } else if (!/^\/bot[^/]+\//.test(url.pathname)) {
-      return new Response('Forbidden: bot token path required', { status: 403 });
+    // Строго требуем настроенный BOT_TOKEN, чтобы исключить использование воркера как открытого прокси
+    if (!env.BOT_TOKEN) {
+      return new Response('BOT_TOKEN environment variable is not configured', { status: 500 });
+    }
+
+    const allowedPrefix = `/bot${env.BOT_TOKEN}/`;
+    if (!url.pathname.startsWith(allowedPrefix)) {
+      return new Response('Forbidden: invalid bot path', { status: 403 });
     }
 
     url.hostname = 'api.telegram.org';

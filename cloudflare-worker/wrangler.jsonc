@@ -8,8 +8,10 @@
   }
   // Environment variables and secrets:
   // - BACKEND_HOST (or BACKEND_URL): Target backend host/URL where incoming Telegram webhooks are forwarded
+  // - BOT_TOKEN: Telegram Bot token for strict egress validation (/bot<BOT_TOKEN>/*)
   // - WEBHOOK_SECRET: (Optional) Secret token for Edge validation of X-Telegram-Bot-Api-Secret-Token
   // Set in Cloudflare via:
   //   npx wrangler secret put BACKEND_HOST
+  //   npx wrangler secret put BOT_TOKEN
   //   npx wrangler secret put WEBHOOK_SECRET
 }

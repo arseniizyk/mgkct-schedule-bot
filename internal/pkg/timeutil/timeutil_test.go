@@ -16,9 +16,9 @@ func TestTimeutil(t *testing.T) {
 		t.Errorf("expected 10 chars date string, got %s", today)
 	}
 
-	fixed := time.Date(2025, 9, 1, 10, 0, 0, 0, time.UTC)
-	formatted := FormatDate(fixed)
-	if formatted != "2025-09-01" {
-		t.Errorf("expected 2025-09-01, got %s", formatted)
+	wednesday := time.Date(2026, time.November, 4, 15, 30, 0, 0, MinskLocation)
+	monday := CurrentWeekMonday(wednesday)
+	if got := monday.Format(DateFormat); got != "2026-11-02" {
+		t.Errorf("expected Monday 2026-11-02, got %s", got)
 	}
 }

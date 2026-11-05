@@ -13,6 +13,7 @@
     teachers: [],
     facultyDirectory: [],
     subjects: {},
+    subjectsLower: {},
     calls: [],
     selectedGroup: null,
     selectedTeacher: '',
@@ -354,7 +355,8 @@
       haptic('light');
       let url = '';
       if (state.mode === 'group' && state.selectedGroup) {
-        url = `/api/v1/schedule/calendar.ics?group=${state.selectedGroup}&week=${state.selectedWeek || ''}`;
+        const sg = (state.userProfile?.group_id === state.selectedGroup && state.userProfile?.subgroup) ? state.userProfile.subgroup : 0;
+        url = `/api/v1/schedule/calendar.ics?group=${state.selectedGroup}&subgroup=${sg}&week=${state.selectedWeek || ''}`;
       } else if (state.mode === 'teacher' && state.selectedTeacher) {
         url = `/api/v1/schedule/calendar.ics?teacher=${encodeURIComponent(state.selectedTeacher)}&week=${state.selectedWeek || ''}`;
       }
@@ -526,8 +528,24 @@
 
   function resolveSubjectName(rawName) {
     if (!rawName) return '';
-    const cleaned = rawName.replace(/^[123]\.\s*/, '').replace(/^\d+\*?\s*[-–]\s*/, '').trim();
-    return state.subjects?.[cleaned] || '';
+    const cleaned = rawName.replace(/^[123]\.\s*/, '').replace(/^\d+\*?\s*[-–—]\s*/, '').trim();
+    return state.subjects?.[cleaned] || state.subjectsLower?.[cleaned.toLowerCase()] || '';
+  }
+
+  function parsePairSubgroupAndCleanName(rawName, groupField, fallbackIdx) {
+    const name = (rawName || '').trim();
+    const m = name.match(/^([123])\.\s*(.*)$/);
+    if (m) {
+      return { badge: `${m[1]} п/г`, cleanName: m[2] || name };
+    }
+    const lowerGrp = (groupField || '').toLowerCase();
+    if (lowerGrp.includes('1 п/г') || lowerGrp === '1') {
+      return { badge: '1 п/г', cleanName: name };
+    }
+    if (lowerGrp.includes('2 п/г') || lowerGrp === '2') {
+      return { badge: '2 п/г', cleanName: name };
+    }
+    return { badge: `${fallbackIdx + 1} п/г`, cleanName: name };
   }
 
   // Render Selected Day Schedule
@@ -641,6 +659,9 @@
 
           <div class="space-y-1">
             ${subject.pairs.map((p, pIdx) => {
+              const parsed = parsePairSubgroupAndCleanName(p.name, p.group, pIdx);
+              const badgeText = state.mode === 'group' ? parsed.badge : (p.group ? `Гр. ${p.group}` : `${pIdx + 1}`);
+              const displaySubj = state.mode === 'group' ? parsed.cleanName : (p.name || '');
               const teacherOrGroup = state.mode === 'group'
                 ? (p.group || '')
                 : (p.group ? `Группа ${p.group}` : '');
@@ -655,8 +676,8 @@
               return `
                 <div class="flex items-center justify-between text-[11px] p-1 px-2 rounded-lg bg-[var(--tg-theme-secondary-bg-color)] border border-[var(--tg-theme-section-separator-color)]/40">
                   <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="font-extrabold text-[10px] text-[var(--tg-theme-button-color)] bg-blue-500/10 px-1 rounded shrink-0">${pIdx + 1} п/г</span>
-                    <span class="font-bold text-xs truncate" ${fullSubjTitle}>${escapeHtml(p.name)}</span>
+                    <span class="font-extrabold text-[10px] text-[var(--tg-theme-button-color)] bg-blue-500/10 px-1 rounded shrink-0">${escapeHtml(badgeText)}</span>
+                    <span class="font-bold text-xs truncate"${fullSubjTitle}>${escapeHtml(displaySubj)}</span>
                     <span class="text-[10px] text-[var(--tg-theme-hint-color)] truncate block">· ${escapeHtml(teacherOrGroup)}${typeStr}</span>
                   </div>
                   ${roomHtml}
@@ -674,7 +695,7 @@
   // Render Calls View
   function renderCalls() {
     callsList.innerHTML = '';
-    const now = new Date();
+    const now = getMinskDate();
     const isSunday = now.getDay() === 0;
 
     state.calls.forEach(call => {
@@ -739,6 +760,10 @@
       state.teachers = teachersRes.teachers || [];
       state.facultyDirectory = teachersRes.directory || [];
       state.subjects = subjectsRes.subjects || {};
+      state.subjectsLower = {};
+      for (const [k, v] of Object.entries(state.subjects)) {
+        state.subjectsLower[k.toLowerCase()] = v;
+      }
 
       // 3. Fetch User Profile с сервера (синхронизация с ботом)
       try {

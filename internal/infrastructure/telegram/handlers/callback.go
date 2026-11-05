@@ -44,15 +44,16 @@ func CallbacksHandler(
 	return func(c tele.Context) error {
 		callback := c.Callback()
 		data := callback.Data
+		unique := extractCallbackUnique(data)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		if strings.Contains(data, keyboard.BroadcastConfirm) || strings.Contains(data, keyboard.BroadcastCancel) {
+		if unique == keyboard.BroadcastConfirm || unique == keyboard.BroadcastCancel {
 			return HandleBroadcastCallback(ctx, log, c, data, userRepo, bot, sm, adminIDs)
 		}
 
-		err := dispatchCallback(ctx, log, c, data, schedSvc, teacherSvc, analyticsSvc, userRepo, sm, adminIDs, dict)
+		err := dispatchCallback(ctx, log, c, unique, data, schedSvc, teacherSvc, analyticsSvc, userRepo, sm, dict)
 		if err != nil {
 			if errors.Is(err, tele.ErrTrueResult) || strings.Contains(err.Error(), "result is True") || strings.Contains(err.Error(), "message is not modified") {
 				return c.Respond()
@@ -81,6 +82,11 @@ func CallbacksHandler(
 	}
 }
 
+func extractCallbackUnique(data string) string {
+	head, _, _ := strings.Cut(data, "|")
+	return strings.TrimSpace(strings.TrimPrefix(head, "\f"))
+}
+
 func callbackChatID(c tele.Context) int64 {
 	if c.Chat() != nil {
 		return c.Chat().ID
@@ -95,87 +101,83 @@ func dispatchCallback(
 	ctx context.Context,
 	log *slog.Logger,
 	c tele.Context,
-	data string,
+	unique, data string,
 	schedSvc ScheduleService,
 	teacherSvc TeacherService,
 	analyticsSvc AnalyticsService,
 	userRepo UserRepo,
 	sm StateManager,
-	adminIDs []int64,
 	dict calendar.SubjectDictionary,
 ) error {
-	switch {
+	switch unique {
 	// Выбор роли
-	case strings.Contains(data, keyboard.RoleSelect):
+	case keyboard.RoleSelect:
 		if sm != nil {
 			return handleRoleSelect(ctx, log, c, data, sm)
 		}
 
 	// Уведомления
-	case strings.Contains(data, keyboard.NotifyToggle):
+	case keyboard.NotifyToggle:
 		if userRepo != nil {
 			return handleNotifyToggle(ctx, log, c, data, userRepo)
 		}
 
 	// Выбор подгруппы
-	case strings.Contains(data, keyboard.SubgroupSelect):
+	case keyboard.SubgroupSelect:
 		if userRepo != nil {
 			return handleSubgroupSelect(ctx, log, c, data, userRepo, sm)
 		}
 
 	// Кабинеты
-	case strings.Contains(data, keyboard.CabinetPrevDay), strings.Contains(data, keyboard.CabinetNextDay):
+	case keyboard.CabinetPrevDay, keyboard.CabinetNextDay:
 		if analyticsSvc != nil {
 			return handleCabinetDayNav(ctx, log, c, data, analyticsSvc)
 		}
-	case strings.Contains(data, keyboard.CabinetCurrentWeek):
+	case keyboard.CabinetCurrentWeek:
 		if analyticsSvc != nil {
 			return handleCabinetWeek(ctx, log, c, data, analyticsSvc)
 		}
 
 	// Архив
-	case strings.Contains(data, keyboard.ArchiveBack):
+	case keyboard.ArchiveBack:
 		return handleArchiveBack(ctx, log, c, data, schedSvc, teacherSvc)
-	case strings.Contains(data, keyboard.ArchiveSelect):
+	case keyboard.ArchiveSelect:
 		return handleArchiveSelect(ctx, log, c, data, schedSvc, teacherSvc, userRepo)
 
 	// Закрепление преподавателя
-	case strings.Contains(data, keyboard.TeacherSetSelect):
+	case keyboard.TeacherSetSelect:
 		if userRepo != nil {
 			return handleTeacherSetSelect(ctx, log, c, data, userRepo, sm)
 		}
 
-	// Преподаватели (ОБЯЗАТЕЛЬНО перед группами, чтобы t_currweek/t_prevday не попадали в обработчик групп!)
-	case strings.Contains(data, keyboard.TeacherWeekCalendar):
+	// Преподаватели
+	case keyboard.TeacherWeekCalendar:
 		return handleTeacherWeekCalendar(ctx, log, c, data, teacherSvc, dict)
-	case strings.Contains(data, keyboard.TeacherWeekImage):
+	case keyboard.TeacherWeekImage:
 		return handleTeacherWeekImage(ctx, log, c, data, teacherSvc)
-	case strings.Contains(data, keyboard.TeacherPrevDay), strings.Contains(data, keyboard.TeacherNextDay):
+	case keyboard.TeacherPrevDay, keyboard.TeacherNextDay:
 		return handleTeacherDayNav(ctx, log, c, data, teacherSvc, userRepo)
-	case strings.Contains(data, keyboard.TeacherCurrentWeek):
+	case keyboard.TeacherCurrentWeek:
 		return handleTeacherCurrentWeek(ctx, log, c, data, teacherSvc, userRepo)
-	case strings.Contains(data, keyboard.TeacherPrevWeek), strings.Contains(data, keyboard.TeacherNextWeek):
+	case keyboard.TeacherPrevWeek, keyboard.TeacherNextWeek:
 		return handleTeacherWeekNav(ctx, log, c, data, teacherSvc, userRepo)
 
 	// Группы
-	case strings.Contains(data, keyboard.WeekCalendar):
+	case keyboard.WeekCalendar:
 		return handleWeekCalendar(ctx, log, c, data, schedSvc, userRepo, dict)
-	case strings.Contains(data, keyboard.WeekImage):
+	case keyboard.WeekImage:
 		return handleWeekImage(ctx, log, c, data, schedSvc, userRepo)
-	case strings.Contains(data, keyboard.PrevDay), strings.Contains(data, keyboard.NextDay),
-		strings.Contains(data, keyboard.DaySubgroup),
-		strings.Contains(data, "prevday"), strings.Contains(data, "nextday"):
+	case keyboard.PrevDay, keyboard.NextDay, keyboard.DaySubgroup:
 		return handleDayNav(ctx, log, c, data, schedSvc, userRepo)
-	case strings.Contains(data, keyboard.WeekSubgroup):
+	case keyboard.WeekSubgroup:
 		return handleWeekSubgroup(ctx, log, c, data, schedSvc, userRepo)
-	case strings.Contains(data, keyboard.CurrentWeek), strings.Contains(data, "currentweek"):
+	case keyboard.CurrentWeek:
 		return handleCurrentWeek(ctx, log, c, data, schedSvc, userRepo)
-	case strings.Contains(data, keyboard.PrevWeek), strings.Contains(data, keyboard.NextWeek),
-		strings.Contains(data, "prevweek"), strings.Contains(data, "nextweek"):
+	case keyboard.PrevWeek, keyboard.NextWeek:
 		return handleWeekNav(ctx, log, c, data, schedSvc, userRepo)
 
 	default:
-		log.Warn("unexpected callback", "data", data)
+		log.Warn("unexpected callback", "unique", unique, "data", data)
 		return c.Respond(&tele.CallbackResponse{Text: messages.Internal, ShowAlert: true})
 	}
 
