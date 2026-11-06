@@ -15,7 +15,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/service"
 )
 
 func StatesHandler(
@@ -26,7 +25,7 @@ func StatesHandler(
 	schedSvc ScheduleService,
 	analyticsSvc AnalyticsService,
 	subjectDict SubjectDict,
-	bot BotSender,
+	_ BotSender,
 	adminIDs []int64,
 ) tele.HandlerFunc {
 	return func(c tele.Context) error {
@@ -200,107 +199,16 @@ func handleWaitingTeacherDay(ctx context.Context, log *slog.Logger, c tele.Conte
 }
 
 func handleWaitingCabinet(ctx context.Context, log *slog.Logger, c tele.Context, sm StateManager, analyticsSvc AnalyticsService) error {
-	chatID := c.Chat().ID
-	query := strings.TrimSpace(c.Text())
-	_ = sm.Clear(chatID)
-
-	cabSched, candidates, err := analyticsSvc.GetCabinetSchedule(ctx, query, time.Time{})
-	if err != nil {
-		log.Warn("failed getting cabinet schedule from state", "query", query, "error", err)
-		return c.Send("Ошибка при получении расписания кабинета.", keyboard.ReplyScheduleKeyboard)
-	}
-
-	if cabSched == nil {
-		if len(candidates) > 0 {
-			var sb strings.Builder
-			fmt.Fprintf(&sb, "По запросу *%s* найдено несколько кабинетов:\n\n", formatter.EscapeMD(query))
-			for _, cand := range candidates {
-				fmt.Fprintf(&sb, "• `/cabinet %s`\n", cand)
-			}
-			return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-		}
-		return c.Send(fmt.Sprintf("Кабинет *%s* не найден в расписании.", formatter.EscapeMD(query)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-	}
-
-	dayIdx := service.EffectiveEndingsDayIndex()
-	if dayIdx >= len(cabSched.Days) {
-		dayIdx = 0
-	}
-
-	msg := formatter.FormatCabinetDay(cabSched, dayIdx)
-	return c.Send(
-		msg,
-		tele.ModeMarkdown,
-		keyboard.ReplyScheduleKeyboard,
-		keyboard.InlineCabinetDayKeyboard(cabSched.Cabinet, dayIdx, len(cabSched.Days)),
-	)
+	_ = sm.Clear(c.Chat().ID)
+	return sendCabinetScheduleByQuery(ctx, log, c, analyticsSvc, strings.TrimSpace(c.Text()))
 }
 
 func handleWaitingSubject(c tele.Context, sm StateManager, subjectDict SubjectDict) error {
-	chatID := c.Chat().ID
-	query := strings.TrimSpace(c.Text())
-	_ = sm.Clear(chatID)
-
-	cleaned, fullName, found := subjectDict.Resolve(query)
-	if found {
-		return c.Send(
-			fmt.Sprintf("📖 *%s*\n%s", formatter.EscapeMD(cleaned), formatter.EscapeMD(fullName)),
-			tele.ModeMarkdown,
-			keyboard.ReplyScheduleKeyboard,
-		)
-	}
-
-	similar := subjectDict.Search(query)
-	if len(similar) > 0 {
-		var sb strings.Builder
-		fmt.Fprintf(&sb, "Предмет *%s* не найден. Возможно, вы имели в виду:\n\n", formatter.EscapeMD(query))
-		limit := min(len(similar), 8)
-		for i := range limit {
-			fmt.Fprintf(&sb, "• *%s* — %s\n", formatter.EscapeMD(similar[i].ShortName), formatter.EscapeMD(similar[i].FullName))
-		}
-		return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-	}
-
-	return c.Send(
-		fmt.Sprintf("Предмет *%s* не найден в справочнике колледжа.", formatter.EscapeMD(query)),
-		tele.ModeMarkdown,
-		keyboard.ReplyScheduleKeyboard,
-	)
+	_ = sm.Clear(c.Chat().ID)
+	return sendSubjectByQuery(c, subjectDict, strings.TrimSpace(c.Text()))
 }
 
 func handleWaitingArchive(ctx context.Context, c tele.Context, sm StateManager, schedSvc ScheduleService, teacherSvc TeacherService) error {
-	chatID := c.Chat().ID
-	targetStr := strings.TrimSpace(c.Text())
-	_ = sm.Clear(chatID)
-
-	if gID, err := strconv.Atoi(targetStr); err == nil && gID > 0 {
-		weeks, err := schedSvc.GetAllWeeks(ctx)
-		if err != nil || len(weeks) == 0 {
-			return c.Send(fmt.Sprintf("Архив расписаний для группы %d пока пуст.", gID), keyboard.ReplyScheduleKeyboard)
-		}
-		msg := fmt.Sprintf("📦 *Архив расписания группы %d*\nВыберите неделю:", gID)
-		kbd := keyboard.InlineArchiveWeeksKeyboard("g", strconv.Itoa(gID), weeks)
-		return c.Send(msg, tele.ModeMarkdown, kbd)
-	}
-
-	validatedName, candidates, ok := teacherSvc.ValidateTeacher(ctx, targetStr)
-	if !ok {
-		if len(candidates) > 0 {
-			var sb strings.Builder
-			fmt.Fprintf(&sb, "По запросу *%s* найдено несколько преподавателей:\n\n", formatter.EscapeMD(targetStr))
-			for _, cand := range candidates {
-				fmt.Fprintf(&sb, "• `/archive %s`\n", cand)
-			}
-			return c.Send(sb.String(), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-		}
-		return c.Send(fmt.Sprintf("Преподаватель или группа *%s* не найдены в архиве.", formatter.EscapeMD(targetStr)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-	}
-
-	weeks, err := teacherSvc.GetAllWeeks(ctx, validatedName)
-	if err != nil || len(weeks) == 0 {
-		return c.Send(fmt.Sprintf("Архив расписаний для преподавателя *%s* пока пуст.", formatter.EscapeMD(validatedName)), tele.ModeMarkdown, keyboard.ReplyScheduleKeyboard)
-	}
-	msg := fmt.Sprintf("📦 *Архив расписания: %s*\nВыберите неделю:", formatter.EscapeMD(validatedName))
-	kbd := keyboard.InlineArchiveWeeksKeyboard("t", validatedName, weeks)
-	return c.Send(msg, tele.ModeMarkdown, kbd)
+	_ = sm.Clear(c.Chat().ID)
+	return sendArchiveWeeksForTarget(ctx, c, schedSvc, teacherSvc, strings.TrimSpace(c.Text()))
 }

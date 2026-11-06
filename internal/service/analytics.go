@@ -59,27 +59,45 @@ func NewAnalyticsService(
 }
 
 func (s *AnalyticsService) SetNowFunc(f func() time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.nowFunc = f
 }
 
 func (s *AnalyticsService) now() time.Time {
-	if s.nowFunc != nil {
-		return s.nowFunc()
+	s.mu.RLock()
+	fn := s.nowFunc
+	s.mu.RUnlock()
+	if fn != nil {
+		return fn()
 	}
 	return time.Now()
 }
 
+// ClearCache принудительно сбрасывает кэш кабинетов и их расписаний при обновлении данных скрапером.
+func (s *AnalyticsService) ClearCache() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cabinetsCache = nil
+	s.cabinetScheduleCache = nil
+}
+
 // GetAllCabinets возвращает список всех уникальных кабинетов, упорядоченных по имени
 func (s *AnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error) {
+	now := s.now()
 	s.mu.RLock()
-	if s.cabinetsCache != nil && s.now().Before(s.cabinetsCache.expiresAt) {
+	if s.cabinetsCache != nil && now.Before(s.cabinetsCache.expiresAt) {
 		res := slices.Clone(s.cabinetsCache.cabinets)
 		s.mu.RUnlock()
 		return res, nil
 	}
 	s.mu.RUnlock()
 
-	sch, err := s.schedRepo.GetLatest(ctx)
+	targetWeek := EffectiveScheduleWeek(now)
+	sch, err := s.schedRepo.GetByWeek(ctx, targetWeek)
+	if err != nil || sch == nil {
+		sch, err = s.schedRepo.GetLatest(ctx)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("analytics: get latest schedule: %w", err)
 	}
@@ -110,18 +128,19 @@ func (s *AnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error)
 	s.mu.Lock()
 	s.cabinetsCache = &cabinetsCacheItem{
 		cabinets:  cabinets,
-		expiresAt: s.now().Add(5 * time.Minute),
+		expiresAt: now.Add(cabinetsCacheTTL),
 	}
 	s.mu.Unlock()
 
-	return cabinets, nil
+	return slices.Clone(cabinets), nil
 }
 
 // GetCabinetSchedule возвращает расписание занятости конкретного кабинета на неделю
 func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string, week time.Time) (*entities.CabinetSchedule, []string, error) {
+	now := s.now()
 	targetWeek := week
 	if targetWeek.IsZero() {
-		targetWeek = EffectiveEndingsWeek(s.now())
+		targetWeek = EffectiveScheduleWeek(now)
 	}
 	targetWeek = time.Date(targetWeek.Year(), targetWeek.Month(), targetWeek.Day(), 0, 0, 0, 0, time.UTC)
 	weekday := (int(targetWeek.Weekday()) + 6) % 7 // Пн=0..Вс=6
@@ -129,7 +148,7 @@ func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string,
 
 	cacheKey := fmt.Sprintf("%s:%s", strings.ToLower(strings.TrimSpace(query)), targetWeek.Format("2006-01-02"))
 	s.mu.RLock()
-	if item, ok := s.cabinetScheduleCache[cacheKey]; ok && s.now().Before(item.expiresAt) {
+	if item, ok := s.cabinetScheduleCache[cacheKey]; ok && now.Before(item.expiresAt) {
 		scheduleCopy := cloneCabinetSchedule(item.schedule)
 		candidatesCopy := slices.Clone(item.candidates)
 		s.mu.RUnlock()
@@ -205,7 +224,6 @@ func (s *AnalyticsService) GetCabinetSchedule(ctx context.Context, query string,
 	days := make([]*entities.CabinetDaySchedule, 0, maxDays)
 	for i := range maxDays {
 		if d, ok := daysMap[i]; ok {
-			// Сортировка пар по возрастанию номера
 			sort.Slice(d.Bookings, func(a, b int) bool {
 				if d.Bookings[a].PairIndex != d.Bookings[b].PairIndex {
 					return d.Bookings[a].PairIndex < d.Bookings[b].PairIndex
@@ -266,6 +284,7 @@ func cloneCabinetSchedule(cs *entities.CabinetSchedule) *entities.CabinetSchedul
 }
 
 func (s *AnalyticsService) setCabinetScheduleCache(key string, schedule *entities.CabinetSchedule, candidates []string) {
+	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -273,7 +292,6 @@ func (s *AnalyticsService) setCabinetScheduleCache(key string, schedule *entitie
 		s.cabinetScheduleCache = make(map[string]cabinetScheduleCacheItem)
 	}
 
-	now := s.now()
 	// Очищаем устаревшие записи, предотвращая утечку памяти
 	for k, v := range s.cabinetScheduleCache {
 		if !now.Before(v.expiresAt) {
@@ -302,21 +320,26 @@ func (s *AnalyticsService) setCabinetScheduleCache(key string, schedule *entitie
 func (s *AnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time.Time) (*entities.EndingsStat, error) {
 	var sch *entities.Schedule
 	var err error
-	if week.IsZero() {
-		targetWeek := EffectiveEndingsWeek(s.now())
+	targetWeek := week
+	if targetWeek.IsZero() {
+		targetWeek = EffectiveScheduleWeek(s.now())
 		sch, err = s.schedRepo.GetByWeek(ctx, targetWeek)
 		if err != nil || sch == nil {
 			sch, err = s.schedRepo.GetLatest(ctx)
 		}
 	} else {
-		sch, err = s.schedRepo.GetByWeek(ctx, week)
+		sch, err = s.schedRepo.GetByWeek(ctx, targetWeek)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("analytics: get schedule for endings: %w", err)
 	}
+	if sch == nil {
+		return nil, domainerr.ErrScheduleNotFound
+	}
 
 	stat := &entities.EndingsStat{
 		DayIndex:               dayIdx,
+		Week:                   targetWeek,
 		Pairs:                  make(map[int][]entities.GroupEnding),
 		DayOff:                 make([]entities.GroupEnding, 0),
 		Total:                  len(sch.Groups),
@@ -326,6 +349,9 @@ func (s *AnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time
 	}
 
 	for _, grp := range sch.Groups {
+		if !grp.Week.IsZero() {
+			stat.Week = grp.Week
+		}
 		stat.TotalStudents += entities.CalculateSubgroupStudents(grp.ID, 0)
 
 		if dayIdx < 0 || dayIdx >= len(grp.Days) {
@@ -384,12 +410,19 @@ func (s *AnalyticsService) GetGroupStats(ctx context.Context, groupID int32, wee
 	var sch *entities.Schedule
 	var err error
 	if week.IsZero() {
-		sch, err = s.schedRepo.GetLatest(ctx)
+		targetWeek := EffectiveScheduleWeek(s.now())
+		sch, err = s.schedRepo.GetByWeek(ctx, targetWeek)
+		if err != nil || sch == nil {
+			sch, err = s.schedRepo.GetLatest(ctx)
+		}
 	} else {
 		sch, err = s.schedRepo.GetByWeek(ctx, week)
 	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("analytics: get group schedule: %w", err)
+	}
+	if sch == nil {
+		return nil, 0, domainerr.ErrScheduleNotFound
 	}
 
 	grp, ok := sch.Groups[groupID]
@@ -397,62 +430,7 @@ func (s *AnalyticsService) GetGroupStats(ctx context.Context, groupID int32, wee
 		return nil, 0, domainerr.ErrGroupNotFound
 	}
 
-	type subjAgg struct {
-		name  string
-		count int
-		types map[string]int
-	}
-	agg := make(map[string]*subjAgg)
-	total := 0
-
-	for _, day := range grp.Days {
-		for _, subj := range day.Subjects {
-			if subj.IsEmpty {
-				continue
-			}
-			for _, p := range subj.Pairs {
-				if p.Name == "" {
-					continue
-				}
-				cleanName := p.Name
-				if s.dict != nil {
-					cleanName, _, _ = s.dict.Resolve(p.Name)
-				}
-				item, exists := agg[cleanName]
-				if !exists {
-					item = &subjAgg{name: cleanName, types: make(map[string]int)}
-					agg[cleanName] = item
-				}
-				item.count++
-				total++
-				if p.Type != "" {
-					item.types[p.Type]++
-				}
-			}
-		}
-	}
-
-	stats := make([]entities.SubjectStat, 0, len(agg))
-	for name, item := range agg {
-		var full string
-		if s.dict != nil {
-			full, _ = s.dict.Lookup(name)
-		}
-		stats = append(stats, entities.SubjectStat{
-			Subject:     name,
-			SubjectFull: full,
-			Count:       item.count,
-			Types:       item.types,
-		})
-	}
-
-	sort.Slice(stats, func(i, j int) bool {
-		if stats[i].Count != stats[j].Count {
-			return stats[i].Count > stats[j].Count
-		}
-		return stats[i].Subject < stats[j].Subject
-	})
-
+	stats, total := s.aggregateDaysStats(grp.Days)
 	return stats, total, nil
 }
 
@@ -461,14 +439,26 @@ func (s *AnalyticsService) GetTeacherStats(ctx context.Context, teacherName stri
 	var t *entities.Teacher
 	var err error
 	if week.IsZero() {
-		t, err = s.teacherRepo.GetLatest(ctx, teacherName)
+		targetWeek := EffectiveScheduleWeek(s.now())
+		t, err = s.teacherRepo.GetByWeek(ctx, teacherName, targetWeek)
+		if err != nil || t == nil {
+			t, err = s.teacherRepo.GetLatest(ctx, teacherName)
+		}
 	} else {
 		t, err = s.teacherRepo.GetByWeek(ctx, teacherName, week)
 	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("analytics: get teacher schedule: %w", err)
 	}
+	if t == nil {
+		return nil, 0, domainerr.ErrScheduleNotFound
+	}
 
+	stats, total := s.aggregateDaysStats(t.Days)
+	return stats, total, nil
+}
+
+func (s *AnalyticsService) aggregateDaysStats(days []*entities.Day) ([]entities.SubjectStat, int) {
 	type subjAgg struct {
 		name  string
 		count int
@@ -477,13 +467,16 @@ func (s *AnalyticsService) GetTeacherStats(ctx context.Context, teacherName stri
 	agg := make(map[string]*subjAgg)
 	total := 0
 
-	for _, day := range t.Days {
+	for _, day := range days {
+		if day == nil {
+			continue
+		}
 		for _, subj := range day.Subjects {
-			if subj.IsEmpty {
+			if subj == nil || subj.IsEmpty {
 				continue
 			}
 			for _, p := range subj.Pairs {
-				if p.Name == "" {
+				if p == nil || p.Name == "" {
 					continue
 				}
 				cleanName := p.Name
@@ -525,7 +518,7 @@ func (s *AnalyticsService) GetTeacherStats(ctx context.Context, teacherName stri
 		return stats[i].Subject < stats[j].Subject
 	})
 
-	return stats, total, nil
+	return stats, total
 }
 
 func matchCabinet(query string, all []string) (exact string, candidates []string) {
@@ -618,7 +611,7 @@ func IsKnorinaCabinet(cabinet string) bool {
 }
 
 // resolveEndingCampus определяет корпус (Казинца или Кнорина) для группы/подгруппы на указанный день
-func resolveEndingCampus(grp *entities.Group, dayIdx int, sg int) string {
+func resolveEndingCampus(grp *entities.Group, dayIdx, sg int) string {
 	if grp == nil || dayIdx < 0 || dayIdx >= len(grp.Days) {
 		return entities.CampusKazintsa
 	}
@@ -786,11 +779,6 @@ func calculateGroupDayEndings(subjects []*entities.Subject) map[int]int {
 	}
 
 	return endings
-}
-
-// EffectiveEndingsWeek возвращает дату понедельника недели для показа окончаний пар
-func EffectiveEndingsWeek(now time.Time) time.Time {
-	return EffectiveScheduleWeek(now)
 }
 
 // EffectiveEndingsDayIndexAt вычисляет индекс дня для показа окончаний пар для указанного времени

@@ -27,10 +27,9 @@ type stateEntry struct {
 	updatedAt time.Time
 }
 
-// MemoryManager хранит временные интерактивные состояния пользователей в памяти с TTL-эвикшном.
-// Это избавляет от лишних дисковых операций в БД при каждой отправленной команде.
 type MemoryManager struct {
-	states sync.Map // map[int64]stateEntry
+	mu     sync.RWMutex
+	states map[int64]stateEntry
 	ttl    time.Duration
 }
 
@@ -43,60 +42,66 @@ func NewMemoryManagerWithTTL(ttl time.Duration) *MemoryManager {
 		ttl = defaultTTL
 	}
 	return &MemoryManager{
-		ttl: ttl,
+		states: make(map[int64]stateEntry),
+		ttl:    ttl,
 	}
 }
 
 func (m *MemoryManager) Get(chatID int64) (State, bool) {
-	val, ok := m.states.Load(chatID)
-	if !ok {
-		return None, false
-	}
-	entry, ok := val.(stateEntry)
+	m.mu.RLock()
+	entry, ok := m.states[chatID]
+	m.mu.RUnlock()
+
 	if !ok || entry.state == None {
-		m.states.Delete(chatID)
 		return None, false
 	}
+
 	if time.Since(entry.updatedAt) > m.ttl {
-		m.states.Delete(chatID)
+		m.mu.Lock()
+		delete(m.states, chatID)
+		m.mu.Unlock()
 		return None, false
 	}
+
 	return entry.state, true
 }
 
 func (m *MemoryManager) Set(chatID int64, st State) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if st == None {
-		m.states.Delete(chatID)
+		delete(m.states, chatID)
 		return nil
 	}
-	m.states.Store(chatID, stateEntry{
+
+	m.states[chatID] = stateEntry{
 		state:     st,
 		updatedAt: time.Now(),
-	})
+	}
 	return nil
 }
 
 func (m *MemoryManager) Clear(chatID int64) error {
-	m.states.Delete(chatID)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.states, chatID)
 	return nil
 }
 
-// Cleanup удаляет все устаревшие состояния из памяти.
 func (m *MemoryManager) Cleanup() {
 	now := time.Now()
-	m.states.Range(func(key, value any) bool {
-		if entry, ok := value.(stateEntry); ok {
-			if now.Sub(entry.updatedAt) > m.ttl {
-				m.states.Delete(key)
-			}
-		} else {
-			m.states.Delete(key)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for chatID, entry := range m.states {
+		if now.Sub(entry.updatedAt) > m.ttl || entry.state == None {
+			delete(m.states, chatID)
 		}
-		return true
-	})
+	}
 }
 
-// StartCleanup запускает периодическую очистку устаревших состояний.
 func (m *MemoryManager) StartCleanup(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = 5 * time.Minute

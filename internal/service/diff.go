@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 var (
-	minskLoc = time.FixedZone("MSK", 3*3600)
+	minskLoc = timeutil.MinskLocation
 
 	dayNames = [6]string{"Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
 
@@ -24,12 +25,11 @@ var (
 	}
 )
 
+type pairComparatorFunc func(oldPairs, newPairs []*entities.Pair) []entities.SubgroupDiff
+
 // CurrentWeekMonday возвращает полночь понедельника (UTC+3 / Europe/Minsk) для недели, содержащей указанное время.
 func CurrentWeekMonday(now time.Time) time.Time {
-	localNow := now.In(minskLoc)
-	weekday := localNow.Weekday()
-	offset := (int(weekday) + 6) % 7 // Пн=0, Вт=1, ..., Вс=6
-	return time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
+	return timeutil.CurrentWeekMonday(now)
 }
 
 // EffectiveScheduleWeek возвращает дату понедельника недели для отображения актуального расписания.
@@ -53,12 +53,6 @@ func ComputeGroupDiff(oldGroup, newGroup *entities.Group, now time.Time) *entiti
 		return nil
 	}
 
-	if now.IsZero() {
-		now = time.Now()
-	}
-	nowMinsk := now.In(minskLoc)
-	currentWeekMonday := CurrentWeekMonday(nowMinsk)
-
 	var targetWeek time.Time
 	var groupID int32
 	if newGroup != nil {
@@ -69,96 +63,14 @@ func ComputeGroupDiff(oldGroup, newGroup *entities.Group, now time.Time) *entiti
 		groupID = oldGroup.ID
 	}
 
-	weekMonday := time.Date(targetWeek.Year(), targetWeek.Month(), targetWeek.Day(), 0, 0, 0, 0, minskLoc)
-	if weekMonday.Before(currentWeekMonday) {
-		return nil
-	}
-
-	isCurrentWeek := weekMonday.Equal(currentWeekMonday)
-	todayDate := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc)
-
-	maxDays := maxDayCount(oldGroupDays(oldGroup), newGroupDays(newGroup))
-	var daysDiff []entities.DayDiff
-
-	for dayIdx := range maxDays {
-		dayDate := weekMonday.AddDate(0, 0, dayIdx)
-		if isCurrentWeek && dayDate.Before(todayDate) {
-			continue
-		}
-
-		dayDiff := computeDayGroupDiff(oldGroup, newGroup, dayIdx, dayDate, todayDate, isCurrentWeek, nowMinsk)
-		if dayDiff != nil {
-			daysDiff = append(daysDiff, *dayDiff)
-		}
-	}
-
-	if len(daysDiff) == 0 {
-		return nil
-	}
-
-	return &entities.ScheduleDiff{
-		Title: fmt.Sprintf("Группа %d", groupID),
-		Week:  weekMonday,
-		Days:  daysDiff,
-	}
-}
-
-func computeDayGroupDiff(
-	oldGroup, newGroup *entities.Group,
-	dayIdx int,
-	dayDate, todayDate time.Time,
-	isCurrentWeek bool,
-	nowMinsk time.Time,
-) *entities.DayDiff {
-	dayName := getDayName(oldGroupDays(oldGroup), newGroupDays(newGroup), dayIdx)
-
-	var oldSubjects, newSubjects []*entities.Subject
-	if oldGroup != nil && dayIdx < len(oldGroup.Days) && oldGroup.Days[dayIdx] != nil {
-		oldSubjects = oldGroup.Days[dayIdx].Subjects
-	}
-	if newGroup != nil && dayIdx < len(newGroup.Days) && newGroup.Days[dayIdx] != nil {
-		newSubjects = newGroup.Days[dayIdx].Subjects
-	}
-
-	maxPairs := max(len(oldSubjects), len(newSubjects))
-	var pairDiffs []entities.PairDiff
-
-	for pIdx := range maxPairs {
-		pairNum := pIdx + 1
-		if isCurrentWeek && dayDate.Equal(todayDate) && isPairAlreadyStarted(pairNum, nowMinsk) {
-			continue
-		}
-
-		var oldSubj, newSubj *entities.Subject
-		if pIdx < len(oldSubjects) {
-			oldSubj = oldSubjects[pIdx]
-		}
-		if pIdx < len(newSubjects) {
-			newSubj = newSubjects[pIdx]
-		}
-
-		oldPairs := extractNonEmptyPairs(oldSubj)
-		newPairs := extractNonEmptyPairs(newSubj)
-
-		sgDiffs := compareGroupPairs(oldPairs, newPairs)
-		if len(sgDiffs) > 0 {
-			pairDiffs = append(pairDiffs, entities.PairDiff{
-				Number:        pairNum,
-				SubgroupDiffs: sgDiffs,
-			})
-		}
-	}
-
-	if len(pairDiffs) == 0 {
-		return nil
-	}
-
-	return &entities.DayDiff{
-		DayName:  dayName,
-		DayIndex: dayIdx,
-		Date:     dayDate,
-		Pairs:    pairDiffs,
-	}
+	return computeScheduleDiff(
+		fmt.Sprintf("Группа %d", groupID),
+		targetWeek,
+		groupDays(oldGroup),
+		groupDays(newGroup),
+		now,
+		compareGroupPairs,
+	)
 }
 
 // ComputeTeacherDiff вычисляет точечные изменения в расписании преподавателя с учетом фильтрации прошедшего времени.
@@ -166,12 +78,6 @@ func ComputeTeacherDiff(oldTeacher, newTeacher *entities.Teacher, now time.Time)
 	if newTeacher == nil && oldTeacher == nil {
 		return nil
 	}
-
-	if now.IsZero() {
-		now = time.Now()
-	}
-	nowMinsk := now.In(minskLoc)
-	currentWeekMonday := CurrentWeekMonday(nowMinsk)
 
 	var targetWeek time.Time
 	var teacherName string
@@ -183,6 +89,29 @@ func ComputeTeacherDiff(oldTeacher, newTeacher *entities.Teacher, now time.Time)
 		teacherName = oldTeacher.Name
 	}
 
+	return computeScheduleDiff(
+		teacherName,
+		targetWeek,
+		teacherDays(oldTeacher),
+		teacherDays(newTeacher),
+		now,
+		compareTeacherPairs,
+	)
+}
+
+func computeScheduleDiff(
+	title string,
+	targetWeek time.Time,
+	oldDays, newDays []*entities.Day,
+	now time.Time,
+	compareFn pairComparatorFunc,
+) *entities.ScheduleDiff {
+	if now.IsZero() {
+		now = timeutil.Now()
+	}
+	nowMinsk := now.In(minskLoc)
+	currentWeekMonday := CurrentWeekMonday(nowMinsk)
+
 	weekMonday := time.Date(targetWeek.Year(), targetWeek.Month(), targetWeek.Day(), 0, 0, 0, 0, minskLoc)
 	if weekMonday.Before(currentWeekMonday) {
 		return nil
@@ -191,7 +120,7 @@ func ComputeTeacherDiff(oldTeacher, newTeacher *entities.Teacher, now time.Time)
 	isCurrentWeek := weekMonday.Equal(currentWeekMonday)
 	todayDate := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc)
 
-	maxDays := maxDayCount(oldTeacherDays(oldTeacher), newTeacherDays(newTeacher))
+	maxDays := maxDayCount(oldDays, newDays)
 	var daysDiff []entities.DayDiff
 
 	for dayIdx := range maxDays {
@@ -200,7 +129,7 @@ func ComputeTeacherDiff(oldTeacher, newTeacher *entities.Teacher, now time.Time)
 			continue
 		}
 
-		dayDiff := computeDayTeacherDiff(oldTeacher, newTeacher, dayIdx, dayDate, todayDate, isCurrentWeek, nowMinsk)
+		dayDiff := computeDayDiff(oldDays, newDays, dayIdx, dayDate, todayDate, isCurrentWeek, nowMinsk, compareFn)
 		if dayDiff != nil {
 			daysDiff = append(daysDiff, *dayDiff)
 		}
@@ -211,27 +140,28 @@ func ComputeTeacherDiff(oldTeacher, newTeacher *entities.Teacher, now time.Time)
 	}
 
 	return &entities.ScheduleDiff{
-		Title: teacherName,
+		Title: title,
 		Week:  weekMonday,
 		Days:  daysDiff,
 	}
 }
 
-func computeDayTeacherDiff(
-	oldTeacher, newTeacher *entities.Teacher,
+func computeDayDiff(
+	oldDays, newDays []*entities.Day,
 	dayIdx int,
 	dayDate, todayDate time.Time,
 	isCurrentWeek bool,
 	nowMinsk time.Time,
+	compareFn pairComparatorFunc,
 ) *entities.DayDiff {
-	dayName := getDayName(oldTeacherDays(oldTeacher), newTeacherDays(newTeacher), dayIdx)
+	dayName := getDayName(oldDays, newDays, dayIdx)
 
 	var oldSubjects, newSubjects []*entities.Subject
-	if oldTeacher != nil && dayIdx < len(oldTeacher.Days) && oldTeacher.Days[dayIdx] != nil {
-		oldSubjects = oldTeacher.Days[dayIdx].Subjects
+	if dayIdx < len(oldDays) && oldDays[dayIdx] != nil {
+		oldSubjects = oldDays[dayIdx].Subjects
 	}
-	if newTeacher != nil && dayIdx < len(newTeacher.Days) && newTeacher.Days[dayIdx] != nil {
-		newSubjects = newTeacher.Days[dayIdx].Subjects
+	if dayIdx < len(newDays) && newDays[dayIdx] != nil {
+		newSubjects = newDays[dayIdx].Subjects
 	}
 
 	maxPairs := max(len(oldSubjects), len(newSubjects))
@@ -254,7 +184,7 @@ func computeDayTeacherDiff(
 		oldPairs := extractNonEmptyPairs(oldSubj)
 		newPairs := extractNonEmptyPairs(newSubj)
 
-		sgDiffs := compareTeacherPairs(oldPairs, newPairs)
+		sgDiffs := compareFn(oldPairs, newPairs)
 		if len(sgDiffs) > 0 {
 			pairDiffs = append(pairDiffs, entities.PairDiff{
 				Number:        pairNum,
@@ -304,7 +234,7 @@ func compareGroupPairs(oldPairs, newPairs []*entities.Pair) []entities.SubgroupD
 	case oldHasSubgroups && newHasSubgroups:
 		return compareSubgroups(oldPairs, newPairs)
 	default:
-		return compareGeneralPairs(oldPairs, newPairs)
+		return comparePositionalPairs(oldPairs, newPairs)
 	}
 }
 
@@ -358,6 +288,9 @@ func compareSubgroups(oldPairs, newPairs []*entities.Pair) []entities.SubgroupDi
 
 	for _, p := range oldPairs {
 		sg := extractSubgroupFromPair(p)
+		if _, exists := oldBySg[sg]; exists {
+			return comparePositionalPairs(oldPairs, newPairs)
+		}
 		oldBySg[sg] = p
 		if !slices.Contains(sgKeys, sg) {
 			sgKeys = append(sgKeys, sg)
@@ -365,6 +298,9 @@ func compareSubgroups(oldPairs, newPairs []*entities.Pair) []entities.SubgroupDi
 	}
 	for _, p := range newPairs {
 		sg := extractSubgroupFromPair(p)
+		if _, exists := newBySg[sg]; exists {
+			return comparePositionalPairs(oldPairs, newPairs)
+		}
 		newBySg[sg] = p
 		if !slices.Contains(sgKeys, sg) {
 			sgKeys = append(sgKeys, sg)
@@ -405,57 +341,6 @@ func compareSubgroups(oldPairs, newPairs []*entities.Pair) []entities.SubgroupDi
 	return diffs
 }
 
-func compareGeneralPairs(oldPairs, newPairs []*entities.Pair) []entities.SubgroupDiff {
-	if len(oldPairs) == 1 && len(newPairs) == 1 {
-		if !isSamePair(oldPairs[0], newPairs[0]) {
-			return []entities.SubgroupDiff{{
-				Subgroup: "",
-				Type:     entities.ChangeTypeModified,
-				OldPair:  oldPairs[0],
-				NewPair:  newPairs[0],
-			}}
-		}
-		return nil
-	}
-
-	var diffs []entities.SubgroupDiff
-	maxLen := max(len(oldPairs), len(newPairs))
-	for i := range maxLen {
-		var op, np *entities.Pair
-		if i < len(oldPairs) {
-			op = oldPairs[i]
-		}
-		if i < len(newPairs) {
-			np = newPairs[i]
-		}
-
-		switch {
-		case op != nil && np != nil:
-			if !isSamePair(op, np) {
-				diffs = append(diffs, entities.SubgroupDiff{
-					Subgroup: "",
-					Type:     entities.ChangeTypeModified,
-					OldPair:  op,
-					NewPair:  np,
-				})
-			}
-		case op != nil:
-			diffs = append(diffs, entities.SubgroupDiff{
-				Subgroup: "",
-				Type:     entities.ChangeTypeRemoved,
-				OldPair:  op,
-			})
-		case np != nil:
-			diffs = append(diffs, entities.SubgroupDiff{
-				Subgroup: "",
-				Type:     entities.ChangeTypeAdded,
-				NewPair:  np,
-			})
-		}
-	}
-	return diffs
-}
-
 func compareTeacherPairs(oldPairs, newPairs []*entities.Pair) []entities.SubgroupDiff {
 	if len(oldPairs) == 0 && len(newPairs) == 0 {
 		return nil
@@ -466,6 +351,10 @@ func compareTeacherPairs(oldPairs, newPairs []*entities.Pair) []entities.Subgrou
 	if len(newPairs) == 0 {
 		return makeTeacherDiffs(oldPairs, entities.ChangeTypeRemoved)
 	}
+	return comparePositionalPairs(oldPairs, newPairs)
+}
+
+func comparePositionalPairs(oldPairs, newPairs []*entities.Pair) []entities.SubgroupDiff {
 	if len(oldPairs) == 1 && len(newPairs) == 1 {
 		if !isSamePair(oldPairs[0], newPairs[0]) {
 			return []entities.SubgroupDiff{{
@@ -541,28 +430,14 @@ func maxDayCount(oldDays, newDays []*entities.Day) int {
 	return m
 }
 
-func oldGroupDays(g *entities.Group) []*entities.Day {
+func groupDays(g *entities.Group) []*entities.Day {
 	if g != nil {
 		return g.Days
 	}
 	return nil
 }
 
-func newGroupDays(g *entities.Group) []*entities.Day {
-	if g != nil {
-		return g.Days
-	}
-	return nil
-}
-
-func oldTeacherDays(t *entities.Teacher) []*entities.Day {
-	if t != nil {
-		return t.Days
-	}
-	return nil
-}
-
-func newTeacherDays(t *entities.Teacher) []*entities.Day {
+func teacherDays(t *entities.Teacher) []*entities.Day {
 	if t != nil {
 		return t.Days
 	}

@@ -35,14 +35,13 @@ type UserRepo interface {
 	SubgroupByChatID(ctx context.Context, chatID int64) (int, error)
 	GroupAndSubgroupByChatID(ctx context.Context, chatID int64) (int, int, error)
 	GetUserProfile(ctx context.Context, chatID int64) (int, int, string, error)
-	SetUserGroup(ctx context.Context, chatID int64, groupID int, subgroup int) error
+	SetUserGroup(ctx context.Context, chatID int64, groupID, subgroup int) error
 	GetTeacher(ctx context.Context, chatID int64) (string, error)
 	SetTeacher(ctx context.Context, chatID int64, teacherName string) error
 	SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error
 	GetNotifyEvening(ctx context.Context, chatID int64) (bool, error)
 	AllUsersWithUsernames(ctx context.Context) ([]entities.User, error)
 	AllUsers(ctx context.Context) ([]entities.User, error)
-	CountUsers(ctx context.Context) (int, error)
 	UpdateActivity(ctx context.Context, chatID int64) error
 	GetActivityStats(ctx context.Context) (entities.ActivityStats, error)
 }

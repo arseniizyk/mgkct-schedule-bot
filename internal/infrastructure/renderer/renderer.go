@@ -11,15 +11,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 var (
@@ -415,7 +416,7 @@ func renderWeekCanvas(title string, daysData []dayData, col4Title string) ([]byt
 	dc.SetFontFace(faces.faceFooter)
 	dc.SetColor(colorTextFooter)
 	footerLeft := "@mgkct_bot"
-	footerRight := fmt.Sprintf("Сгенерировано в: %s", time.Now().Format("02.01.2006 15:04:05"))
+	footerRight := fmt.Sprintf("Сгенерировано в: %s", timeutil.Now().Format("02.01.2006 15:04:05"))
 
 	dc.DrawStringAnchored(footerLeft, 14, footerY+float64(footerH)/2.0, 0, 0.5)
 	dc.DrawStringAnchored(footerRight, canvasWidth-14, footerY+float64(footerH)/2.0, 1.0, 0.5)

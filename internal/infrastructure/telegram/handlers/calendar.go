@@ -18,7 +18,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 )
 
-// ScheduleCalendar обрабатывает команды /calendar и /export для скачивания .ics файла расписания
+// ScheduleCalendar обрабатывает команду /calendar для скачивания .ics файла расписания
 func ScheduleCalendar(
 	log *slog.Logger,
 	schedSvc ScheduleService,
@@ -124,7 +124,7 @@ func promptTeacherCalendar(
 	}
 
 	kb := keyboard.InlineCalendarChoiceKeyboard("teacher", teacherName, 0, availableWeeks)
-	text := fmt.Sprintf("📅 *Экспорт в календарь (.ics)*\nПреподаватель: *%s*\n\nВыберите неделю для выгрузки:", teacherName)
+	text := fmt.Sprintf("📅 *Экспорт в календарь (.ics)*\nПреподаватель: *%s*\n\nВыберите неделю для выгрузки:", formatter.EscapeMD(teacherName))
 	return c.Send(text, kb, tele.ModeMarkdown)
 }
 

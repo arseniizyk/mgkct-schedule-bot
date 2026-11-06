@@ -11,9 +11,10 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
-var minskLocation = time.FixedZone("Europe/Minsk", 3*3600)
+var minskLocation = timeutil.MinskLocation
 
 // PairTimeSlots определяет время начала и окончания каждой пары (1-based, индексы 0..5 соответствуют 1..6 парам).
 // Каждая пара представлена [2][2]int: {{startHour, startMin}, {endHour, endMin}}.
@@ -28,7 +29,7 @@ var PairTimeSlots = [6][2][2]int{
 
 // SubjectDictionary интерфейс для опционального разрешения полных названий предметов.
 type SubjectDictionary interface {
-	Resolve(raw string) (cleaned string, fullName string, found bool)
+	Resolve(raw string) (cleaned, fullName string, found bool)
 }
 
 // DayOfWeekIndex возвращает индекс дня (0=Пн..6=Вс) по его русскому названию, либо defaultIdx при несовпадении.
@@ -67,7 +68,7 @@ func GenerateGroupCalendar(group *entities.Group, subgroup int, dict SubjectDict
 	}
 
 	var events []event
-	weekMonday := getWeekMonday(group.Week)
+	weekMonday := timeutil.CurrentWeekMonday(group.Week)
 
 	for dIdx, day := range filtered.Days {
 		if day == nil {
@@ -102,7 +103,12 @@ func GenerateGroupCalendar(group *entities.Group, subgroup int, dict SubjectDict
 
 				var descParts []string
 				if p.Group != "" {
-					descParts = append(descParts, fmt.Sprintf("Подгруппа/Инфо: %s", p.Group))
+					lowerGrp := strings.ToLower(p.Group)
+					if strings.Contains(lowerGrp, "п/г") || strings.Contains(lowerGrp, "подгруппа") {
+						descParts = append(descParts, fmt.Sprintf("Подгруппа: %s", p.Group))
+					} else {
+						descParts = append(descParts, fmt.Sprintf("Преподаватель: %s", p.Group))
+					}
 				}
 				descParts = append(descParts, fmt.Sprintf("Группа: %d", group.ID))
 				descParts = append(descParts, fmt.Sprintf("Пара: %d", subjIdx+1))
@@ -133,7 +139,7 @@ func GenerateTeacherCalendar(teacher *entities.Teacher, dict SubjectDictionary) 
 
 	calName := fmt.Sprintf("Преподаватель %s", teacher.Name)
 	var events []event
-	weekMonday := getWeekMonday(teacher.Week)
+	weekMonday := timeutil.CurrentWeekMonday(teacher.Week)
 
 	for dIdx, day := range teacher.Days {
 		if day == nil {
@@ -200,15 +206,6 @@ type event struct {
 	Description string
 }
 
-func getWeekMonday(t time.Time) time.Time {
-	if t.IsZero() {
-		t = time.Now()
-	}
-	m := t.In(minskLocation)
-	weekday := (int(m.Weekday()) + 6) % 7 // Пн=0..Вс=6
-	return time.Date(m.Year(), m.Month(), m.Day(), 0, 0, 0, 0, minskLocation).AddDate(0, 0, -weekday)
-}
-
 func formatLocation(class string) string {
 	class = strings.TrimSpace(class)
 	if class == "" {
@@ -228,7 +225,7 @@ func sanitizeUID(s string) string {
 		}
 	}
 	h := sha256.Sum256([]byte(s))
-	hashSuffix := hex.EncodeToString(h[:4])
+	hashSuffix := hex.EncodeToString(h[:8])
 	if sb.Len() == 0 {
 		return "person-" + hashSuffix
 	}
@@ -297,12 +294,8 @@ func writeLine(buf *bytes.Buffer, line string) {
 
 	for _, r := range line {
 		rLen := utf8.RuneLen(r)
-		limit := maxOctets
-		if currentOctets > 0 {
-			limit = maxOctets // лимит октетов на строку
-		}
 
-		if currentOctets+rLen > limit && currentLine.Len() > 0 {
+		if currentOctets+rLen > maxOctets && currentLine.Len() > 0 {
 			buf.WriteString(currentLine.String())
 			buf.WriteString("\r\n")
 			currentLine.Reset()

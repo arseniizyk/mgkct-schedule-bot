@@ -5,43 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/botutil"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/formatter"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
-
-type UserStore interface {
-	AllUsers(ctx context.Context) ([]entities.User, error)
-	UserIDsByGroupID(ctx context.Context, groupID int) ([]int64, error)
-	UserIDsByTeacherName(ctx context.Context, teacherName string) ([]int64, error)
-	UsersForEveningNotification(ctx context.Context) ([]entities.User, error)
-	SetNotifyEvening(ctx context.Context, chatID int64, enabled bool) error
-}
-
-type Limiter interface {
-	Wait(ctx context.Context) error
-}
-
-type ScheduleProvider interface {
-	GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error)
-	GetGroupLatestSchedule(ctx context.Context, groupID int32) (*entities.Group, error)
-}
-
-type TeacherProvider interface {
-	GetTeacherScheduleByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error)
-	GetTeacherLatestSchedule(ctx context.Context, name string) (*entities.Teacher, error)
-	GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error)
-}
-
-type BotSender interface {
-	Send(to tele.Recipient, what any, opts ...any) (*tele.Message, error)
-}
 
 type Notifier struct {
 	log       *slog.Logger
@@ -56,8 +32,6 @@ func New(log *slog.Logger, bot BotSender, userStore UserStore, adminIDs []int64,
 	if len(limiters) > 0 && limiters[0] != nil {
 		l = limiters[0]
 	} else {
-		// Лимит Telegram: около 30 сообщений в секунду.
-		// Используем 25 сообщений в секунду для гарантированной защиты от 429 Too Many Requests.
 		l = rate.NewLimiter(rate.Limit(25), 1)
 	}
 
@@ -74,7 +48,8 @@ func isForbidden(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, tele.ErrBlockedByUser) || errors.Is(err, tele.ErrUserIsDeactivated) {
+	if errors.Is(err, tele.ErrBlockedByUser) ||
+		errors.Is(err, tele.ErrUserIsDeactivated) {
 		return true
 	}
 	var teleErr *tele.Error
@@ -85,33 +60,7 @@ func isForbidden(err error) bool {
 }
 
 func sendWithFloodRetry(ctx context.Context, log *slog.Logger, sendFunc func() (*tele.Message, error)) (*tele.Message, error) {
-	const maxRetries = 3
-	var lastErr error
-	for range maxRetries {
-		msg, err := sendFunc()
-		if err == nil {
-			return msg, nil
-		}
-		lastErr = err
-		if floodErr, ok := errors.AsType[tele.FloodError](err); ok {
-			waitDur := time.Duration(floodErr.RetryAfter) * time.Second
-			if waitDur <= 0 {
-				waitDur = time.Second
-			}
-			log.WarnContext(ctx, "telegram flood wait 429 received, sleeping", "retry_after", waitDur)
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(waitDur):
-				continue
-			}
-		}
-		return nil, err
-	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("max retries exceeded for flood wait: %w", lastErr)
-	}
-	return nil, errors.New("max retries exceeded for flood wait")
+	return botutil.SendWithFloodRetry(ctx, log, sendFunc)
 }
 
 // UsersForNotification возвращает список пользователей, подписанных на уведомления о расписании на завтра.
@@ -132,6 +81,9 @@ func (n *Notifier) HandleNewWeek(ctx context.Context, week time.Time) error {
 	}
 
 	for _, u := range users {
+		if !u.NotifyEvening {
+			continue
+		}
 		if err := n.limiter.Wait(ctx); err != nil {
 			log.WarnContext(ctx, "broadcast cancelled by context")
 			return ctx.Err()
@@ -289,13 +241,13 @@ func (n *Notifier) HandleScraperError(ctx context.Context, err error, fails int)
 	}
 	errMsg := "неизвестная ошибка"
 	if err != nil {
-		errMsg = err.Error()
+		errMsg = strings.ReplaceAll(err.Error(), "`", "'")
 	}
 	msg := fmt.Sprintf(
 		"⚠️ *Внимание! Сбой парсера расписания!*\n\nСайт колледжа недоступен или парсер упал *%d* раз подряд.\n\n*Ошибка:* `%s`\n_Время: %s_",
 		fails,
 		errMsg,
-		time.Now().Format("15:04:05 02.01.2006"),
+		timeutil.Now().Format("15:04:05 02.01.2006"),
 	)
 	var firstErr error
 	for _, adminID := range n.adminIDs {
@@ -315,7 +267,7 @@ func (n *Notifier) HandleScraperRecovered(ctx context.Context) error {
 	}
 	msg := fmt.Sprintf(
 		"✅ *Парсер восстановил работу!*\n\nСайт колледжа снова отвечает, расписание успешно обработано.\n_Время: %s_",
-		time.Now().Format("15:04:05 02.01.2006"),
+		timeutil.Now().Format("15:04:05 02.01.2006"),
 	)
 	var firstErr error
 	for _, adminID := range n.adminIDs {
@@ -330,8 +282,7 @@ func (n *Notifier) HandleScraperRecovered(ctx context.Context) error {
 
 // CalculateTomorrowDate рассчитывает целевую дату следующего учебного дня и индекс дня (0..5 для Пн..Сб).
 func CalculateTomorrowDate(now time.Time) (targetDate time.Time, dayIdx int) {
-	minskLoc := time.FixedZone("MSK", 3*3600)
-	localNow := now.In(minskLoc)
+	localNow := now.In(timeutil.MinskLocation)
 
 	weekday := localNow.Weekday() // 0=Вс, 1=Пн, ... 6=Сб
 
@@ -370,8 +321,7 @@ func FormatNextDayDigest(
 ) (string, error) {
 	targetMonday := targetDate.AddDate(0, 0, -dayIdx)
 
-	minskLoc := time.FixedZone("MSK", 3*3600)
-	localNow := time.Now().In(minskLoc)
+	localNow := timeutil.Now()
 	headerDay := "завтра"
 	if localNow.Weekday() == time.Saturday {
 		headerDay = "понедельник"
@@ -452,7 +402,7 @@ func (n *Notifier) SendNextDayDigestForGroupSubgroup(
 		}
 	}
 
-	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
+	targetDate, dayIdx := CalculateTomorrowDate(timeutil.Now())
 
 	dummyUser := entities.User{
 		Group:    targetGroup,
@@ -509,7 +459,7 @@ func (n *Notifier) SendNextDayDigestForTeacher(
 		}
 	}
 
-	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
+	targetDate, dayIdx := CalculateTomorrowDate(timeutil.Now())
 	dummyUser := entities.User{TeacherName: targetTeacher}
 
 	msg, err := FormatNextDayDigest(ctx, dummyUser, targetDate, dayIdx, nil, teacherProvider)
@@ -540,81 +490,4 @@ func (n *Notifier) SendNextDayDigestForTeacher(
 	}
 
 	return sentIDs, nil
-}
-
-// SendNextDayDigestForTarget отправляет расписание на следующий день всем подписчикам конкретной группы или преподавателя.
-func (n *Notifier) SendNextDayDigestForTarget(
-	ctx context.Context,
-	schedProvider ScheduleProvider,
-	teacherProvider TeacherProvider,
-	targetGroup int,
-	targetTeacher string,
-) ([]int64, error) {
-	if targetGroup > 0 {
-		return n.SendNextDayDigestForGroupSubgroup(ctx, schedProvider, targetGroup, 0)
-	}
-	if targetTeacher != "" {
-		return n.SendNextDayDigestForTeacher(ctx, teacherProvider, targetTeacher)
-	}
-	return nil, errors.New("neither group nor teacher specified")
-}
-
-// SendEveningDigest рассылает расписание на завтра всем пользователям с включенными уведомлениями.
-// Опциональный параметр skipChatIDs позволяет пропустить пользователей, уже получивших дайджест ранее.
-func (n *Notifier) SendEveningDigest(
-	ctx context.Context,
-	schedProvider ScheduleProvider,
-	teacherProvider TeacherProvider,
-	skipChatIDs ...map[int64]bool,
-) error {
-	log := n.log.With("operation", "notifier.Notifier.SendEveningDigest")
-	log.InfoContext(ctx, "starting evening digest broadcast")
-
-	users, err := n.userStore.UsersForEveningNotification(ctx)
-	if err != nil {
-		log.ErrorContext(ctx, "failed getting users for evening digest", "error", err)
-		return err
-	}
-
-	if len(users) == 0 {
-		log.InfoContext(ctx, "no users subscribed to evening digest")
-		return nil
-	}
-
-	var skip map[int64]bool
-	if len(skipChatIDs) > 0 && skipChatIDs[0] != nil {
-		skip = skipChatIDs[0]
-	}
-
-	targetDate, dayIdx := CalculateTomorrowDate(time.Now())
-
-	sentCount := 0
-	for _, u := range users {
-		if skip != nil && skip[u.ChatID] {
-			continue
-		}
-
-		if err := n.limiter.Wait(ctx); err != nil {
-			log.WarnContext(ctx, "evening digest cancelled by context")
-			return ctx.Err()
-		}
-		msg, err := FormatNextDayDigest(ctx, u, targetDate, dayIdx, schedProvider, teacherProvider)
-		if err != nil {
-			continue
-		}
-		if _, sendErr := sendWithFloodRetry(ctx, log, func() (*tele.Message, error) {
-			return n.bot.Send(tele.ChatID(u.ChatID), msg, tele.ModeMarkdown)
-		}); sendErr == nil {
-			sentCount++
-			if skip != nil {
-				skip[u.ChatID] = true
-			}
-		} else if isForbidden(sendErr) {
-			_ = n.userStore.SetNotifyEvening(ctx, u.ChatID, false)
-			log.InfoContext(ctx, "user blocked bot or deactivated, disabled evening notifications", "chat_id", u.ChatID)
-		}
-	}
-
-	log.InfoContext(ctx, "evening digest broadcast completed", "total_users", len(users), "sent_count", sentCount)
-	return nil
 }

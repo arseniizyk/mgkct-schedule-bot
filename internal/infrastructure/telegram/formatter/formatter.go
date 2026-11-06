@@ -11,6 +11,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 func FormatErrorMessage(err error) string {
@@ -32,7 +33,7 @@ func FormatErrorMessage(err error) string {
 
 const secondShiftMinIndex = 3
 
-var minskLoc = time.FixedZone("MSK", 3*3600)
+var minskLoc = timeutil.MinskLocation
 
 func isCurrentWeek(week, currentWeekMonday time.Time) bool {
 	if week.IsZero() {
@@ -83,11 +84,11 @@ func DayRelativeLabelWithNow(week time.Time, dayIdx int, now time.Time) string {
 	}
 }
 
-func formatScheduleDay(day *entities.Day) string {
-	return formatScheduleDayWithTag(day, "")
-}
-
 func formatScheduleDayWithTag(day *entities.Day, tag string) string {
+	if day == nil {
+		return ""
+	}
+
 	var sb strings.Builder
 	sb.Grow(256)
 
@@ -109,33 +110,32 @@ func formatScheduleDayWithTag(day *entities.Day, tag string) string {
 
 func findFirstSubject(subjects []*entities.Subject) int {
 	for i, subject := range subjects {
-		if !subject.IsEmpty {
+		if !subjectHasNoClasses(subject) {
 			return i
 		}
 	}
 	return -1
 }
 
-func EffectiveDayIndex(group *entities.Group) int {
-	if group == nil || len(group.Days) == 0 {
+func effectiveDaysIndex(week time.Time, days []*entities.Day) int {
+	if len(days) == 0 {
 		return 0
 	}
 
 	nowMinsk := time.Now().In(minskLoc)
 	today := (int(nowMinsk.Weekday()) + 6) % 7 // Пн=0 .. Вс=6
-	offset := today
-	currentWeekMonday := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
+	currentWeekMonday := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -today)
 
 	// Если расписание относится к будущей или прошедшей неделе (относительно текущей), показываем первый учебный день (понедельник)
-	if !isCurrentWeek(group.Week, currentWeekMonday) {
+	if !isCurrentWeek(week, currentWeekMonday) {
 		return 0
 	}
 
-	if today >= len(group.Days) {
+	if today >= len(days) || days[today] == nil {
 		return 0
 	}
 
-	lastSubject := findLastSubject(group.Days[today].Subjects)
+	lastSubject := findLastSubject(days[today].Subjects)
 	if lastSubject == -1 {
 		return nextWorkDayIndex(today)
 	}
@@ -145,6 +145,20 @@ func EffectiveDayIndex(group *entities.Group) int {
 	}
 
 	return today
+}
+
+func EffectiveDayIndex(group *entities.Group) int {
+	if group == nil {
+		return 0
+	}
+	return effectiveDaysIndex(group.Week, group.Days)
+}
+
+func EffectiveTeacherDayIndex(teacher *entities.Teacher) int {
+	if teacher == nil {
+		return 0
+	}
+	return effectiveDaysIndex(teacher.Week, teacher.Days)
 }
 
 func nextWorkDayIndex(idx int) int {
@@ -300,24 +314,15 @@ func FormatScheduleDayAt(group *entities.Group, dayIdx int) (string, error) {
 	return FormatScheduleDayAtForSubgroup(group, dayIdx, 0)
 }
 
-func FormatScheduleDayAtForSubgroup(group *entities.Group, dayIdx int, subgroup int) (string, error) {
+func FormatScheduleDayAtForSubgroup(group *entities.Group, dayIdx, subgroup int) (string, error) {
 	filtered := FilterGroupForSubgroup(group, subgroup)
-	if dayIdx < 0 || dayIdx >= len(filtered.Days) {
-		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(filtered.Days))
+	if filtered == nil || dayIdx < 0 || dayIdx >= len(filtered.Days) {
+		return "", fmt.Errorf("formatter: day index %d out of range", dayIdx)
 	}
 	return formatScheduleDayWithTag(filtered.Days[dayIdx], DayRelativeLabel(group.Week, dayIdx)), nil
 }
 
-var weekdaysTimeEnd = map[int][2]int{
-	1: {10, 40},
-	2: {12, 40},
-	3: {14, 40},
-	4: {16, 30},
-	5: {18, 20},
-	6: {20, 10},
-}
-
-var weekendTimeEnd = map[int][2]int{
+var pairTimeEnd = map[int][2]int{
 	1: {10, 40},
 	2: {12, 40},
 	3: {14, 40},
@@ -327,16 +332,8 @@ var weekendTimeEnd = map[int][2]int{
 }
 
 // GetDayEndTime возвращает время окончания пар для указанного дня (0=Пн..5=Сб) и номера последней пары (1-based).
-func GetDayEndTime(dayIdx, lastSubject int, loc *time.Location) (time.Time, bool) {
-	var hhmm [2]int
-	var ok bool
-
-	if dayIdx == 5 {
-		hhmm, ok = weekendTimeEnd[lastSubject]
-	} else {
-		hhmm, ok = weekdaysTimeEnd[lastSubject]
-	}
-
+func GetDayEndTime(_, lastSubject int, loc *time.Location) (time.Time, bool) {
+	hhmm, ok := pairTimeEnd[lastSubject]
 	if !ok {
 		return time.Time{}, false
 	}
@@ -352,17 +349,28 @@ func GetDayEndTime(dayIdx, lastSubject int, loc *time.Location) (time.Time, bool
 func getEndTime(dayIdx, lastSubject int) (time.Time, bool) {
 	return GetDayEndTime(dayIdx, lastSubject, minskLoc)
 }
+
 func FormatScheduleWeek(group *entities.Group) string {
 	return FormatScheduleWeekForSubgroup(group, 0)
 }
 
 func FormatScheduleWeekForSubgroup(group *entities.Group, subgroup int) string {
 	filtered := FilterGroupForSubgroup(group, subgroup)
-	var sb strings.Builder
-	sb.Grow(len(filtered.Days) * 128)
+	if filtered == nil {
+		return ""
+	}
+	return formatDaysWeek(filtered.Week, filtered.Days)
+}
 
-	for dIdx, day := range filtered.Days {
-		sb.WriteString(formatScheduleDayWithTag(day, DayRelativeLabel(group.Week, dIdx)))
+func formatDaysWeek(week time.Time, days []*entities.Day) string {
+	var sb strings.Builder
+	sb.Grow(len(days) * 128)
+
+	for dIdx, day := range days {
+		if day == nil {
+			continue
+		}
+		sb.WriteString(formatScheduleDayWithTag(day, DayRelativeLabel(week, dIdx)))
 	}
 
 	return sb.String()
@@ -382,15 +390,18 @@ func SplitMessage(text string, limit int) []string {
 
 	var chunks []string
 	var current strings.Builder
+	currentRunes := 0
 
 	for line := range strings.SplitSeq(text, "\n") {
 		lineRunes := []rune(line)
-		if current.Len() > 0 && len([]rune(current.String()))+len(lineRunes)+1 > limit {
+		lineLen := len(lineRunes)
+		if current.Len() > 0 && currentRunes+lineLen+1 > limit {
 			chunks = append(chunks, current.String())
 			current.Reset()
+			currentRunes = 0
 		}
 
-		if len(lineRunes) > limit {
+		if lineLen > limit {
 			for len(lineRunes) > 0 {
 				take := min(limit, len(lineRunes))
 				chunks = append(chunks, string(lineRunes[:take]))
@@ -399,10 +410,12 @@ func SplitMessage(text string, limit int) []string {
 			continue
 		}
 
-		if current.Len() > 0 {
+		if currentRunes > 0 {
 			current.WriteString("\n")
+			currentRunes++
 		}
 		current.WriteString(line)
+		currentRunes += lineLen
 	}
 
 	if current.Len() > 0 {
@@ -447,7 +460,7 @@ func formatSubjects(subjects []*entities.Subject, start int) string {
 		}
 
 		pairs := subject.Pairs
-		if len(pairs) == 1 && len(pairs[0].Name) > 0 && !unicode.IsDigit(rune(pairs[0].Name[0])) {
+		if len(pairs) == 1 && pairs[0] != nil && len(pairs[0].Name) > 0 && !unicode.IsDigit(rune(pairs[0].Name[0])) {
 			p := pairs[0]
 			fmt.Fprintf(&sb, "%d: %s\n", i+1, formatPair(p))
 			continue
@@ -530,7 +543,7 @@ func subjectHasNoClasses(subject *entities.Subject) bool {
 	}
 
 	for _, p := range subject.Pairs {
-		if p.Name != "" || p.Group != "" {
+		if p != nil && (p.Name != "" || p.Group != "") {
 			return false
 		}
 	}
@@ -568,118 +581,21 @@ func FormatTeacherScheduleDay(teacher *entities.Teacher) string {
 	}
 	dayIdx := EffectiveTeacherDayIndex(teacher)
 	if dayIdx >= len(teacher.Days) {
-		return formatTeacherScheduleDayWithTag(teacher.Days[0], DayRelativeLabel(teacher.Week, 0))
+		return formatScheduleDayWithTag(teacher.Days[0], DayRelativeLabel(teacher.Week, 0))
 	}
-	return formatTeacherScheduleDayWithTag(teacher.Days[dayIdx], DayRelativeLabel(teacher.Week, dayIdx))
+	return formatScheduleDayWithTag(teacher.Days[dayIdx], DayRelativeLabel(teacher.Week, dayIdx))
 }
 
 func FormatTeacherScheduleDayAt(teacher *entities.Teacher, dayIdx int) (string, error) {
-	if dayIdx < 0 || dayIdx >= len(teacher.Days) {
-		return "", fmt.Errorf("formatter: day index %d out of range (%d days)", dayIdx, len(teacher.Days))
+	if teacher == nil || dayIdx < 0 || dayIdx >= len(teacher.Days) {
+		return "", fmt.Errorf("formatter: day index %d out of range", dayIdx)
 	}
-	return formatTeacherScheduleDayWithTag(teacher.Days[dayIdx], DayRelativeLabel(teacher.Week, dayIdx)), nil
-}
-
-func formatTeacherScheduleDayWithTag(day *entities.Day, tag string) string {
-	var sb strings.Builder
-	sb.Grow(256)
-
-	first := findFirstSubject(day.Subjects)
-
-	skip := 0
-	if first >= secondShiftMinIndex {
-		fmt.Fprintf(&sb, "*%s %s%s*\n", escapeMD(day.Name), messages.SecondShift, tag)
-		skip = first
-	} else {
-		fmt.Fprintf(&sb, "*%s%s*\n", escapeMD(day.Name), tag)
-	}
-
-	sb.WriteString(formatTeacherSubjects(day.Subjects, skip))
-	sb.WriteString("\n")
-
-	return sb.String()
-}
-
-func EffectiveTeacherDayIndex(teacher *entities.Teacher) int {
-	if teacher == nil || len(teacher.Days) == 0 {
-		return 0
-	}
-
-	nowMinsk := time.Now().In(minskLoc)
-	today := (int(nowMinsk.Weekday()) + 6) % 7
-	offset := today
-	currentWeekMonday := time.Date(nowMinsk.Year(), nowMinsk.Month(), nowMinsk.Day(), 0, 0, 0, 0, minskLoc).AddDate(0, 0, -offset)
-
-	// Если расписание относится к будущей или прошедшей неделе (относительно текущей), показываем первый учебный день (понедельник)
-	if !isCurrentWeek(teacher.Week, currentWeekMonday) {
-		return 0
-	}
-
-	if today >= len(teacher.Days) {
-		return 0
-	}
-
-	lastSubject := findLastSubject(teacher.Days[today].Subjects)
-	if lastSubject == -1 {
-		return nextWorkDayIndex(today)
-	}
-
-	if endTime, ok := getEndTime(today, lastSubject+1); ok && !nowMinsk.Before(endTime) {
-		return nextWorkDayIndex(today)
-	}
-
-	return today
+	return formatScheduleDayWithTag(teacher.Days[dayIdx], DayRelativeLabel(teacher.Week, dayIdx)), nil
 }
 
 func FormatTeacherScheduleWeek(teacher *entities.Teacher) string {
-	var sb strings.Builder
-	sb.Grow(len(teacher.Days) * 128)
-
-	for dIdx, day := range teacher.Days {
-		sb.WriteString(formatTeacherScheduleDayWithTag(day, DayRelativeLabel(teacher.Week, dIdx)))
+	if teacher == nil {
+		return ""
 	}
-
-	return sb.String()
-}
-
-func formatTeacherSubjects(subjects []*entities.Subject, start int) string {
-	var sb strings.Builder
-	sb.Grow(len(subjects) * 80)
-
-	lastSubject := findLastSubject(subjects)
-	if lastSubject == -1 {
-		return "*Выходной*\n"
-	}
-
-	for i := start; i < len(subjects); i++ {
-		subject := subjects[i]
-
-		if subjectHasNoClasses(subject) {
-			if i > lastSubject {
-				break
-			}
-			fmt.Fprintf(&sb, "%d: ──\n", i+1)
-			continue
-		}
-
-		pairs := subject.Pairs
-		if len(pairs) == 1 && len(pairs[0].Name) > 0 && !unicode.IsDigit(rune(pairs[0].Name[0])) {
-			p := pairs[0]
-			fmt.Fprintf(&sb, "%d: %s\n", i+1, formatPair(p))
-			continue
-		}
-
-		fmt.Fprintf(&sb, "%d:\n", i+1)
-		for j, p := range pairs {
-			if j == len(pairs)-1 {
-				sb.WriteString("└─ ")
-			} else {
-				sb.WriteString("├─ ")
-			}
-			sb.WriteString(formatPair(p))
-			sb.WriteString("\n")
-		}
-	}
-
-	return sb.String()
+	return formatDaysWeek(teacher.Week, teacher.Days)
 }

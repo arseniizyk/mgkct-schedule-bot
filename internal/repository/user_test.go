@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func setupTestDB(t *testing.T) (*sql.DB, *repository.UserRepository) {
@@ -59,7 +59,7 @@ func TestUserRepository_SetUserGroup_WithSubgroup(t *testing.T) {
 	assert.Equal(t, 1, sg)
 
 	// 2. Меняем на 2-ю подгруппу
-	err = repo.SetUserSubgroup(ctx, 12345, 2)
+	err = repo.SetUserGroup(ctx, 12345, 101, 2)
 	require.NoError(t, err)
 
 	sg, err = repo.SubgroupByChatID(ctx, 12345)
@@ -131,9 +131,26 @@ func TestUserRepository_AllUsers_AndEveningNotification(t *testing.T) {
 	require.Len(t, notifUsers, 2)
 	assert.Equal(t, 1, notifUsers[0].Subgroup)
 	assert.Equal(t, 2, notifUsers[1].Subgroup)
+
+	// Отключение уведомлений исключает пользователя из UserIDsByGroupID и UsersForEveningNotification, но оставляет в AllUsers
+	require.NoError(t, repo.SetNotifyEvening(ctx, 1002, false))
+	groupUserIDs, err := repo.UserIDsByGroupID(ctx, 101)
+	require.NoError(t, err)
+	assert.Equal(t, []int64{1001}, groupUserIDs)
+
+	notifUsersAfter, err := repo.UsersForEveningNotification(ctx)
+	require.NoError(t, err)
+	require.Len(t, notifUsersAfter, 1)
+	assert.Equal(t, int64(1001), notifUsersAfter[0].ChatID)
+
+	allUsersAfter, err := repo.AllUsers(ctx)
+	require.NoError(t, err)
+	require.Len(t, allUsersAfter, 2)
+	assert.True(t, allUsersAfter[0].NotifyEvening)
+	assert.False(t, allUsersAfter[1].NotifyEvening)
 }
 
-func TestUserRepository_AllUsersWithUsernames_And_CountUsers(t *testing.T) {
+func TestUserRepository_AllUsersWithUsernames(t *testing.T) {
 	db, repo := setupTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
@@ -152,10 +169,6 @@ func TestUserRepository_AllUsersWithUsernames_And_CountUsers(t *testing.T) {
 	require.NoError(t, err)
 	err = repo.SetTeacher(ctx, 2003, "Иванов И. И.")
 	require.NoError(t, err)
-
-	count, err := repo.CountUsers(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, 3, count)
 
 	users, err := repo.AllUsersWithUsernames(ctx)
 	require.NoError(t, err)
@@ -221,4 +234,46 @@ func TestUserRepository_ActivityTracking(t *testing.T) {
 	assert.Equal(t, 1, stats.DAU)
 	assert.Equal(t, 1, stats.WAU)
 	assert.Equal(t, 1, stats.MAU)
+}
+
+func TestUserRepository_DistinctSubscribed(t *testing.T) {
+	db, repo := setupTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Insert test users
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 101, NotifyEvening: true})
+	_ = repo.SetUserGroup(ctx, 101, 10, 1)
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 102, NotifyEvening: true})
+	_ = repo.SetUserGroup(ctx, 102, 10, 1) // Duplicate (10, 1)
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 103, NotifyEvening: true})
+	_ = repo.SetUserGroup(ctx, 103, 10, 2)
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 104, NotifyEvening: true})
+	_ = repo.SetUserGroup(ctx, 104, 20, 0)
+	_ = repo.SetNotifyEvening(ctx, 104, false) // notifications disabled
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 201, NotifyEvening: true})
+	_ = repo.SetTeacher(ctx, 201, "Иванов И.И.")
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 202, NotifyEvening: true})
+	_ = repo.SetTeacher(ctx, 202, "Иванов И.И.") // Duplicate teacher
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 203, NotifyEvening: true})
+	_ = repo.SetTeacher(ctx, 203, "Петров П.П.")
+
+	_ = repo.SaveUser(ctx, entities.User{ChatID: 204, NotifyEvening: true})
+	_ = repo.SetTeacher(ctx, 204, "Сидоров С.С.")
+	_ = repo.SetNotifyEvening(ctx, 204, false) // notifications disabled
+
+	targets, err := repo.DistinctSubscribedGroups(ctx)
+	require.NoError(t, err)
+	assert.Len(t, targets, 2) // (10, 1) and (10, 2)
+
+	teachers, err := repo.DistinctSubscribedTeachers(ctx)
+	require.NoError(t, err)
+	assert.Len(t, teachers, 2) // "Иванов И.И." and "Петров П.П."
 }

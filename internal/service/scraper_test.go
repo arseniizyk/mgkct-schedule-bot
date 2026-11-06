@@ -119,6 +119,21 @@ func (m *mockTeacherRepo) Save(ctx context.Context, name string, week time.Time,
 	return nil
 }
 
+func (m *mockTeacherRepo) SaveBatch(ctx context.Context, teachers []*entities.Teacher) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, t := range teachers {
+		if t == nil {
+			continue
+		}
+		if m.teachers[t.Name] == nil {
+			m.teachers[t.Name] = make(map[time.Time]*entities.Teacher)
+		}
+		m.teachers[t.Name][t.Week] = t
+	}
+	return nil
+}
+
 func (m *mockTeacherRepo) GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

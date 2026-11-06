@@ -6,9 +6,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
 )
 
 type mockDict struct {
@@ -210,6 +211,18 @@ func TestDayOfWeekIndex(t *testing.T) {
 	assert.Equal(t, 5, DayOfWeekIndex("Суббота", -1))
 	assert.Equal(t, 6, DayOfWeekIndex("Воскресенье", -1))
 	assert.Equal(t, 99, DayOfWeekIndex("Неизвестный день", 99))
+}
+
+func TestSanitizeUID(t *testing.T) {
+	cyrillic := sanitizeUID("Иванов И. И.")
+	assert.True(t, strings.HasPrefix(cyrillic, "person-"))
+	suffix := strings.TrimPrefix(cyrillic, "person-")
+	assert.Len(t, suffix, 16, "SHA256 slice length must be 8 bytes (16 hex chars)")
+
+	latin := sanitizeUID("Smith J.")
+	assert.True(t, strings.HasPrefix(latin, "SmithJ-"))
+	suffixLatin := strings.TrimPrefix(latin, "SmithJ-")
+	assert.Len(t, suffixLatin, 16, "SHA256 slice length must be 8 bytes (16 hex chars)")
 }
 
 func extractUID(ics string) string {

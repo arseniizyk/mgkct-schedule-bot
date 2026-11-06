@@ -21,12 +21,8 @@ issues:
 formatters:
   enable:
     - goimports # checks if the code and import statements are formatted according to the 'goimports' command
-
-    ## you may want to enable
-    #- gci # checks if code and import statements are formatted, with additional rules
-    #- gofmt # checks if the code is formatted according to 'gofmt' command
-    #- gofumpt # enforces a stricter format than 'gofmt', while being backwards compatible
-    #- swaggo # formats swaggo comments
+    - gofumpt # enforces a stricter format than 'gofmt', while being backwards compatible
+    - gci # checks if code and import statements are formatted, with additional rules
 
   # All settings can be found here https://github.com/golangci/golangci-lint/blob/HEAD/.golangci.reference.yml
   settings:
@@ -35,9 +31,12 @@ formatters:
       # with the given prefixes are grouped after 3rd-party packages.
       # Default: []
       local-prefixes:
-        - github.com/maxaer/reostat/
-        - relay/
-        - blockv/
+        - github.com/arseniizyk/mgkct-schedule-bot/
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/arseniizyk/mgkct-schedule-bot)
 
 linters:
   enable:

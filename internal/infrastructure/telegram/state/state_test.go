@@ -55,7 +55,9 @@ func TestMemoryManager_TTLEviction(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	sm.Cleanup()
 
-	_, exists := sm.states.Load(int64(1002))
+	sm.mu.RLock()
+	_, exists := sm.states[int64(1002)]
+	sm.mu.RUnlock()
 	if exists {
 		t.Errorf("expected state 1002 to be removed by Cleanup()")
 	}

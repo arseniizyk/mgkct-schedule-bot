@@ -25,9 +25,11 @@ type mockScheduleRepo struct{}
 func (m *mockScheduleRepo) Save(ctx context.Context, week time.Time, schedule *entities.Schedule) error {
 	return nil
 }
+
 func (m *mockScheduleRepo) GetByWeek(ctx context.Context, week time.Time) (*entities.Schedule, error) {
 	return nil, nil
 }
+
 func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, error) {
 	return &entities.Schedule{
 		Groups: map[int32]*entities.Group{
@@ -55,12 +57,15 @@ func (m *mockScheduleRepo) GetLatest(ctx context.Context) (*entities.Schedule, e
 		},
 	}, nil
 }
+
 func (m *mockScheduleRepo) GetAll(ctx context.Context) (map[time.Time]*entities.Schedule, error) {
 	return nil, nil
 }
+
 func (m *mockScheduleRepo) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
 	return []time.Time{time.Now(), time.Now().AddDate(0, 0, -7)}, nil
 }
+
 func (m *mockScheduleRepo) GetWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error) {
 	return entities.WeekNavigation{}, nil
 }
@@ -70,9 +75,15 @@ type mockTeacherRepo struct{}
 func (m *mockTeacherRepo) Save(ctx context.Context, name string, week time.Time, schedule *entities.Teacher) error {
 	return nil
 }
+
+func (m *mockTeacherRepo) SaveBatch(ctx context.Context, teachers []*entities.Teacher) error {
+	return nil
+}
+
 func (m *mockTeacherRepo) GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
 	return nil, nil
 }
+
 func (m *mockTeacherRepo) GetLatest(ctx context.Context, name string) (*entities.Teacher, error) {
 	return &entities.Teacher{
 		Name: name,
@@ -95,21 +106,26 @@ func (m *mockTeacherRepo) GetLatest(ctx context.Context, name string) (*entities
 		},
 	}, nil
 }
+
 func (m *mockTeacherRepo) GetAllLatest(ctx context.Context) (map[string]*entities.Teacher, error) {
 	t, _ := m.GetLatest(ctx, "Иванов И.И.")
 	return map[string]*entities.Teacher{
 		"Иванов И.И.": t,
 	}, nil
 }
+
 func (m *mockTeacherRepo) GetAll(ctx context.Context) ([]*entities.Teacher, error) {
 	return nil, nil
 }
+
 func (m *mockTeacherRepo) GetAllTeacherNames(ctx context.Context) ([]string, error) {
 	return []string{"Иванов И.И.", "Петрова Е.А."}, nil
 }
+
 func (m *mockTeacherRepo) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
 	return []time.Time{time.Now(), time.Now().AddDate(0, 0, -7)}, nil
 }
+
 func (m *mockTeacherRepo) GetWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error) {
 	return entities.WeekNavigation{}, nil
 }
@@ -457,6 +473,39 @@ func TestHandleSetUserProfile_MaxBytesLimit(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d for payload exceeding MaxBytesReader, got %d", http.StatusBadRequest, rec.Code)
 	}
+}
+
+func TestHandleSetUserProfile_Validation(t *testing.T) {
+	srv, db := setupTestServer(t)
+	defer db.Close()
+
+	t.Run("empty payload returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/profile?mock_user_id=123", strings.NewReader(`{"group_id":0,"teacher_name":""}`))
+		rec := httptest.NewRecorder()
+		srv.httpSrv.Handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	t.Run("invalid subgroup returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/profile?mock_user_id=123", strings.NewReader(`{"group_id":101,"subgroup":5}`))
+		rec := httptest.NewRecorder()
+		srv.httpSrv.Handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	t.Run("unknown teacher returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/profile?mock_user_id=123", strings.NewReader(`{"teacher_name":"Несуществующий Преподаватель"}`))
+		rec := httptest.NewRecorder()
+		srv.httpSrv.Handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	t.Run("valid teacher returns 200", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/profile?mock_user_id=123", strings.NewReader(`{"teacher_name":"Петров"}`))
+		rec := httptest.NewRecorder()
+		srv.httpSrv.Handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
 }
 
 func TestHandleCalendarICS(t *testing.T) {

@@ -55,28 +55,41 @@ func TeacherKey(teacherName string, week time.Time) string {
 // GetFileID возвращает сохраненный Telegram FileID по ключу, если он существует и не протух
 func (c *ImageCache) GetFileID(key string) (string, bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	entry, ok := c.entries[key]
+	c.mu.RUnlock()
 	if !ok {
 		return "", false
 	}
 
 	if c.ttl > 0 && time.Since(entry.createdAt) > c.ttl {
+		c.mu.Lock()
+		if cur, exists := c.entries[key]; exists && time.Since(cur.createdAt) > c.ttl {
+			delete(c.entries, key)
+		}
+		c.mu.Unlock()
 		return "", false
 	}
 
 	return entry.fileID, true
 }
 
-// SetFileID сохраняет Telegram FileID для ключа
+// SetFileID сохраняет Telegram FileID для ключа и очищает просроченные записи
 func (c *ImageCache) SetFileID(key, fileID string) {
+	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.ttl > 0 {
+		for k, v := range c.entries {
+			if now.Sub(v.createdAt) > c.ttl {
+				delete(c.entries, k)
+			}
+		}
+	}
+
 	c.entries[key] = cacheEntry{
 		fileID:    fileID,
-		createdAt: time.Now(),
+		createdAt: now,
 	}
 }
 

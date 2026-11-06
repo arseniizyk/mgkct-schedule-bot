@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
-
-	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
-	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	domainerr "github.com/arseniizyk/mgkct-schedule-bot/internal/domain/errors"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
 )
 
 func setupTeacherScheduleDB(t *testing.T) (*sql.DB, *repository.TeacherScheduleRepository) {
@@ -76,4 +77,28 @@ func TestTeacherScheduleRepository_GetWeeks_ZeroTime(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "2026-11-02", nav.Current.Format("2006-01-02"))
 	assert.Equal(t, "2026-10-26", nav.Prev.Format("2006-01-02"))
+}
+
+func TestTeacherScheduleRepository_SaveBatch(t *testing.T) {
+	db, repo := setupTeacherScheduleDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	monday, _ := time.Parse("2006-01-02", "2026-11-02")
+	teachers := []*entities.Teacher{
+		{Name: "Иванов И. И.", Week: monday},
+		{Name: "Петров П. П.", Week: monday},
+		{Name: "Сидоров С. С.", Week: monday},
+	}
+
+	err := repo.SaveBatch(ctx, teachers)
+	require.NoError(t, err)
+
+	names, err := repo.GetAllTeacherNames(ctx)
+	require.NoError(t, err)
+	assert.Len(t, names, 3)
+
+	t1, err := repo.GetByWeek(ctx, "Иванов И. И.", monday)
+	require.NoError(t, err)
+	assert.Equal(t, "Иванов И. И.", t1.Name)
 }

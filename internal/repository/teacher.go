@@ -52,6 +52,53 @@ func (r *TeacherScheduleRepository) Save(ctx context.Context, name string, week 
 	return nil
 }
 
+// SaveBatch сохраняет список расписаний преподавателей в единой SQLite-транзакции.
+func (r *TeacherScheduleRepository) SaveBatch(ctx context.Context, teachers []*entities.Teacher) error {
+	const op = "repository.TeacherScheduleRepository.SaveBatch"
+
+	if len(teachers) == 0 {
+		return nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%s: begin tx: %w", op, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	const insertQuery = `
+		INSERT INTO teacher_schedules (name, week, schedule)
+		VALUES (?, ?, ?)
+		ON CONFLICT(name, week) DO UPDATE SET schedule = excluded.schedule, updated_at = CURRENT_TIMESTAMP
+	`
+
+	stmt, err := tx.PrepareContext(ctx, insertQuery)
+	if err != nil {
+		return fmt.Errorf("%s: prepare stmt: %w", op, err)
+	}
+	defer stmt.Close()
+
+	for _, t := range teachers {
+		if t == nil {
+			continue
+		}
+		data, err := json.Marshal(t)
+		if err != nil {
+			return fmt.Errorf("%s: marshal teacher schedule for %s: %w", op, t.Name, err)
+		}
+		weekStr := t.Week.Format("2006-01-02")
+		if _, err := stmt.ExecContext(ctx, t.Name, weekStr, string(data)); err != nil {
+			return fmt.Errorf("%s: exec stmt for %s: %w", op, t.Name, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("%s: commit tx: %w", op, err)
+	}
+
+	return nil
+}
+
 func (r *TeacherScheduleRepository) GetByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
 	const op = "repository.TeacherScheduleRepository.GetByWeek"
 

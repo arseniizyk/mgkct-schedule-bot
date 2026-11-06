@@ -1,26 +1,28 @@
-package app
+package middleware
 
 import (
 	"context"
 	"log/slog"
 	"sync"
 	"time"
+
+	tele "gopkg.in/telebot.v4"
 )
 
-type activityUpdater interface {
+type ActivityUpdater interface {
 	UpdateActivity(ctx context.Context, chatID int64) error
 }
 
-type activityWorker struct {
+type ActivityWorker struct {
 	mu       sync.Mutex
 	lastSeen map[int64]time.Time
 	ch       chan int64
-	updater  activityUpdater
+	updater  ActivityUpdater
 	log      *slog.Logger
 }
 
-func newActivityWorker(log *slog.Logger, updater activityUpdater) *activityWorker {
-	return &activityWorker{
+func NewActivityWorker(log *slog.Logger, updater ActivityUpdater) *ActivityWorker {
+	return &ActivityWorker{
 		lastSeen: make(map[int64]time.Time),
 		ch:       make(chan int64, 100),
 		updater:  updater,
@@ -28,7 +30,7 @@ func newActivityWorker(log *slog.Logger, updater activityUpdater) *activityWorke
 	}
 }
 
-func (w *activityWorker) Touch(chatID int64) {
+func (w *ActivityWorker) Touch(chatID int64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -42,11 +44,11 @@ func (w *activityWorker) Touch(chatID int64) {
 	case w.ch <- chatID:
 		w.lastSeen[chatID] = now
 	default:
-		// Очередь заполнена — не обновляем lastSeen, чтобы следующий запрос попробовал снова.
+		// Queue full — do not update lastSeen so next request retries.
 	}
 }
 
-func (w *activityWorker) cleanupOldEntries(cutoff time.Time) {
+func (w *ActivityWorker) cleanupOldEntries(cutoff time.Time) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for id, last := range w.lastSeen {
@@ -56,7 +58,7 @@ func (w *activityWorker) cleanupOldEntries(cutoff time.Time) {
 	}
 }
 
-func (w *activityWorker) Run(ctx context.Context) {
+func (w *ActivityWorker) Run(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
@@ -72,6 +74,18 @@ func (w *activityWorker) Run(ctx context.Context) {
 				w.log.Debug("failed updating user activity", "chat_id", chatID, "error", err)
 			}
 			cancel()
+		}
+	}
+}
+
+// ActivityMiddleware returns a Telebot middleware that touches user activity for every incoming update.
+func ActivityMiddleware(worker *ActivityWorker) tele.MiddlewareFunc {
+	return func(next tele.HandlerFunc) tele.HandlerFunc {
+		return func(c tele.Context) error {
+			if c.Sender() != nil {
+				worker.Touch(c.Sender().ID)
+			}
+			return next(c)
 		}
 	}
 }

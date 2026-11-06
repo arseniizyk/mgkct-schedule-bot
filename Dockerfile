@@ -1,5 +1,5 @@
 # Multi-stage build для создания легковесного контейнера (<30 МБ)
-FROM golang:1.24-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ COPY --from=builder /app/bin/bot /app/bot
 
 ENV ENV=prod \
     BOT_HEALTH_PORT=8081 \
-    BOT_DB_PATH=/app/data/bot.db
+    DB_PATH=/app/data/bot.db
 
 EXPOSE 8081
 

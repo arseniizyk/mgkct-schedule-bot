@@ -12,6 +12,7 @@ import (
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/pkg/timeutil"
 )
 
 type StudentParser interface {
@@ -26,33 +27,37 @@ type FacultyParser interface {
 	Parse(ctx context.Context) ([]*entities.FacultyMember, error)
 }
 
-type ScraperService struct {
-	log           *slog.Logger
-	cfg           config.ScraperConfig
-	studentParser StudentParser
-	teacherParser TeacherParser
-	scheduleRepo  ScheduleRepository
-	teacherRepo   TeacherScheduleRepository
-	scheduleSvc   *ScheduleService
-	teacherCache  TeacherScheduleCacheInvalidator
-	facultyParser FacultyParser
-	facultyRepo   FacultyRepository
+type AnalyticsCacheInvalidator interface {
+	ClearCache()
+}
 
-	mu                      sync.RWMutex
-	latestWeek              time.Time
-	lastFacultyScrape       time.Time
-	lastFacultyAttempt      time.Time
-	facultyScrapeInProgress bool
-	groupHashes             map[string][32]byte          // key: "<group_id>:<YYYY-MM-DD>"
-	teacherHashes           map[string][32]byte          // key: "<teacher_name>:<YYYY-MM-DD>"
-	groupSchedules          map[string]*entities.Group   // key: "<group_id>:<YYYY-MM-DD>"
-	teacherSchedules        map[string]*entities.Teacher // key: "<teacher_name>:<YYYY-MM-DD>"
-	nowFunc                 func() time.Time
-	newWeekFoundInTurbo     bool
-	consecutiveErrors       int
-	consecutiveSuccesses    int
-	adminAlerted            bool
-	lastAlertTime           time.Time
+type ScraperService struct {
+	log            *slog.Logger
+	cfg            config.ScraperConfig
+	studentParser  StudentParser
+	teacherParser  TeacherParser
+	scheduleRepo   ScheduleRepository
+	teacherRepo    TeacherScheduleRepository
+	scheduleSvc    *ScheduleService
+	teacherCache   TeacherScheduleCacheInvalidator
+	analyticsCache AnalyticsCacheInvalidator
+	facultyParser  FacultyParser
+	facultyRepo    FacultyRepository
+
+	mu                   sync.RWMutex
+	latestWeek           time.Time
+	lastFacultyScrape    time.Time
+	lastFacultyAttempt   time.Time
+	groupHashes          map[string][32]byte          // key: "<group_id>:<YYYY-MM-DD>"
+	teacherHashes        map[string][32]byte          // key: "<teacher_name>:<YYYY-MM-DD>"
+	groupSchedules       map[string]*entities.Group   // key: "<group_id>:<YYYY-MM-DD>"
+	teacherSchedules     map[string]*entities.Teacher // key: "<teacher_name>:<YYYY-MM-DD>"
+	nowFunc              func() time.Time
+	newWeekFoundInTurbo  bool
+	consecutiveErrors    int
+	consecutiveSuccesses int
+	adminAlerted         bool
+	lastAlertTime        time.Time
 }
 
 type TeacherScheduleCacheInvalidator interface {
@@ -98,6 +103,12 @@ func (s *ScraperService) SetTeacherCache(cache TeacherScheduleCacheInvalidator) 
 	s.teacherCache = cache
 }
 
+func (s *ScraperService) SetAnalyticsCache(cache AnalyticsCacheInvalidator) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.analyticsCache = cache
+}
+
 func (s *ScraperService) SetNowFunc(f func() time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,9 +117,10 @@ func (s *ScraperService) SetNowFunc(f func() time.Time) {
 
 func (s *ScraperService) now() time.Time {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.nowFunc != nil {
-		return s.nowFunc()
+	fn := s.nowFunc
+	s.mu.RUnlock()
+	if fn != nil {
+		return fn()
 	}
 	return time.Now()
 }
@@ -133,9 +145,9 @@ func (s *ScraperService) cleanupOldWeeksLocked(currentWeekStart time.Time) {
 
 func (s *ScraperService) scrapeFaculty(ctx context.Context) {
 	defer func() {
-		s.mu.Lock()
-		s.facultyScrapeInProgress = false
-		s.mu.Unlock()
+		if r := recover(); r != nil {
+			s.log.ErrorContext(ctx, "recovered panic in scrapeFaculty", "panic", r)
+		}
 	}()
 
 	s.mu.RLock()
@@ -178,7 +190,7 @@ func (s *ScraperService) Start(ctx context.Context, eventCh chan<- Event) {
 
 	// 3. Основной цикл динамического опроса
 	for {
-		interval := s.calculateInterval(time.Now())
+		interval := s.calculateInterval(s.now())
 		log.DebugContext(ctx, "waiting next scrape", "interval", interval.String())
 
 		select {
@@ -196,8 +208,7 @@ func (s *ScraperService) Start(ctx context.Context, eventCh chan<- Event) {
 // Ночь (22:00 — 08:00): опрос каждые 20 минут.
 // Обычное время: раз в минуту.
 func (s *ScraperService) calculateInterval(now time.Time) time.Duration {
-	minskLoc := time.FixedZone("MSK", 3*3600)
-	localNow := now.In(minskLoc)
+	localNow := now.In(timeutil.MinskLocation)
 
 	weekday := localNow.Weekday()
 	hour := localNow.Hour()
@@ -252,9 +263,10 @@ func (s *ScraperService) initFromDB(ctx context.Context) {
 				}
 			}
 		}
+		latestWeek := s.latestWeek
 		s.mu.Unlock()
 
-		if latestSch, ok := schedules[s.latestWeek]; ok {
+		if latestSch, ok := schedules[latestWeek]; ok {
 			s.scheduleSvc.SetCache(latestSch)
 		}
 	}
@@ -339,21 +351,19 @@ func (s *ScraperService) scrapeOnce(ctx context.Context, eventCh chan<- Event) {
 		}
 	}
 
-	// 3. Скрапинг педсостава (раз в сутки или при первом старте)
+	// 3. Скрапинг педсостава (раз в сутки или при первом старте) синхронно внутри воркера скрапера
 	s.mu.Lock()
 	needFaculty := s.facultyParser != nil &&
-		!s.facultyScrapeInProgress &&
 		(s.lastFacultyScrape.IsZero() || time.Since(s.lastFacultyScrape) > 24*time.Hour) &&
 		(s.lastFacultyAttempt.IsZero() || time.Since(s.lastFacultyAttempt) > 10*time.Minute)
 
 	if needFaculty {
-		s.facultyScrapeInProgress = true
 		s.lastFacultyAttempt = time.Now()
 	}
 	s.mu.Unlock()
 
 	if needFaculty {
-		go s.scrapeFaculty(ctx)
+		s.scrapeFaculty(scrapeCtx)
 	}
 }
 
@@ -372,19 +382,11 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 
 	s.mu.Lock()
 	newWeekDetected := false
-	// Проверяем появление новой недели: ровно ОДНО событие!
+	isCandidateNewWeek := false
 	if !s.latestWeek.IsZero() && maxWeek.After(s.latestWeek) {
-		log.InfoContext(ctx, "NEW WEEK DETECTED!", "old_week", s.latestWeek, "new_week", maxWeek)
-		s.latestWeek = maxWeek
-		s.newWeekFoundInTurbo = true
+		isCandidateNewWeek = true
 		newWeekDetected = true
-
-		sendEvent(ctx, eventCh, Event{
-			Type: EventNewWeek,
-			Week: maxWeek,
-		})
 	} else if s.latestWeek.IsZero() {
-		s.latestWeek = maxWeek
 		newWeekDetected = true
 	}
 
@@ -446,17 +448,28 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 
 	// Сохраняем в БД только измененные недели
 	var successfulEvents []pendingGroupEvent
+	var newWeekEmitted bool
+	var anySaved bool
 	for week, sch := range weeksToSave {
 		if err := s.scheduleRepo.Save(ctx, week, sch); err != nil {
 			log.ErrorContext(ctx, "failed saving schedule for week", "week", week, "error", err)
 			continue
 		}
+		anySaved = true
 
 		// Фиксируем хэши в памяти ТОЛЬКО после успешной записи в репозиторий
 		s.mu.Lock()
 		for _, entry := range newHashesByWeek[week] {
 			s.groupHashes[entry.key] = entry.hash
 			s.groupSchedules[entry.key] = entry.group
+		}
+		if isCandidateNewWeek && week.Equal(maxWeek) {
+			log.InfoContext(ctx, "NEW WEEK DETECTED AND SAVED!", "old_week", s.latestWeek, "new_week", maxWeek)
+			s.latestWeek = maxWeek
+			s.newWeekFoundInTurbo = true
+			newWeekEmitted = true
+		} else if s.latestWeek.IsZero() && week.Equal(maxWeek) {
+			s.latestWeek = maxWeek
 		}
 		latestWeek := s.latestWeek
 		s.mu.Unlock()
@@ -470,6 +483,22 @@ func (s *ScraperService) processStudentSchedules(ctx context.Context, schedules 
 		}
 
 		successfulEvents = append(successfulEvents, pendingEventsByWeek[week]...)
+	}
+
+	if anySaved {
+		s.mu.RLock()
+		ac := s.analyticsCache
+		s.mu.RUnlock()
+		if ac != nil {
+			ac.ClearCache()
+		}
+	}
+
+	if newWeekEmitted {
+		sendEvent(ctx, eventCh, Event{
+			Type: EventNewWeek,
+			Week: maxWeek,
+		})
 	}
 
 	// Рассылаем нотификации подписчикам только по успешно сохраненным неделям
@@ -536,23 +565,34 @@ func (s *ScraperService) processTeacherSchedules(ctx context.Context, teachers [
 	}
 	s.mu.Unlock()
 
-	for _, entry := range toSave {
-		t := entry.teacher
-		if err := s.teacherRepo.Save(ctx, t.Name, t.Week, t); err != nil {
-			log.ErrorContext(ctx, "failed saving teacher schedule", "name", t.Name, "error", err)
-			continue
+	if len(toSave) > 0 {
+		teachersList := make([]*entities.Teacher, 0, len(toSave))
+		for _, entry := range toSave {
+			teachersList = append(teachersList, entry.teacher)
 		}
 
-		s.mu.Lock()
-		s.teacherHashes[entry.key] = entry.hash
-		s.teacherSchedules[entry.key] = entry.teacher
-		s.mu.Unlock()
+		if err := s.teacherRepo.SaveBatch(ctx, teachersList); err != nil {
+			log.ErrorContext(ctx, "failed saving teacher schedules batch", "count", len(toSave), "error", err)
+		} else {
+			s.mu.Lock()
+			for _, entry := range toSave {
+				s.teacherHashes[entry.key] = entry.hash
+				s.teacherSchedules[entry.key] = entry.teacher
+			}
+			s.mu.Unlock()
 
-		s.mu.RLock()
-		tc := s.teacherCache
-		s.mu.RUnlock()
-		if tc != nil {
-			tc.InvalidateTeacherWeek(t.Name, t.Week)
+			s.mu.RLock()
+			tc := s.teacherCache
+			ac := s.analyticsCache
+			s.mu.RUnlock()
+			if tc != nil {
+				for _, entry := range toSave {
+					tc.InvalidateTeacherWeek(entry.teacher.Name, entry.teacher.Week)
+				}
+			}
+			if ac != nil {
+				ac.ClearCache()
+			}
 		}
 	}
 

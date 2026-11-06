@@ -40,13 +40,3 @@ type WeekNavigation struct {
 	Current time.Time `json:"current"`
 	Next    time.Time `json:"next"`
 }
-
-type UpdatedGroup struct {
-	Group         *Group
-	IsWeekUpdated bool
-}
-
-type UpdatedTeacher struct {
-	Teacher       *Teacher
-	IsWeekUpdated bool
-}

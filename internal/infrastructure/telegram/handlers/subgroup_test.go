@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/domain/entities"
@@ -16,8 +18,6 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/keyboard"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/messages"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type mockUserRepo struct {
@@ -60,7 +60,7 @@ func (m *mockUserRepo) GetUserProfile(ctx context.Context, chatID int64) (int, i
 	return grp, sg, teacher, nil
 }
 
-func (m *mockUserRepo) SetUserGroup(ctx context.Context, chatID int64, groupID int, subgroup int) error {
+func (m *mockUserRepo) SetUserGroup(ctx context.Context, chatID int64, groupID, subgroup int) error {
 	m.userGroup[chatID] = groupID
 	m.userSubgroup[chatID] = subgroup
 	delete(m.userTeacher, chatID)
@@ -92,10 +92,6 @@ func (m *mockUserRepo) AllUsersWithUsernames(ctx context.Context) ([]entities.Us
 
 func (m *mockUserRepo) AllUsers(ctx context.Context) ([]entities.User, error) {
 	return nil, nil
-}
-
-func (m *mockUserRepo) CountUsers(ctx context.Context) (int, error) {
-	return 0, nil
 }
 
 func (m *mockUserRepo) UpdateActivity(ctx context.Context, chatID int64) error {
@@ -327,18 +323,23 @@ type mockScheduleService struct {
 func (m *mockScheduleService) GetGroupLatestSchedule(ctx context.Context, groupID int32) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockScheduleService) GetGroupScheduleByWeek(ctx context.Context, groupID int32, week time.Time) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockScheduleService) GetAvailableWeeks(ctx context.Context, week time.Time) (entities.WeekNavigation, error) {
 	return entities.WeekNavigation{}, nil
 }
+
 func (m *mockScheduleService) GetAllWeeks(ctx context.Context) ([]time.Time, error) {
 	return nil, nil
 }
+
 func (m *mockScheduleService) GetArchiveSchedule(ctx context.Context, groupID int32, targetDate time.Time) (*entities.Group, error) {
 	return m.group, nil
 }
+
 func (m *mockScheduleService) HasGroup(ctx context.Context, groupID int32) (bool, error) {
 	if len(m.groups) > 0 {
 		return slices.Contains(m.groups, groupID), nil
@@ -356,33 +357,66 @@ type mockTeacherService struct {
 func (m *mockTeacherService) GetTeacherLatestSchedule(ctx context.Context, name string) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
+
 func (m *mockTeacherService) GetTeacherScheduleByWeek(ctx context.Context, name string, week time.Time) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
+
 func (m *mockTeacherService) GetAvailableWeeks(ctx context.Context, name string, week time.Time) (entities.WeekNavigation, error) {
 	return entities.WeekNavigation{}, nil
 }
+
 func (m *mockTeacherService) GetAllTeacherNames(ctx context.Context) ([]string, error) {
 	if m.teacher == nil {
 		return nil, nil
 	}
 	return []string{m.teacher.Name}, nil
 }
+
 func (m *mockTeacherService) GetAllWeeks(ctx context.Context, name string) ([]time.Time, error) {
 	return nil, nil
 }
+
 func (m *mockTeacherService) GetTeacherArchiveSchedule(ctx context.Context, name string, targetDate time.Time) (*entities.Teacher, error) {
 	return m.teacher, nil
 }
+
+type mockAnalyticsService struct {
+	cabinetSched *entities.CabinetSchedule
+	err          error
+}
+
+func (m *mockAnalyticsService) GetAllCabinets(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockAnalyticsService) GetCabinetSchedule(ctx context.Context, query string, week time.Time) (*entities.CabinetSchedule, []string, error) {
+	return m.cabinetSched, nil, m.err
+}
+
+func (m *mockAnalyticsService) GetEndings(ctx context.Context, dayIdx int, week time.Time) (*entities.EndingsStat, error) {
+	return nil, nil
+}
+
+func (m *mockAnalyticsService) GetGroupStats(ctx context.Context, groupID int32, week time.Time) ([]entities.SubjectStat, int, error) {
+	return nil, 0, nil
+}
+
+func (m *mockAnalyticsService) GetTeacherStats(ctx context.Context, teacherName string, week time.Time) ([]entities.SubjectStat, int, error) {
+	return nil, 0, nil
+}
+
 func (m *mockTeacherService) ValidateTeacher(ctx context.Context, name string) (string, []string, bool) {
 	if m.teacher == nil {
 		return "", nil, false
 	}
 	return m.teacher.Name, nil, true
 }
+
 func (m *mockTeacherService) FindSimilarTeachers(ctx context.Context, name string, limit int) ([]string, error) {
 	return nil, nil
 }
+
 func (m *mockTeacherService) GetFacultyMember(ctx context.Context, teacherName string) (*entities.FacultyMember, error) {
 	return nil, nil
 }
@@ -426,7 +460,21 @@ func TestCallbacksHandler_DaySubgroupAndTeacher(t *testing.T) {
 	}
 	teacherSvc := &mockTeacherService{teacher: sampleTeacher}
 
-	handler := handlers.CallbacksHandler(logger, schedSvc, teacherSvc, nil, repo, nil)
+	sampleCabinetSched := &entities.CabinetSchedule{
+		Cabinet: "101",
+		Days: []*entities.CabinetDaySchedule{
+			{
+				DayName:  "Понедельник",
+				DayIndex: 0,
+				Bookings: []*entities.CabinetBooking{
+					{Subject: "Физика", GroupID: 101, Class: "101"},
+				},
+			},
+		},
+	}
+	analyticsSvc := &mockAnalyticsService{cabinetSched: sampleCabinetSched}
+
+	handler := handlers.CallbacksHandler(logger, schedSvc, teacherSvc, analyticsSvc, repo, nil)
 
 	t.Run("group day subgroup switch to subgroup 2", func(t *testing.T) {
 		ctx := &mockContext{
@@ -481,6 +529,45 @@ func TestCallbacksHandler_DaySubgroupAndTeacher(t *testing.T) {
 		err := handler(ctx)
 		require.NoError(t, err)
 		assert.Contains(t, ctx.editedWhat, "Физика")
+		require.NotEmpty(t, ctx.editedOpts)
+		rm, ok := ctx.editedOpts[len(ctx.editedOpts)-1].(*tele.ReplyMarkup)
+		require.True(t, ok)
+		assert.NotEmpty(t, rm.InlineKeyboard, "must have inline keyboard attached")
+	})
+
+	t.Run("teacher week nav callback attaches inline keyboard", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 401,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.TeacherPrevWeek + "|Иванов И. И.:26.10.2026",
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, ctx.editedWhat, "Физика")
+		require.NotEmpty(t, ctx.editedOpts)
+		rm, ok := ctx.editedOpts[len(ctx.editedOpts)-1].(*tele.ReplyMarkup)
+		require.True(t, ok)
+		assert.NotEmpty(t, rm.InlineKeyboard, "must have inline keyboard attached")
+	})
+
+	t.Run("cabinet week callback attaches InlineCabinetWeekKeyboard", func(t *testing.T) {
+		ctx := &mockContext{
+			chatID: 401,
+			callback: &tele.Callback{
+				Data: "\f" + keyboard.CabinetCurrentWeek + "|101",
+			},
+		}
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, ctx.editedWhat, "101")
+		require.NotEmpty(t, ctx.editedOpts)
+		rm, ok := ctx.editedOpts[len(ctx.editedOpts)-1].(*tele.ReplyMarkup)
+		require.True(t, ok)
+		assert.NotEmpty(t, rm.InlineKeyboard, "must have inline keyboard attached")
+		assert.Equal(t, keyboard.CabinetCurrentWeek, rm.InlineKeyboard[0][0].Unique)
 	})
 }
 

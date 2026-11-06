@@ -68,7 +68,7 @@ func TestFormatSubjectsEscapesDynamicFields(t *testing.T) {
 		},
 	}
 
-	got := formatScheduleDay(day)
+	got := formatScheduleDayWithTag(day, "")
 
 	if !strings.Contains(got, "Основы C\\* и C\\_") {
 		t.Errorf("subject name should be escaped, got:\n%s", got)
@@ -92,7 +92,7 @@ func TestFormatScheduleDaySecondShift(t *testing.T) {
 		},
 	}
 
-	got := formatScheduleDay(day)
+	got := formatScheduleDayWithTag(day, "")
 
 	if !strings.Contains(got, "*Понедельник (2 смена") {
 		t.Errorf("день второй смены должен иметь маркер в заголовке, got:\n%s", got)
@@ -556,6 +556,24 @@ func TestSplitMessage_WithDiffHTML(t *testing.T) {
 	}
 }
 
+func TestSplitMessage_RuneAccuracyAndLineSplitting(t *testing.T) {
+	lines := []string{
+		"Строка 1 с кириллицей",
+		"Строка 2 подлиннее для проверки",
+		"Строка 3",
+		strings.Repeat("ДлиннаяСтрокаБезПробелов", 5),
+		"Строка 4",
+	}
+	text := strings.Join(lines, "\n")
+	limit := 30
+	chunks := SplitMessage(text, limit)
+
+	assert.NotEmpty(t, chunks)
+	for _, chunk := range chunks {
+		assert.LessOrEqual(t, len([]rune(chunk)), limit)
+	}
+}
+
 func TestParsePairSubgroup(t *testing.T) {
 	tests := []struct {
 		name string
@@ -751,6 +769,7 @@ func TestFilterGroupForSubgroup_SingleSubgroupInSlot(t *testing.T) {
 		assert.Contains(t, msg, "2. Лабораторная")
 	})
 }
+
 func TestIsCurrentWeek(t *testing.T) {
 	currentMonday := time.Date(2026, 10, 26, 0, 0, 0, 0, minskLoc)
 
