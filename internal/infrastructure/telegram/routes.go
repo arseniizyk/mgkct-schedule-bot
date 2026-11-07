@@ -29,12 +29,14 @@ func RegisterHandlers(
 	userRepo *repository.UserRepository,
 	stateMgr *state.MemoryManager,
 	subjectDict *dictionary.SubjectDictionary,
+	mtprotoSender handlers.MTProtoSender,
 ) {
 	adminMiddleware := handlers.AdminOnly(cfg.Bot.AdminIDs)
 
 	bot.Handle("/start", handlers.Start(log, userRepo))
 	bot.Handle("/help", handlers.Help(cfg.Bot.AdminIDs))
 	bot.Handle("/app", handlers.App(cfg.Bot.WebAppURL))
+	bot.Handle("/widget", handlers.Widget(log, scheduleSvc, teacherSvc, userRepo, cfg.Bot.WebAppURL, mtprotoSender))
 	bot.Handle("/calls", handlers.Calls())
 	bot.Handle("/cancel", handlers.Cancel(log, stateMgr))
 	bot.Handle("/setgroup", handlers.SetGroup(log, scheduleSvc, userRepo, stateMgr))

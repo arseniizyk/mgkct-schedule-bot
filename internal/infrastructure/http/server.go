@@ -17,6 +17,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http/handlers/schedule"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http/handlers/static"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http/handlers/user"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/http/handlers/widget"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/service"
 	"github.com/arseniizyk/mgkct-schedule-bot/web"
@@ -65,6 +66,7 @@ func New(
 	analyticsH := analytics.NewHandler(log, analyticsSvc)
 	archiveH := archive.NewHandler(log, scheduleSvc, teacherSvc)
 	userH := user.NewHandler(log, cfg, userRepo, scheduleSvc, teacherSvc)
+	widgetH := widget.NewHandler(log, scheduleSvc, teacherSvc)
 
 	// Healthcheck
 	mux.HandleFunc("GET /healthz", healthH)
@@ -73,6 +75,8 @@ func New(
 	mux.HandleFunc("GET /api/v1/schedule/group", schedH.Group)
 	mux.HandleFunc("GET /api/v1/schedule/teacher", schedH.Teacher)
 	mux.HandleFunc("GET /api/v1/schedule/calendar.ics", schedH.CalendarICS)
+	mux.HandleFunc("GET /api/v1/widget/preview", widgetH.Preview)
+	mux.HandleFunc("GET /widget/preview", widgetH.Preview)
 	mux.HandleFunc("GET /api/v1/groups", dirH.Groups)
 	mux.HandleFunc("GET /api/v1/teachers", dirH.Teachers)
 	mux.HandleFunc("GET /api/v1/subjects", dirH.Subjects)

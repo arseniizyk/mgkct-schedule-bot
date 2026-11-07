@@ -55,12 +55,7 @@ func InlineQueryWithClock(
 
 		// 1. Пустой запрос: если пользователь привязал группу/преподавателя — показываем их, иначе подсказку
 		if rawQuery == "" {
-			results := buildEmptyQueryResults(ctx, log, c, schedSvc, teacherSvc, userRepo, nowFunc)
-			return c.Answer(&tele.QueryResponse{
-				Results:    results,
-				CacheTime:  30,
-				IsPersonal: true,
-			})
+			return answerEmptyQuery(ctx, log, c, schedSvc, teacherSvc, userRepo, nowFunc)
 		}
 
 		// 2. Номер группы (например, "88" или "88 1")
@@ -72,21 +67,59 @@ func InlineQueryWithClock(
 					subgroup = sg
 				}
 			}
-
-			results := buildGroupQueryResults(ctx, log, schedSvc, groupID, subgroup, nowFunc)
-			return c.Answer(&tele.QueryResponse{
-				Results:   results,
-				CacheTime: 60,
-			})
+			return answerGroupQuery(ctx, log, c, groupID, subgroup, schedSvc, nowFunc)
 		}
 
 		// 3. Запрос преподавателя (поиск по фамилии / ФИО)
-		results := buildTeacherQueryResults(ctx, log, teacherSvc, rawQuery, nowFunc)
-		return c.Answer(&tele.QueryResponse{
-			Results:   results,
-			CacheTime: 60,
-		})
+		return answerTeacherQuery(ctx, log, c, rawQuery, teacherSvc, nowFunc)
 	}
+}
+
+func answerEmptyQuery(
+	ctx context.Context,
+	log *slog.Logger,
+	c tele.Context,
+	schedSvc ScheduleService,
+	teacherSvc TeacherService,
+	userRepo UserRepo,
+	nowFunc func() time.Time,
+) error {
+	results := buildEmptyQueryResults(ctx, log, c, schedSvc, teacherSvc, userRepo, nowFunc)
+	return c.Answer(&tele.QueryResponse{
+		Results:    results,
+		CacheTime:  30,
+		IsPersonal: true,
+	})
+}
+
+func answerGroupQuery(
+	ctx context.Context,
+	log *slog.Logger,
+	c tele.Context,
+	groupID, subgroup int,
+	schedSvc ScheduleService,
+	nowFunc func() time.Time,
+) error {
+	results := buildGroupQueryResults(ctx, log, schedSvc, groupID, subgroup, nowFunc)
+	return c.Answer(&tele.QueryResponse{
+		Results:   results,
+		CacheTime: 60,
+	})
+}
+
+func answerTeacherQuery(
+	ctx context.Context,
+	log *slog.Logger,
+	c tele.Context,
+	rawQuery string,
+	teacherSvc TeacherService,
+	nowFunc func() time.Time,
+) error {
+	results := buildTeacherQueryResults(ctx, log, teacherSvc, rawQuery, nowFunc)
+	return c.Answer(&tele.QueryResponse{
+		Results:   results,
+		CacheTime: 60,
+	})
 }
 
 func buildEmptyQueryResults(

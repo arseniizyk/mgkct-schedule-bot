@@ -24,6 +24,7 @@ import (
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/handlers"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/middleware"
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/mtproto"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/notifier"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/state"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/repository"
@@ -45,6 +46,7 @@ type App struct {
 	digestRepo  *repository.DigestSentRepository
 	userRepo    *repository.UserRepository
 	actWorker   *middleware.ActivityWorker
+	mtproto     *mtproto.Client
 }
 
 func New(log *slog.Logger, cfg *config.Config) (*App, error) {
@@ -94,6 +96,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 
 	stateMgr := state.NewMemoryManager()
 	actWorker := middleware.NewActivityWorker(log, userRepo)
+	mtprotoClient := mtproto.NewClient(log, cfg.Bot.Token, 0, "")
 
 	bot.Use(middleware.ActivityMiddleware(actWorker))
 	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
@@ -115,6 +118,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		userRepo,
 		stateMgr,
 		subjectDict,
+		mtprotoClient,
 	)
 
 	broadcastLimiter := rate.NewLimiter(rate.Limit(25), 1)
@@ -157,6 +161,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 		digestRepo:  digestRepo,
 		userRepo:    userRepo,
 		actWorker:   actWorker,
+		mtproto:     mtprotoClient,
 	}, nil
 }
 
@@ -193,6 +198,10 @@ func (a *App) Run() error {
 		a.actWorker.Run(ctx)
 	})
 
+	workersWg.Go(func() {
+		_ = a.mtproto.Start(ctx)
+	})
+
 	go func() {
 		if err := a.httpSrv.Start(); err != nil {
 			log.Error("http server failed", "error", err)
@@ -210,6 +219,9 @@ func (a *App) Run() error {
 			log.Info("Shutting down bot gracefully...")
 
 			a.bot.Stop()
+			if a.mtproto != nil {
+				a.mtproto.Stop()
+			}
 			cancel()
 
 			shutdownCtx, httpCancel := context.WithTimeout(context.Background(), 5*time.Second)
