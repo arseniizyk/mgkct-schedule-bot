@@ -15,6 +15,17 @@ type Config struct {
 	Bot     BotConfig     `env-prefix:"BOT_"`
 	DB      DBConfig      `env-prefix:"DB_"`
 	Scraper ScraperConfig `env-prefix:"SCRAPER_"`
+	MTProto MTProtoConfig `env-prefix:"MTPROTO_"`
+}
+
+type MTProtoConfig struct {
+	Enabled       bool   `env:"ENABLED" env-default:"true"`
+	AppID         int    `env:"APP_ID" env-default:"2040"`
+	AppHash       string `env:"APP_HASH" env-default:"b18441a1ff607e10a989891a5462e627"`
+	SessionPath   string `env:"SESSION_PATH" env-default:"data/mtproto.session"`
+	ProxyURL      string `env:"PROXY_URL" env-default:""`
+	MTProxyAddr   string `env:"MTPROXY_ADDR" env-default:""`
+	MTProxySecret string `env:"MTPROXY_SECRET" env-default:""`
 }
 
 type BotConfig struct {
