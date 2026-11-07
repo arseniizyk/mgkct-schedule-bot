@@ -25,7 +25,8 @@ COPY --from=builder /app/bin/bot /app/bot
 
 ENV ENV=prod \
     BOT_HEALTH_PORT=8081 \
-    DB_PATH=/app/data/bot.db
+    DB_PATH=/app/data/bot.db \
+    MTPROTO_SESSION_PATH=/app/data/mtproto.session
 
 EXPOSE 8081
 

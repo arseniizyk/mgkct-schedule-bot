@@ -96,7 +96,7 @@ func New(log *slog.Logger, cfg *config.Config) (*App, error) {
 
 	stateMgr := state.NewMemoryManager()
 	actWorker := middleware.NewActivityWorker(log, userRepo)
-	mtprotoClient := mtproto.NewClient(log, cfg.Bot.Token, 0, "")
+	mtprotoClient := mtproto.NewClient(log, cfg.Bot.Token, cfg.MTProto)
 
 	bot.Use(middleware.ActivityMiddleware(actWorker))
 	bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {

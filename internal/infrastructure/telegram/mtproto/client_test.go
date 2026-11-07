@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 	"github.com/arseniizyk/mgkct-schedule-bot/internal/infrastructure/telegram/mtproto"
 )
 
@@ -37,11 +38,20 @@ func TestSendMediaWidgetRequest_Encode(t *testing.T) {
 
 func TestClient_NotReadyError(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
-	client := mtproto.NewClient(logger, "fake_token", 0, "")
+	client := mtproto.NewClient(logger, "fake_token", config.MTProtoConfig{Enabled: true})
 
 	assert.False(t, client.IsReady())
 
 	err := client.SendWidget(context.Background(), 12345, "<html></html>", "Caption")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not ready")
+}
+
+func TestClient_DisabledStart(t *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
+	client := mtproto.NewClient(logger, "fake_token", config.MTProtoConfig{Enabled: false})
+
+	err := client.Start(context.Background())
+	require.NoError(t, err)
+	assert.False(t, client.IsReady())
 }

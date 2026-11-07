@@ -4,8 +4,11 @@ import (
 	"context"
 	crand "crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,8 +17,13 @@ import (
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/telegram/dcs"
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
+	"github.com/gotd/td/transport"
+	"golang.org/x/net/proxy"
+
+	"github.com/arseniizyk/mgkct-schedule-bot/internal/config"
 )
 
 // SendMediaWidgetRequest implements raw MTProto serialization for messages.sendMedia#330e77f
@@ -62,10 +70,9 @@ type Sender interface {
 
 // Client manages background MTProto connection to Telegram for sending native widgets.
 type Client struct {
-	log     *slog.Logger
-	token   string
-	appID   int
-	appHash string
+	log   *slog.Logger
+	token string
+	cfg   config.MTProtoConfig
 
 	mu          sync.RWMutex
 	tgCl        *telegram.Client
@@ -74,19 +81,21 @@ type Client struct {
 	channelHash map[int64]int64
 }
 
-// NewClient initializes an MTProto client with bot credentials.
-func NewClient(log *slog.Logger, token string, appID int, appHash string) *Client {
-	if appID == 0 {
-		appID = 2040 // Default public Telegram Desktop API ID
+// NewClient initializes an MTProto client with bot credentials and MTProto configuration.
+func NewClient(log *slog.Logger, token string, cfg config.MTProtoConfig) *Client {
+	if cfg.AppID == 0 {
+		cfg.AppID = 2040 // Default public Telegram Desktop API ID
 	}
-	if appHash == "" {
-		appHash = "b18441a1ff607e10a989891a5462e627" // Default public Telegram Desktop API Hash
+	if cfg.AppHash == "" {
+		cfg.AppHash = "b18441a1ff607e10a989891a5462e627" // Default public Telegram Desktop API Hash
+	}
+	if cfg.SessionPath == "" {
+		cfg.SessionPath = "data/mtproto.session"
 	}
 	return &Client{
 		log:         log,
 		token:       token,
-		appID:       appID,
-		appHash:     appHash,
+		cfg:         cfg,
 		channelHash: make(map[int64]int64),
 	}
 }
@@ -95,13 +104,29 @@ func NewClient(log *slog.Logger, token string, appID int, appHash string) *Clien
 func (c *Client) Start(ctx context.Context) error {
 	const op = "mtproto.Client.Start"
 
+	if !c.cfg.Enabled {
+		c.log.Info("MTProto client is disabled via configuration, using WebApp fallback", "operation", op)
+		return nil
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	c.cancel = cancel
 
 	readyCh := make(chan struct{})
 
 	go func() {
-		sessionPath := filepath.Join(os.TempDir(), "mgkct_bot_mtproto.session")
+		sessionDir := filepath.Dir(c.cfg.SessionPath)
+		if sessionDir != "" && sessionDir != "." {
+			if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+				c.log.Warn("failed to create MTProto session directory", "operation", op, "dir", sessionDir, "error", err)
+			}
+		}
+
+		resolver, err := c.buildResolver()
+		if err != nil {
+			c.log.Error("failed to configure MTProto network resolver, disabling MTProto", "operation", op, "error", err)
+			return
+		}
 
 		for {
 			select {
@@ -110,8 +135,9 @@ func (c *Client) Start(ctx context.Context) error {
 			default:
 			}
 
-			client := telegram.NewClient(c.appID, c.appHash, telegram.Options{
-				SessionStorage: &session.FileStorage{Path: sessionPath},
+			client := telegram.NewClient(c.cfg.AppID, c.cfg.AppHash, telegram.Options{
+				SessionStorage: &session.FileStorage{Path: c.cfg.SessionPath},
+				Resolver:       resolver,
 			})
 
 			c.mu.Lock()
@@ -179,6 +205,45 @@ func (c *Client) Start(ctx context.Context) error {
 		c.log.Warn("MTProto client initialization timed out, continuing in background", "operation", op)
 		return nil
 	}
+}
+
+func (c *Client) buildResolver() (dcs.Resolver, error) {
+	const op = "mtproto.Client.buildResolver"
+
+	var dialFunc dcs.DialFunc
+	if c.cfg.ProxyURL != "" {
+		proxyURL, err := url.Parse(c.cfg.ProxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("%s: invalid proxy url: %w", op, err)
+		}
+		dialer, err := proxy.FromURL(proxyURL, proxy.Direct)
+		if err != nil {
+			return nil, fmt.Errorf("%s: create proxy dialer: %w", op, err)
+		}
+		if ctxDialer, ok := dialer.(proxy.ContextDialer); ok {
+			dialFunc = ctxDialer.DialContext
+		} else {
+			dialFunc = func(_ context.Context, network, addr string) (net.Conn, error) {
+				return dialer.Dial(network, addr)
+			}
+		}
+	}
+
+	if c.cfg.MTProxyAddr != "" && c.cfg.MTProxySecret != "" {
+		secretBytes, err := hex.DecodeString(c.cfg.MTProxySecret)
+		if err != nil {
+			return nil, fmt.Errorf("%s: decode mtproxy secret: %w", op, err)
+		}
+		return dcs.MTProxy(c.cfg.MTProxyAddr, secretBytes, dcs.MTProxyOptions{
+			Dial: dialFunc,
+		})
+	}
+
+	return dcs.Plain(dcs.PlainOptions{
+		Dial:       dialFunc,
+		Protocol:   transport.Abridged,
+		Obfuscated: true,
+	}), nil
 }
 
 // Stop shuts down the MTProto connection.
@@ -266,88 +331,4 @@ func (c *Client) resolvePeer(ctx context.Context, chatID int64) (tg.InputPeerCla
 
 	// Legacy basic group chat
 	return &tg.InputPeerChat{ChatID: -chatID}, nil
-}
-
-// SetInlineBotResultsWidgetRequest serializes messages.setInlineBotResults#bb12a419
-// containing inputBotInlineMessageWidget#f597a3f0 (Telegram Layer 233).
-type SetInlineBotResultsWidgetRequest struct {
-	QueryID     int64
-	ID          string
-	Title       string
-	Description string
-	HTML        string
-	CacheTime   int
-	Private     bool
-}
-
-// Encode serializes messages.setInlineBotResults with inputBotInlineMessageWidget.
-func (r *SetInlineBotResultsWidgetRequest) Encode(b *bin.Buffer) error {
-	b.PutID(0xbb12a419) // messages.setInlineBotResults#bb12a419
-
-	var flags bin.Fields
-	if r.Private {
-		flags.Set(1) // private
-	}
-	if err := flags.Encode(b); err != nil {
-		return err
-	}
-
-	b.PutLong(r.QueryID)
-
-	// results: Vector<InputBotInlineResult>
-	b.PutVectorHeader(1)
-
-	// inputBotInlineResult#88bf9319
-	b.PutID(0x88bf9319)
-	var resFlags bin.Fields
-	resFlags.Set(1) // title
-	resFlags.Set(2) // description
-	if err := resFlags.Encode(b); err != nil {
-		return err
-	}
-	b.PutString(r.ID)
-	b.PutString("widget")
-	b.PutString(r.Title)
-	b.PutString(r.Description)
-
-	// send_message: inputBotInlineMessageWidget#f597a3f0
-	b.PutID(0xf597a3f0)
-	var msgFlags bin.Fields
-	if err := msgFlags.Encode(b); err != nil {
-		return err
-	}
-	b.PutInt(0)         // width (0 = auto)
-	b.PutInt(0)         // height (0 = auto)
-	b.PutString(r.HTML) // html
-	b.PutString("")     // message (empty string = no text caption below widget)
-
-	b.PutInt(r.CacheTime)
-	return nil
-}
-
-// SetInlineWidgetAnswer answers an inline query with a native interactive widget (inputBotInlineMessageWidget#f597a3f0).
-func (c *Client) SetInlineWidgetAnswer(ctx context.Context, queryID int64, resultID, title, description, html string, cacheTime int, isPersonal bool) error {
-	const op = "mtproto.Client.SetInlineWidgetAnswer"
-
-	if !c.IsReady() {
-		return fmt.Errorf("%s: MTProto client is not ready", op)
-	}
-
-	req := &SetInlineBotResultsWidgetRequest{
-		QueryID:     queryID,
-		ID:          resultID,
-		Title:       title,
-		Description: description,
-		HTML:        html,
-		CacheTime:   cacheTime,
-		Private:     isPersonal,
-	}
-
-	var res tg.BoolBox
-	if err := c.tgCl.Invoke(ctx, req, &res); err != nil {
-		return fmt.Errorf("%s: invoke setInlineBotResults: %w", op, err)
-	}
-
-	c.log.Info("native inline widget answer set via MTProto", "operation", op, "query_id", queryID, "result_id", resultID)
-	return nil
 }

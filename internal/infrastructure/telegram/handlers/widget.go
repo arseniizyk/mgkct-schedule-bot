@@ -20,7 +20,6 @@ import (
 type MTProtoSender interface {
 	IsReady() bool
 	SendWidget(ctx context.Context, chatID int64, html, caption string) error
-	SetInlineWidgetAnswer(ctx context.Context, queryID int64, resultID, title, description, html string, cacheTime int, isPersonal bool) error
 }
 
 // Widget handles the /widget command to deliver or preview an interactive Mini-HTML schedule widget.

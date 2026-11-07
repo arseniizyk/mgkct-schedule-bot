@@ -62,10 +62,6 @@ func (m *mockMTProtoSender) SendWidget(ctx context.Context, chatID int64, html, 
 	return nil
 }
 
-func (m *mockMTProtoSender) SetInlineWidgetAnswer(ctx context.Context, queryID int64, resultID, title, description, html string, cacheTime int, isPersonal bool) error {
-	return nil
-}
-
 func TestWidgetHandler_GroupArg_WithMTProto(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	week := time.Date(2026, 11, 9, 0, 0, 0, 0, timeutil.MinskLocation)
